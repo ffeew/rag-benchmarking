@@ -120,7 +120,7 @@ def run_document_ingestion(
     resolved = settings or get_settings()
     log = logger.bind(document_id=document_id, job_id=job_id)
     pipeline_start = time.perf_counter()
-    log.info(
+    log.debug(
         "pipeline_enter",
         force=force,
         allow_mock_providers=resolved.allow_mock_providers,
@@ -139,7 +139,7 @@ def run_document_ingestion(
         settings=resolved,
     )
     log = log.bind(run_id=run.id, dataset_id=document.dataset_id)
-    log.info("pipeline_run_resolved", should_ingest=should_ingest)
+    log.debug("pipeline_run_resolved", should_ingest=should_ingest)
     if not should_ingest:
         mark_job(session, job, status="skipped", progress=100, step="already indexed")
         log.info("pipeline_skipped_already_indexed")
@@ -150,7 +150,7 @@ def run_document_ingestion(
     try:
         mark_job(session, job, status="running", progress=5, step="reading raw PDF")
         run.status = "running"
-        log.info(
+        log.debug(
             "pipeline_stage_minio_get_start",
             bucket=document.minio_bucket,
             key=document.minio_key,
@@ -162,17 +162,17 @@ def run_document_ingestion(
             key=document.minio_key,
             version_id=document.minio_version_id,
         )
-        log.info(
+        log.debug(
             "pipeline_stage_minio_get_done",
             bytes=len(pdf_bytes),
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
 
         mark_job(session, job, status="running", progress=20, step="parsing document")
-        log.info("pipeline_stage_parse_start")
+        log.debug("pipeline_stage_parse_start")
         stage_started = time.perf_counter()
         parsed = parse_pdf(pdf_bytes, resolved)
-        log.info(
+        log.debug(
             "pipeline_stage_parse_done",
             parser=parsed.parser,
             model=parsed.model,
@@ -180,7 +180,7 @@ def run_document_ingestion(
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
         prefix = artifact_prefix(document.dataset_id, document.id, run.id)
-        log.info("pipeline_stage_artifacts_upload_start", page_count=len(parsed.pages))
+        log.debug("pipeline_stage_artifacts_upload_start", page_count=len(parsed.pages))
         stage_started = time.perf_counter()
         store.put_json(key=f"{prefix}/ocr.json", payload=parsed.raw_ocr)
         session.execute(delete(models.ParsedPage).where(models.ParsedPage.ingestion_run_id == run.id))
@@ -205,13 +205,13 @@ def run_document_ingestion(
                 )
             )
         session.flush()
-        log.info(
+        log.debug(
             "pipeline_stage_artifacts_upload_done",
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
 
         mark_job(session, job, status="running", progress=50, step="chunking parsed pages")
-        log.info("pipeline_stage_chunk_start")
+        log.debug("pipeline_stage_chunk_start")
         stage_started = time.perf_counter()
         pages = list(
             session.scalars(
@@ -251,7 +251,7 @@ def run_document_ingestion(
             session.add(chunk)
             db_chunks.append(chunk)
         session.flush()
-        log.info(
+        log.debug(
             "pipeline_stage_chunk_done",
             chunk_count=len(db_chunks),
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
@@ -260,7 +260,7 @@ def run_document_ingestion(
         mark_job(session, job, status="running", progress=75, step="embedding chunks")
         batch_size = 32
         embedding_model = resolved.openrouter_embedding_model or "mock-embedding"
-        log.info(
+        log.debug(
             "pipeline_stage_embed_start",
             embedding_model=embedding_model,
             total_chunks=len(db_chunks),
@@ -270,7 +270,7 @@ def run_document_ingestion(
         for offset in range(0, len(db_chunks), batch_size):
             batch = db_chunks[offset : offset + batch_size]
             batch_started = time.perf_counter()
-            log.info(
+            log.debug(
                 "pipeline_stage_embed_batch_start",
                 batch_index=offset // batch_size,
                 batch_size=len(batch),
@@ -287,14 +287,14 @@ def run_document_ingestion(
                         vector=vector,
                     )
                 )
-            log.info(
+            log.debug(
                 "pipeline_stage_embed_batch_done",
                 batch_index=offset // batch_size,
                 batch_size=len(batch),
                 provider=result.metadata.provider,
                 elapsed_seconds=round(time.perf_counter() - batch_started, 3),
             )
-        log.info(
+        log.debug(
             "pipeline_stage_embed_done",
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )

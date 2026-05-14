@@ -1,6 +1,7 @@
+import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -17,6 +18,9 @@ class Settings(BaseSettings):
     environment: str = "local"
     api_bearer_token: SecretStr
     allow_mock_providers: bool = False
+
+    log_level: str = "INFO"
+    log_format: Literal["auto", "json", "console"] = "auto"
 
     database_url: str = "postgresql+psycopg://rag:rag@localhost:5432/rag"
     redis_url: str = "redis://localhost:6379/0"
@@ -72,6 +76,19 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return [str(item) for item in value]
         return []
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("LOG_LEVEL must be a string")
+        upper = value.strip().upper()
+        if upper not in logging.getLevelNamesMapping():
+            raise ValueError(
+                f"LOG_LEVEL={value!r} is not a recognized level. "
+                "Use one of: DEBUG, INFO, WARNING, ERROR, CRITICAL."
+            )
+        return upper
 
     @model_validator(mode="after")
     def validate_provider_secrets(self) -> Self:

@@ -56,7 +56,7 @@ def _on_task_prerun(
     kwargs: object = None,
     **_extras: object,
 ) -> None:
-    _log.info(
+    _log.debug(
         "task_prerun",
         task_id=task_id,
         task_name=getattr(task, "name", None),
@@ -74,7 +74,7 @@ def _on_task_postrun(
     state: str | None = None,
     **_extras: object,
 ) -> None:
-    _log.info(
+    _log.debug(
         "task_postrun",
         task_id=task_id,
         task_name=getattr(task, "name", None),

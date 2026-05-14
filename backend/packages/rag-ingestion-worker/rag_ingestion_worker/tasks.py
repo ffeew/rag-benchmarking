@@ -26,17 +26,17 @@ def ingest_document_task(self: object, *, document_id: str, job_id: str, force: 
     log = logger.bind(job_id=job_id, document_id=document_id, force=force)
     log.info("ingest_task_start")
     try:
-        log.info("ingest_task_commit_running_start")
+        log.debug("ingest_task_commit_running_start")
         commit_job_progress(
             job_id,
             status="running",
             progress=1,
             current_step="worker picked up",
         )
-        log.info("ingest_task_commit_running_done")
+        log.debug("ingest_task_commit_running_done")
         maker = get_sessionmaker()
         with maker() as session:
-            log.info("ingest_task_pipeline_start")
+            log.debug("ingest_task_pipeline_start")
             started = time.perf_counter()
             run = run_document_ingestion(
                 session,
@@ -44,13 +44,13 @@ def ingest_document_task(self: object, *, document_id: str, job_id: str, force: 
                 job_id=job_id,
                 force=force,
             )
-            log.info(
+            log.debug(
                 "ingest_task_pipeline_done",
                 run_id=run.id,
                 elapsed_seconds=round(time.perf_counter() - started, 3),
             )
             session.commit()
-            log.info("ingest_task_commit_done", run_id=run.id)
+            log.debug("ingest_task_commit_done", run_id=run.id)
             return run.id
     except Exception as exc:
         log.exception(
