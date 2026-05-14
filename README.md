@@ -1,0 +1,29 @@
+Tech Stack
+
+- openrouter
+- Pydantic AI
+- Docker + Docker Compose
+- Ruff
+- mypy
+- python 3.13
+- Postgres + pgvector
+- mistral ai + docling as fallback
+- pydantic secrets for env config validation
+- fastapi
+- pydantic evals
+- ragas/deepeval for testing
+- pytest
+- sqlachemy
+- alembic
+- minio
+- chonkie
+- celery
+- redis
+- react + vite
+- tailwind css
+- typescript
+- react-query
+- shadcn/ui
+- react hook form
+- zod
+- pnpm
