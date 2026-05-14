@@ -2,10 +2,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import structlog
+from rag_common.db import models
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from rag_benchmarking.db import models
 from rag_benchmarking.workers.dispatch import dispatch_job
 
 ACTIVE_INGESTION_JOB_STATUSES = frozenset({"queued", "running"})

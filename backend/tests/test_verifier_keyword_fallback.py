@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 from typing import cast
 
-from rag_benchmarking.retrieval.hybrid import RetrievedChunk
-from rag_benchmarking.retrieval.verification import keyword_verify_evidence
+from rag_retrieval.hybrid import RetrievedChunk
+from rag_retrieval.verification import keyword_verify_evidence
 
 
 def _chunk(chunk_id: str, text: str, *, semantic_rank: int | None = None) -> RetrievedChunk:

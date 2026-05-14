@@ -3,12 +3,14 @@ from types import SimpleNamespace, TracebackType
 from typing import Any, cast
 
 import pytest
+from rag_common import job_state
+from rag_common.db import models
+from rag_ingestion_worker import tasks
 from sqlalchemy.orm import Session
 
 from rag_benchmarking.api import serialization
-from rag_benchmarking.db import models
 from rag_benchmarking.ingestion import queueing
-from rag_benchmarking.workers import dispatch, job_state, sweeper, tasks
+from rag_benchmarking.workers import dispatch, sweeper
 
 
 class _FakeAsyncResult:
@@ -16,17 +18,22 @@ class _FakeAsyncResult:
         self.id = task_id
 
 
-class _FakeTask:
-    """Stand-in for a Celery task that records the kwargs it was sent and
-    optionally raises to simulate broker failure."""
+class _FakeBroker:
+    """Stand-in for the producer-side Celery app that records every
+    ``send_task`` call and optionally raises to simulate broker failure.
+
+    ``dispatch.dispatch_job`` publishes by task name through
+    ``celery_app.send_task`` (no local task import), so tests just need to
+    record the ``(name, kwargs, queue)`` tuple to verify routing.
+    """
 
     def __init__(self, task_id: str = "fake-task-id", *, should_fail: bool = False) -> None:
         self.task_id = task_id
         self.should_fail = should_fail
-        self.calls: list[dict[str, Any]] = []
+        self.sent: list[dict[str, Any]] = []
 
-    def apply_async(self, *, kwargs: dict[str, Any]) -> _FakeAsyncResult:
-        self.calls.append(kwargs)
+    def send_task(self, name: str, *, kwargs: dict[str, Any], queue: str) -> _FakeAsyncResult:
+        self.sent.append({"name": name, "kwargs": kwargs, "queue": queue})
         if self.should_fail:
             raise RuntimeError("broker down")
         return _FakeAsyncResult(self.task_id)
@@ -120,30 +127,42 @@ class _FakeWorkerSession:
 
 
 def test_dispatch_job_routes_ingestion(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeTask("ing-task")
-    monkeypatch.setattr(dispatch, "ingest_document_task", fake)
+    fake = _FakeBroker("ing-task")
+    monkeypatch.setattr(dispatch, "celery_app", fake)
     job = _make_job(metadata_={"force": True})
 
     task_id = dispatch.dispatch_job(job)
 
     assert task_id == "ing-task"
-    assert fake.calls == [{"document_id": "doc-1", "job_id": "job-1", "force": True}]
+    assert fake.sent == [
+        {
+            "name": "rag_benchmarking.ingest_document",
+            "kwargs": {"document_id": "doc-1", "job_id": "job-1", "force": True},
+            "queue": "ingestion",
+        }
+    ]
 
 
 def test_dispatch_job_routes_evaluation(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeTask("eval-task")
-    monkeypatch.setattr(dispatch, "run_evaluation_task", fake)
+    fake = _FakeBroker("eval-task")
+    monkeypatch.setattr(dispatch, "celery_app", fake)
     job = _make_job(job_type="evaluation", document_id=None, eval_run_id="run-7")
 
     task_id = dispatch.dispatch_job(job)
 
     assert task_id == "eval-task"
-    assert fake.calls == [{"eval_run_id": "run-7", "job_id": "job-1"}]
+    assert fake.sent == [
+        {
+            "name": "rag_benchmarking.run_evaluation",
+            "kwargs": {"eval_run_id": "run-7", "job_id": "job-1"},
+            "queue": "evaluation",
+        }
+    ]
 
 
 def test_dispatch_job_returns_none_on_broker_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeTask(should_fail=True)
-    monkeypatch.setattr(dispatch, "ingest_document_task", fake)
+    fake = _FakeBroker(should_fail=True)
+    monkeypatch.setattr(dispatch, "celery_app", fake)
 
     result = dispatch.dispatch_job(_make_job())
     assert result is None

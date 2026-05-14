@@ -1,5 +1,5 @@
-from rag_benchmarking.api.schemas import QueryFilters
-from rag_benchmarking.retrieval.planning import infer_query_plan
+from rag_common.schemas import QueryFilters
+from rag_retrieval.planning import infer_query_plan
 
 
 def test_plan_query_extracts_known_ticker_form_and_latest() -> None:

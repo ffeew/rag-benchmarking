@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, status
+from rag_common.db import models
+from rag_common.schemas import EvalRunRead, EvaluationCreate, EvaluationCreateResponse, Page
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
 from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
-from rag_benchmarking.api.schemas import EvalRunRead, EvaluationCreate, EvaluationCreateResponse, Page
 from rag_benchmarking.api.serialization import eval_run_to_read
-from rag_benchmarking.db import models
 from rag_benchmarking.workers.dispatch import dispatch_job
 
 router = APIRouter(tags=["evaluations"])

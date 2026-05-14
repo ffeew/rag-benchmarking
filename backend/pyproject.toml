@@ -4,11 +4,12 @@ version = "0.1.0"
 description = "SEC filings agentic RAG benchmark with FastAPI, Celery, pgvector, MinIO, and React."
 readme = "README.md"
 requires-python = ">=3.13"
+# The root package is the lean API + scheduler/migrate. Heavy ingestion deps
+# (docling/chonkie/pypdf/ragas/mistral) live exclusively in `rag-ingestion-worker`
+# so `uv sync --package rag-benchmarking` produces an image that never pulls them.
 dependencies = [
   "alembic>=1.16.0",
   "celery[redis]>=5.5.0",
-  "chonkie>=0.5.0",
-  "docling>=2.30.0",
   "fastapi[standard]>=0.115.0",
   "httpx>=0.28.0",
   "minio>=7.2.0",
@@ -16,15 +17,32 @@ dependencies = [
   "pgvector>=0.3.6",
   "psycopg[binary,pool]>=3.2.0",
   "pydantic>=2.11.0",
-  "pydantic-ai-slim[openai]>=1.96.0",
   "pydantic-settings>=2.10.0",
-  "pypdf>=5.5.0",
   "python-multipart>=0.0.20",
-  "ragas>=0.4.3",
+  "rag-common",
+  "rag-retrieval",
   "sqlalchemy>=2.0.40",
   "structlog>=25.2.0",
   "tenacity>=9.1.0",
 ]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+rag-common = { workspace = true }
+rag-retrieval = { workspace = true }
+rag-ingestion-worker = { workspace = true }
+rag-evaluation-worker = { workspace = true }
+# docling pulls torch + torchvision; force them off PyTorch's CPU-only index
+# so the multi-GB CUDA / nvidia wheels stay out of the ingestion-worker image.
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [
@@ -89,11 +107,15 @@ warn_unused_ignores = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "pgvector.*"]
+module = ["celery.*", "pgvector.*", "chonkie.*", "pypdf.*", "ragas.*", "docling.*", "docling_core.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["rag_benchmarking.workers.tasks", "rag_benchmarking.workers.sweeper"]
+module = [
+  "rag_ingestion_worker.tasks",
+  "rag_evaluation_worker.tasks",
+  "rag_benchmarking.workers.sweeper",
+]
 disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]

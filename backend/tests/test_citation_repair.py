@@ -3,11 +3,10 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-
-from rag_benchmarking.core.config import Settings
-from rag_benchmarking.retrieval import generation
-from rag_benchmarking.retrieval.generation import GeneratorOutput, generate_answer_with_agent
-from rag_benchmarking.retrieval.hybrid import RetrievedChunk
+from rag_common.config import Settings
+from rag_retrieval import generation
+from rag_retrieval.generation import GeneratorOutput, generate_answer_with_agent
+from rag_retrieval.hybrid import RetrievedChunk
 
 
 def _retrieved_chunk(chunk_id: str, ticker: str, text: str, page: int) -> RetrievedChunk:

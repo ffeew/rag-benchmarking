@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
+from rag_common.db import models
+from rag_common.schemas import DatasetCreate, DatasetRead, Page
 from sqlalchemy import select
 
 from rag_benchmarking.api.deps import AuthDep, DbSession
 from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
-from rag_benchmarking.api.schemas import DatasetCreate, DatasetRead, Page
 from rag_benchmarking.api.serialization import dataset_to_read
-from rag_benchmarking.db import models
 
 router = APIRouter(prefix="/v1/datasets", tags=["datasets"])
 

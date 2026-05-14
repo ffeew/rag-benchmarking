@@ -3,19 +3,19 @@ from tempfile import TemporaryDirectory
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from sqlalchemy import or_, select
-
-from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
-from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
-from rag_benchmarking.api.schemas import (
+from rag_common.db import models
+from rag_common.schemas import (
     DocumentRead,
     DocumentUploadResponse,
     Page,
     RegisterDocumentsResponse,
     RegisterLocalCorpusRequest,
 )
+from sqlalchemy import or_, select
+
+from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
+from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
 from rag_benchmarking.api.serialization import dataset_to_read, document_to_read
-from rag_benchmarking.db import models
 from rag_benchmarking.ingestion.documents import (
     register_local_corpus,
     register_pdf_path,

@@ -1,7 +1,5 @@
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
-
-from rag_benchmarking.api.schemas import (
+from rag_common.db import models
+from rag_common.schemas import (
     CitationRead,
     DatasetRead,
     DocumentRead,
@@ -9,7 +7,8 @@ from rag_benchmarking.api.schemas import (
     EvalRunRead,
     JobRead,
 )
-from rag_benchmarking.db import models
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 ACTIVE_INGESTION_JOB_STATUSES = frozenset({"queued", "running"})
 

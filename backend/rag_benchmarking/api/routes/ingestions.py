@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
+from rag_common.db import models
+from rag_common.schemas import IngestionCreate, IngestionCreateResponse
 from sqlalchemy import select
 
 from rag_benchmarking.api.deps import AuthDep, DbSession
-from rag_benchmarking.api.schemas import IngestionCreate, IngestionCreateResponse
-from rag_benchmarking.db import models
 from rag_benchmarking.ingestion.queueing import queue_ingestion_jobs
 
 router = APIRouter(tags=["ingestions"])

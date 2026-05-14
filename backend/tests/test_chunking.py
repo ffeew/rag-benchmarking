@@ -1,11 +1,11 @@
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
-from rag_benchmarking.ingestion.chunking import chunk_pages, markdown_table_count
+from rag_ingestion_worker.ingestion.chunking import chunk_pages, markdown_table_count
 
 if TYPE_CHECKING:
-    from rag_benchmarking.core.config import Settings
-    from rag_benchmarking.db.models import ParsedPage
+    from rag_common.config import Settings
+    from rag_common.db.models import ParsedPage
 
 
 def test_markdown_table_count_detects_table_blocks() -> None:

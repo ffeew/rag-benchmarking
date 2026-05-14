@@ -1,25 +1,36 @@
 import structlog
 from celery import Celery, signals
-
-from rag_benchmarking.core.config import get_settings
-from rag_benchmarking.core.logging import configure_logging
+from rag_common.config import get_settings
+from rag_common.constants import (
+    QUEUE_EVALUATION,
+    QUEUE_INGESTION,
+    QUEUE_MAINTENANCE,
+    TASK_INGEST_DOCUMENT,
+    TASK_RUN_EVALUATION,
+    TASK_SWEEP_STUCK_JOBS,
+)
+from rag_common.logging import configure_logging
 
 settings = get_settings()
 
+# This Celery instance is shared by:
+#   * the API + migrate images (producer-side: send_task, control.revoke).
+#   * the scheduler / maintenance-worker image (consumer-side: registers the
+#     sweeper task via `include`).
+# The ingestion/evaluation tasks live in the `rag-ingestion-worker` package
+# and are registered on a separate Celery app there — keeping them out of
+# `include` here is what lets the lean images skip the heavy worker deps.
 celery_app = Celery(
     "rag_benchmarking",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=[
-        "rag_benchmarking.workers.tasks",
-        "rag_benchmarking.workers.sweeper",
-    ],
+    include=["rag_benchmarking.workers.sweeper"],
 )
 
 celery_app.conf.task_routes = {
-    "rag_benchmarking.ingest_document": {"queue": "ingestion"},
-    "rag_benchmarking.run_evaluation": {"queue": "evaluation"},
-    "rag_benchmarking.sweep_stuck_jobs": {"queue": "maintenance"},
+    TASK_INGEST_DOCUMENT: {"queue": QUEUE_INGESTION},
+    TASK_RUN_EVALUATION: {"queue": QUEUE_EVALUATION},
+    TASK_SWEEP_STUCK_JOBS: {"queue": QUEUE_MAINTENANCE},
 }
 celery_app.conf.task_track_started = True
 
@@ -39,7 +50,7 @@ celery_app.conf.result_expires = 86400
 # (see the `beat` service in docker-compose.yml) for these to fire.
 celery_app.conf.beat_schedule = {
     "sweep-stuck-jobs": {
-        "task": "rag_benchmarking.sweep_stuck_jobs",
+        "task": TASK_SWEEP_STUCK_JOBS,
         "schedule": 60.0,
     },
 }

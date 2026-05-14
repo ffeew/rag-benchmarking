@@ -3,13 +3,13 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
+from rag_common.db import models
+from rag_common.schemas import JobRead, JobSweepResponse, Page
 from sqlalchemy import select
 
 from rag_benchmarking.api.deps import AuthDep, DbSession
 from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
-from rag_benchmarking.api.schemas import JobRead, JobSweepResponse, Page
 from rag_benchmarking.api.serialization import job_to_read
-from rag_benchmarking.db import models
 from rag_benchmarking.workers import sweeper
 from rag_benchmarking.workers.celery_app import celery_app
 from rag_benchmarking.workers.dispatch import dispatch_job

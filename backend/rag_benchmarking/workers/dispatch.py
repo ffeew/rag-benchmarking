@@ -1,15 +1,27 @@
-"""Dispatch a persisted Job row to its Celery task.
+"""Dispatch a persisted Job row to its Celery task by name.
 
 This indirection lets API routes, the retry endpoint, and the sweeper all
 hand off a Job through the same code path. Callers must persist (commit) the
 Job first, then call ``dispatch_job`` and write back the returned task id —
 the DB row is the source of truth.
+
+We deliberately publish by task NAME (``celery_app.send_task(...)``) rather
+than importing the task function: the producer (``rag_benchmarking``, run by
+the API/scheduler images) has no reason to import the worker's heavy
+ingestion / evaluation modules, so the by-name pattern is what keeps those
+images lean.
 """
 
 import structlog
+from rag_common.constants import (
+    QUEUE_EVALUATION,
+    QUEUE_INGESTION,
+    TASK_INGEST_DOCUMENT,
+    TASK_RUN_EVALUATION,
+)
+from rag_common.db import models
 
-from rag_benchmarking.db import models
-from rag_benchmarking.workers.tasks import ingest_document_task, run_evaluation_task
+from rag_benchmarking.workers.celery_app import celery_app
 
 logger = structlog.get_logger(__name__)
 
@@ -26,12 +38,14 @@ def dispatch_job(job: models.Job) -> str | None:
             raise ValueError(f"Ingestion job {job.id} is missing document_id")
         force = bool((job.metadata_ or {}).get("force", False))
         try:
-            result = ingest_document_task.apply_async(
+            result = celery_app.send_task(
+                TASK_INGEST_DOCUMENT,
                 kwargs={
                     "document_id": job.document_id,
                     "job_id": job.id,
                     "force": force,
-                }
+                },
+                queue=QUEUE_INGESTION,
             )
         except Exception as exc:  # noqa: BLE001 — broker failures must not abort caller
             logger.exception(
@@ -47,7 +61,7 @@ def dispatch_job(job: models.Job) -> str | None:
             job_id=job.id,
             job_type=job.job_type,
             celery_task_id=task_id,
-            queue="ingestion",
+            queue=QUEUE_INGESTION,
         )
         return task_id
 
@@ -55,7 +69,11 @@ def dispatch_job(job: models.Job) -> str | None:
         if not job.eval_run_id:
             raise ValueError(f"Evaluation job {job.id} is missing eval_run_id")
         try:
-            result = run_evaluation_task.apply_async(kwargs={"eval_run_id": job.eval_run_id, "job_id": job.id})
+            result = celery_app.send_task(
+                TASK_RUN_EVALUATION,
+                kwargs={"eval_run_id": job.eval_run_id, "job_id": job.id},
+                queue=QUEUE_EVALUATION,
+            )
         except Exception as exc:  # noqa: BLE001 — broker failures must not abort caller
             logger.exception(
                 "job_dispatch_failed",
@@ -70,7 +88,7 @@ def dispatch_job(job: models.Job) -> str | None:
             job_id=job.id,
             job_type=job.job_type,
             celery_task_id=task_id,
-            queue="evaluation",
+            queue=QUEUE_EVALUATION,
         )
         return task_id
 

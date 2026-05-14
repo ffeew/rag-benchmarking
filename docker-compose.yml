@@ -45,12 +45,15 @@ services:
       timeout: 5s
       retries: 5
 
+  # api / migrate / beat / maintenance-worker all share the lean Dockerfile,
+  # which installs only `rag-benchmarking` and its workspace deps — no docling,
+  # ragas, chonkie, pypdf, or mistral OCR client.
   migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile
     env_file: ./backend/.env
-    command: sh -c "pip install --quiet -e . && alembic upgrade head"
+    command: ["alembic", "upgrade", "head"]
     volumes:
       - ./backend:/app
     depends_on:
@@ -62,9 +65,14 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: ./backend/.env
-    command: >
-      sh -c "pip install --quiet -e . &&
-             uvicorn rag_benchmarking.main:app --host 0.0.0.0 --port 8000 --reload"
+    command:
+      [
+        "uvicorn",
+        "rag_benchmarking.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--reload",
+      ]
     ports:
       - "8000:8000"
     volumes:
@@ -79,17 +87,50 @@ services:
       minio:
         condition: service_healthy
 
-  worker:
+  # Ingestion worker: PDF + chunking deps only (pypdf, chonkie, mistral OCR).
+  # Consumes the ingestion queue.
+  ingestion-worker:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: packages/rag-ingestion-worker/Dockerfile
     env_file: ./backend/.env
-    command: >
-      sh -c "pip install --quiet -e . &&
-             celery -A rag_benchmarking.workers.celery_app:celery_app worker --loglevel=INFO -Q ingestion,evaluation"
+    command:
+      [
+        "celery",
+        "-A", "rag_ingestion_worker.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "-Q", "ingestion",
+      ]
     volumes:
       - ./backend:/app
       - ./sec_filings_pdf:/app/sec_filings_pdf:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Evaluation worker: RAGAS metric stack + rag-retrieval. Consumes the
+  # evaluation queue. Kept separate from ingestion-worker so neither image
+  # carries the other's heavy deps.
+  evaluation-worker:
+    build:
+      context: ./backend
+      dockerfile: packages/rag-evaluation-worker/Dockerfile
+    env_file: ./backend/.env
+    command:
+      [
+        "celery",
+        "-A", "rag_evaluation_worker.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "-Q", "evaluation",
+      ]
+    volumes:
+      - ./backend:/app
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -103,9 +144,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: ./backend/.env
-    command: >
-      sh -c "pip install --quiet -e . &&
-             celery -A rag_benchmarking.workers.celery_app:celery_app worker --loglevel=INFO -Q maintenance --concurrency=1"
+    command:
+      [
+        "celery",
+        "-A", "rag_benchmarking.workers.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "-Q", "maintenance",
+        "--concurrency=1",
+      ]
     volumes:
       - ./backend:/app
     depends_on:
@@ -119,9 +166,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: ./backend/.env
-    command: >
-      sh -c "pip install --quiet -e . &&
-             celery -A rag_benchmarking.workers.celery_app:celery_app beat --loglevel=INFO"
+    command:
+      [
+        "celery",
+        "-A", "rag_benchmarking.workers.celery_app:celery_app",
+        "beat",
+        "--loglevel=INFO",
+      ]
     volumes:
       - ./backend:/app
     depends_on:

@@ -16,11 +16,11 @@ from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 import structlog
+from rag_common.db import models
+from rag_common.db.session import get_sessionmaker
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from rag_benchmarking.db import models
-from rag_benchmarking.db.session import get_sessionmaker
 from rag_benchmarking.workers.celery_app import celery_app
 from rag_benchmarking.workers.dispatch import dispatch_job
 

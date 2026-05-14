@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
+from rag_common.schemas import QueryRequest, QueryResponse, TraceRead
+from rag_retrieval.query import read_trace, run_query
 
 from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
-from rag_benchmarking.api.schemas import QueryRequest, QueryResponse, TraceRead
 from rag_benchmarking.api.serialization import citation_to_read
-from rag_benchmarking.retrieval.query import read_trace, run_query
 
 router = APIRouter(tags=["query"])
 

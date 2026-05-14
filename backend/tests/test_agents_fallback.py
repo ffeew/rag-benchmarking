@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 from typing import cast
 
-from rag_benchmarking.api.schemas import QueryFilters
-from rag_benchmarking.core.config import Settings
-from rag_benchmarking.retrieval.planning import plan_query
-from rag_benchmarking.retrieval.verification import verify_evidence
+from rag_common.config import Settings
+from rag_common.schemas import QueryFilters
+from rag_retrieval.planning import plan_query
+from rag_retrieval.verification import verify_evidence
 
 
 def _mock_settings() -> Settings:

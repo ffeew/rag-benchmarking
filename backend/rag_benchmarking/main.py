@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from rag_common.config import get_settings
+from rag_common.logging import configure_logging
 
 from rag_benchmarking.api.routes import (
     datasets,
@@ -14,8 +16,6 @@ from rag_benchmarking.api.routes import (
     jobs,
     query,
 )
-from rag_benchmarking.core.config import get_settings
-from rag_benchmarking.core.logging import configure_logging
 
 configure_logging()
 

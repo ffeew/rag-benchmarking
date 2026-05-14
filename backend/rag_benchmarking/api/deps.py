@@ -3,10 +3,9 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from rag_common.config import Settings, get_settings
+from rag_common.db.session import get_sessionmaker
 from sqlalchemy.orm import Session
-
-from rag_benchmarking.core.config import Settings, get_settings
-from rag_benchmarking.db.session import get_sessionmaker
 
 security = HTTPBearer(auto_error=False)
 
