@@ -7,6 +7,14 @@ at task completion, and a worker crash would silently roll back every
 heartbeat. Both helpers below commit on a fresh transaction so heartbeats
 and failure markers survive independently of the main pipeline session.
 
+Row lock is ``FOR KEY SHARE`` rather than ``FOR UPDATE``: the main session
+inserts an ``ingestion_runs`` row with an FK to ``jobs``, which acquires
+``FOR KEY SHARE`` on the parent. ``FOR UPDATE`` in the helper's separate
+session would block on that FK lock — and Postgres cannot break the wait,
+because the main session is suspended in user code waiting for the helper
+to return. ``FOR KEY SHARE`` is compatible with the FK lock and still
+serializes the read-then-write against any actor stronger than us.
+
 Lives in its own module to avoid a circular import between
 ``rag_benchmarking.workers.tasks`` and ``rag_benchmarking.ingestion.pipeline``.
 """
@@ -48,7 +56,7 @@ def commit_job_progress(
     maker = get_sessionmaker()
     try:
         with maker() as session:
-            job = session.get(models.Job, job_id, with_for_update=True)
+            job = session.get(models.Job, job_id, with_for_update={"key_share": True})
             if job is None:
                 log.warning("commit_job_progress_job_missing")
                 return
@@ -89,7 +97,7 @@ def record_job_failure(job_id: str, error: str) -> None:
     maker = get_sessionmaker()
     try:
         with maker() as session:
-            job = session.get(models.Job, job_id, with_for_update=True)
+            job = session.get(models.Job, job_id, with_for_update={"key_share": True})
             if job is None:
                 log.warning("record_job_failure_job_missing")
                 return
