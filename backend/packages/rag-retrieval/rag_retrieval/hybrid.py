@@ -5,6 +5,7 @@ from rag_common.config import Settings, get_settings
 from rag_common.db import models
 from rag_common.providers.openrouter import OpenRouterClient, ProviderError
 from rag_common.schemas import QueryFilters
+from rag_common.usage import TokenUsage, from_openrouter_usage
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -121,12 +122,18 @@ def hybrid_retrieve(
     plan: RetrievalPlan,
     top_k: int,
     settings: Settings | None = None,
-) -> tuple[list[RetrievedChunk], dict[str, Any]]:
+) -> tuple[list[RetrievedChunk], dict[str, Any], TokenUsage, TokenUsage]:
     resolved = settings or get_settings()
     provider = OpenRouterClient(resolved)
     embedding_model = resolved.openrouter_embedding_model or "mock-embedding"
     embedding_result = provider.embeddings([question], model=embedding_model)
     query_vector = embedding_result.vectors[0]
+    embedding_usage = from_openrouter_usage(
+        embedding_result.metadata.usage,
+        provider=embedding_result.metadata.provider,
+        model=embedding_result.metadata.model,
+    )
+    rerank_usage = TokenUsage()
 
     distance = models.Embedding.vector.cosine_distance(query_vector).label("distance")
     semantic_statement = (
@@ -173,6 +180,11 @@ def hybrid_retrieve(
         try:
             candidates = fused[: resolved.rerank_candidates]
             rerank = provider.rerank(query=question, documents=[item.chunk.text for item in candidates])
+            rerank_usage = from_openrouter_usage(
+                rerank.metadata.usage,
+                provider=rerank.metadata.provider,
+                model=rerank.metadata.model,
+            )
             by_index = dict(enumerate(candidates))
             reranked: list[RetrievedChunk] = []
             for index, score in zip(rerank.ranked_indices, rerank.scores, strict=False):
@@ -201,4 +213,4 @@ def hybrid_retrieve(
         except ProviderError as exc:
             trace["rerank_degraded"] = True
             trace["rerank_error"] = str(exc)
-    return fused[:top_k], trace
+    return fused[:top_k], trace, embedding_usage, rerank_usage

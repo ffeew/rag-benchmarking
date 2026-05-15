@@ -33,6 +33,21 @@ export const documentSchema = z.object({
   created_at: z.string(),
 })
 
+export const documentExtractedSchema = z.object({
+  document_id: z.string(),
+  ingestion_run_id: z.string(),
+  pages: z.array(
+    z.object({
+      page_number: z.number(),
+      text: z.string(),
+      text_char_count: z.number(),
+      table_count: z.number(),
+    }),
+  ),
+})
+
+export type DocumentExtracted = z.output<typeof documentExtractedSchema>
+
 export const jobSchema = z.object({
   id: z.string(),
   job_type: z.string(),
@@ -126,6 +141,9 @@ export const evalResultSchema = z.object({
   trace_id: z.string().nullable(),
   metrics: z.record(z.string(), z.unknown()),
   error: z.string().nullable(),
+  usage: z.record(z.string(), z.unknown()).nullable().optional(),
+  cost_estimate: z.record(z.string(), z.unknown()).nullable().optional(),
+  latency_ms: z.number().nullable().optional(),
 })
 
 export const evalRunSchema = z.object({
@@ -145,11 +163,15 @@ export const evalRunSchema = z.object({
 export const evalCaseSchema = z.object({
   id: z.string(),
   dataset_id: z.string().nullable(),
+  case_key: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  difficulty: z.string().nullable().optional(),
   question: z.string(),
   expected_answer: z.string().nullable(),
   expected_citations: z.array(z.record(z.string(), z.unknown())),
   tags: z.array(z.string()),
   created_at: z.string(),
+  updated_at: z.string().optional(),
 })
 
 export const ingestionRunSchema = z.object({
@@ -456,6 +478,30 @@ export const api = {
   async deleteDocument(token: string, documentId: string) {
     await apiFetch(`/v1/documents/${documentId}`, { token, method: 'DELETE' })
   },
+  documentFileUrl(documentId: string) {
+    return `${API_BASE_URL}/v1/documents/${documentId}/file`
+  },
+  async documentFileBlob(token: string, documentId: string) {
+    const response = await fetch(this.documentFileUrl(documentId), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`
+      try {
+        const text = await response.text()
+        if (text) message = text
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message)
+    }
+    return response.blob()
+  },
+  async documentExtracted(token: string, documentId: string) {
+    return documentExtractedSchema.parse(
+      await apiFetch(`/v1/documents/${documentId}/extracted`, { token }),
+    )
+  },
   /* ingestion */
   async ingest(
     token: string,
@@ -585,25 +631,70 @@ export const api = {
     )
   },
   /* eval cases */
-  async evalCases(token: string, datasetId?: string) {
-    return z.array(evalCaseSchema).parse(
+  async evalCases(
+    token: string,
+    params: PageParams & {
+      dataset_id?: string
+      category?: string
+      difficulty?: string
+      tag?: string
+    } = {},
+  ) {
+    return pageSchema(evalCaseSchema).parse(
       await apiFetch('/v1/eval-cases', {
         token,
-        searchParams: { dataset_id: datasetId },
+        searchParams: {
+          dataset_id: params.dataset_id,
+          category: params.category,
+          difficulty: params.difficulty,
+          tag: params.tag,
+          limit: params.limit ?? 50,
+          offset: params.offset ?? 0,
+        },
       }),
+    )
+  },
+  async evalCase(token: string, id: string) {
+    return evalCaseSchema.parse(
+      await apiFetch(`/v1/eval-cases/${id}`, { token }),
     )
   },
   async createEvalCase(
     token: string,
     body: {
-      dataset_id?: string
+      dataset_id: string
+      case_key?: string
+      category?: string
+      difficulty?: string
       question: string
-      expected_answer?: string
+      expected_answer?: string | null
+      expected_citations?: Array<Record<string, unknown>>
       tags?: Array<string>
     },
   ) {
     return evalCaseSchema.parse(
       await apiFetch('/v1/eval-cases', { token, method: 'POST', body }),
+    )
+  },
+  async patchEvalCase(
+    token: string,
+    id: string,
+    body: {
+      case_key?: string | null
+      category?: string | null
+      difficulty?: string | null
+      question?: string
+      expected_answer?: string | null
+      expected_citations?: Array<Record<string, unknown>>
+      tags?: Array<string>
+    },
+  ) {
+    return evalCaseSchema.parse(
+      await apiFetch(`/v1/eval-cases/${id}`, {
+        token,
+        method: 'PATCH',
+        body,
+      }),
     )
   },
   async deleteEvalCase(token: string, id: string) {

@@ -1,0 +1,49 @@
+# Production overlay for docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+#
+# Key differences from the default dev compose:
+# - Frontend is built via the `publisher` stage and dropped into the named volume
+#   `frontend-dist`. The container exits after copying; FastAPI serves the SPA.
+# - The api service mounts `frontend-dist` instead of `./frontend/dist` and runs
+#   uvicorn without --reload.
+# - Frontend service does not expose any host port (FastAPI fronts everything).
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: publisher
+    command: sh -c "rm -rf /publish/* && cp -a /dist/. /publish/ && echo 'SPA published'"
+    volumes:
+      - frontend-dist:/publish
+    ports: []
+    depends_on: []
+    restart: "no"
+
+  api:
+    command:
+      [
+        "uvicorn",
+        "rag_benchmarking.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8000",
+      ]
+    volumes:
+      - ./backend:/app
+      - ./sec_filings_pdf:/app/sec_filings_pdf:ro
+      - frontend-dist:/app/frontend/dist:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      frontend:
+        condition: service_completed_successfully
+
+volumes:
+  frontend-dist:

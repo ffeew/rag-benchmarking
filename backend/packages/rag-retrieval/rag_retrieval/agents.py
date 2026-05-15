@@ -11,6 +11,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import ProviderError
+from rag_common.usage import TokenUsage
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -74,23 +75,28 @@ def build_judge_model(settings: Settings | None = None) -> Model:
 
 
 def run_with_fallback[T](
-    agent_call: Callable[[], T],
+    agent_call: Callable[[], tuple[T, TokenUsage]],
     fallback: Callable[[], T],
     *,
     label: str,
-) -> tuple[T, bool, str | None]:
+) -> tuple[T, bool, str | None, TokenUsage]:
     """Run an agent call, falling back to a deterministic implementation on failure.
 
-    Returns ``(result, used_agent, error_message)``. ``used_agent`` is ``True`` only
-    when the agent call returned successfully; any caught exception triggers the
+    The agent path must return its result paired with the token usage observed for
+    that call so callers can roll usage into the trace. Fallbacks are deterministic
+    and produce no usage.
+
+    Returns ``(result, used_agent, error_message, usage)``. ``used_agent`` is ``True``
+    only when the agent call returned successfully; any caught exception triggers the
     fallback and the error string is returned for trace persistence.
     """
     try:
-        return agent_call(), True, None
+        result, usage = agent_call()
+        return result, True, None, usage
     except _AGENT_RETRYABLE_ERRORS as exc:
         message = f"{type(exc).__name__}: {exc}"
         logger.warning("agent_fallback", extra={"label": label, "error": message})
-        return fallback(), False, message
+        return fallback(), False, message, TokenUsage()
 
 
 def build_agent[T](

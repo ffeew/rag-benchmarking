@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { BarChart3, Scale } from 'lucide-react'
+import { BarChart3, ClipboardList, Scale } from 'lucide-react'
 import { useState } from 'react'
 
 import { Badge, toneForStatus } from '#/components/ui/badge'
@@ -62,6 +62,16 @@ function EvaluationsList() {
           title="EVALUATION RUNS"
           actions={
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                asChild
+                leading={<ClipboardList className="h-3.5 w-3.5" />}
+              >
+                <Link {...paths.datasetEvalCases(datasetId)}>
+                  Eval cases
+                </Link>
+              </Button>
               {selected.size > 0 && (
                 <Button
                   size="sm"

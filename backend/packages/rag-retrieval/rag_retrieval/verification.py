@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from rag_common.config import Settings, get_settings
+from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
 from rag_retrieval.agents import (
     agent_available,
@@ -206,7 +207,7 @@ def verify_evidence(
     question: str,
     retrieved: list[RetrievedChunk],
     settings: Settings | None = None,
-) -> tuple[VerificationResult, dict[str, Any]]:
+) -> tuple[VerificationResult, dict[str, Any], TokenUsage]:
     resolved = settings or get_settings()
     metadata: dict[str, Any] = {"agent_used": False, "model": None, "error": None}
 
@@ -214,18 +215,23 @@ def verify_evidence(
         result = keyword_verify_evidence(question, retrieved)
         metadata["model"] = resolved.openrouter_chat_model
         metadata["fallback_reason"] = "no_retrieved_evidence" if not retrieved else "agent_unavailable"
-        return result, metadata
+        return result, metadata, TokenUsage()
 
-    def run_agent() -> VerificationResult:
+    def run_agent() -> tuple[VerificationResult, TokenUsage]:
         agent = _verifier_agent(resolved)
         result = agent.run_sync(_build_verifier_prompt(question, retrieved))
-        return _normalize_verifier_output(result.output, retrieved)
+        usage = safe_pydantic_ai_usage(
+            result,
+            provider="openrouter",
+            model=resolved.openrouter_chat_model,
+        )
+        return _normalize_verifier_output(result.output, retrieved), usage
 
     def fallback() -> VerificationResult:
         return keyword_verify_evidence(question, retrieved)
 
-    result, used_agent, error = run_with_fallback(run_agent, fallback, label="verifier")
+    result, used_agent, error, usage = run_with_fallback(run_agent, fallback, label="verifier")
     metadata["agent_used"] = used_agent
     metadata["model"] = resolved.openrouter_chat_model
     metadata["error"] = error
-    return result, metadata
+    return result, metadata, usage

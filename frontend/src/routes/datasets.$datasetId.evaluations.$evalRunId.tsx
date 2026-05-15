@@ -58,6 +58,36 @@ function EvalDetail() {
   ) as Array<[string, number]>
   const isRunning = !isTerminalJobStatus(run.status)
 
+  type ModeMetrics = Record<string, unknown>
+  const modes = Object.entries(run.metrics).filter(
+    ([key, value]) =>
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value) &&
+      key !== 'ragas_run',
+  ) as Array<[string, ModeMetrics]>
+
+  function numericMetric(modeData: ModeMetrics, key: string): number | null {
+    const v = modeData[key]
+    return typeof v === 'number' ? v : null
+  }
+
+  function formatNumericMetric(value: number | null): string {
+    if (value === null) return '—'
+    if (value >= 0 && value <= 1) return formatPercent(value)
+    return value.toFixed(2)
+  }
+
+  function formatMs(value: number | null): string {
+    if (value === null) return '—'
+    return `${Math.round(value)} ms`
+  }
+
+  function formatUsd(value: number | null): string {
+    if (value === null) return '—'
+    return `$${value.toFixed(4)}`
+  }
+
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-6 grid gap-5">
       <div>
@@ -108,6 +138,116 @@ function EvalDetail() {
                 size="md"
               />
             </div>
+          ))}
+        </section>
+      )}
+
+      {modes.length > 0 && (
+        <section className="grid gap-4">
+          {modes.map(([mode, modeData]) => (
+            <Card key={mode}>
+              <CardHeader
+                title={
+                  <span className="font-mono text-[12px] uppercase tracking-wide text-[var(--ink)]">
+                    {mode.replace(/_/g, ' ')}
+                  </span>
+                }
+              />
+              <CardBody>
+                <div className="grid gap-3">
+                  <div>
+                    <div className="mono-label text-[var(--ink-muted)] mb-2">
+                      RETRIEVER
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                      <MetricNumber
+                        label="RECALL@5"
+                        value={formatNumericMetric(numericMetric(modeData, 'avg_recall_at_5'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="RECALL@10"
+                        value={formatNumericMetric(numericMetric(modeData, 'avg_recall_at_10'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="MRR"
+                        value={formatNumericMetric(numericMetric(modeData, 'avg_mrr'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="PAGE F1"
+                        value={formatNumericMetric(numericMetric(modeData, 'avg_page_evidence_f1'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="FILTER OK"
+                        value={formatNumericMetric(numericMetric(modeData, 'metadata_filter_correctness_rate'))}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mono-label text-[var(--ink-muted)] mb-2">
+                      CITATIONS
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <MetricNumber
+                        label="VALIDITY"
+                        value={formatNumericMetric(numericMetric(modeData, 'citation_validity_rate'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="COVERAGE"
+                        value={formatNumericMetric(numericMetric(modeData, 'citation_coverage_rate'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="PAGE HIT"
+                        value={formatNumericMetric(numericMetric(modeData, 'citation_page_hit_rate'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="INSUFFICIENT"
+                        value={formatNumericMetric(numericMetric(modeData, 'insufficient_rate'))}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mono-label text-[var(--ink-muted)] mb-2">
+                      COST &amp; LATENCY
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <MetricNumber
+                        label="AVG LATENCY"
+                        value={formatMs(numericMetric(modeData, 'avg_latency_ms'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="TOTAL TOKENS"
+                        value={
+                          numericMetric(modeData, 'total_tokens') === null
+                            ? '—'
+                            : (numericMetric(modeData, 'total_tokens') as number).toLocaleString()
+                        }
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="TOTAL COST"
+                        value={formatUsd(numericMetric(modeData, 'total_cost_usd'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="COST / CASE"
+                        value={formatUsd(numericMetric(modeData, 'cost_per_case_usd'))}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
           ))}
         </section>
       )}

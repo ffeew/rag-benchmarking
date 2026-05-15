@@ -37,6 +37,8 @@ export const qk = {
   },
   documents: {
     detail: (id: string) => ['documents', id] as const,
+    file: (id: string) => ['documents', id, 'file'] as const,
+    extracted: (id: string) => ['documents', id, 'extracted'] as const,
   },
   jobs: {
     all: () => ['jobs'] as const,
@@ -60,6 +62,17 @@ export const qk = {
     detail: (id: string) => ['evaluations', 'detail', id] as const,
   },
   evalCases: {
-    list: (datasetId?: string) => ['eval-cases', datasetId ?? 'all'] as const,
+    all: () => ['eval-cases'] as const,
+    list: (
+      params: {
+        datasetId?: string
+        category?: string
+        difficulty?: string
+        tag?: string
+        limit?: number
+        offset?: number
+      } = {},
+    ) => ['eval-cases', 'list', params] as const,
+    detail: (id: string) => ['eval-cases', 'detail', id] as const,
   },
 } as const

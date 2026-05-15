@@ -8,6 +8,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   CheckSquare,
   Database,
+  FileSearch,
+  FileText,
+  MoreHorizontal,
   Play,
   RefreshCcw,
   Square,
@@ -18,6 +21,12 @@ import { useEffect, useState } from 'react'
 import { Badge, toneForStatus } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardBody, CardHeader } from '#/components/ui/card'
+import {
+  DropdownContent,
+  DropdownItem,
+  DropdownMenu,
+  DropdownTrigger,
+} from '#/components/ui/dropdown'
 import { Input, Select } from '#/components/ui/input'
 import { Pagination } from '#/components/ui/pagination'
 import { Skeleton } from '#/components/ui/skeleton'
@@ -324,6 +333,7 @@ function DocumentsPage() {
                   <TH>STATUS</TH>
                   <TH>SIZE</TH>
                   <TH>OBJECT</TH>
+                  <TH className="w-8" />
                 </tr>
               </THead>
               <TBody>
@@ -387,6 +397,12 @@ function DocumentsPage() {
                       <TD className="max-w-[280px] truncate font-mono text-[10.5px] text-[var(--ink-muted)]">
                         {d.minio_key}
                       </TD>
+                      <TD onClick={(e) => e.stopPropagation()}>
+                        <DocumentRowMenu
+                          datasetId={datasetId}
+                          documentId={d.id}
+                        />
+                      </TD>
                     </TR>
                   )
                 })}
@@ -414,5 +430,43 @@ function DocumentsPage() {
         }}
       />
     </div>
+  )
+}
+
+function DocumentRowMenu({
+  datasetId,
+  documentId,
+}: {
+  datasetId: string
+  documentId: string
+}) {
+  function openInNewTab(suffix: 'original' | 'extracted') {
+    const href = `/datasets/${datasetId}/documents/${documentId}/${suffix}`
+    // Same-origin window.open lets the new tab inherit sessionStorage so
+    // the bearer token survives the navigation. Omit `noopener`.
+    window.open(href, '_blank')
+  }
+  return (
+    <DropdownMenu>
+      <DropdownTrigger asChild>
+        <button
+          type="button"
+          aria-label="Open document menu"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-[3px] text-[var(--ink-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
+      </DropdownTrigger>
+      <DropdownContent>
+        <DropdownItem onSelect={() => openInNewTab('original')}>
+          <FileText className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
+          View original document
+        </DropdownItem>
+        <DropdownItem onSelect={() => openInNewTab('extracted')}>
+          <FileSearch className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
+          View extracted document
+        </DropdownItem>
+      </DropdownContent>
+    </DropdownMenu>
   )
 }

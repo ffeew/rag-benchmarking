@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import OpenRouterClient, ProviderError
+from rag_common.usage import TokenUsage, from_openrouter_usage, merge, safe_pydantic_ai_usage
 
 from rag_retrieval.agents import (
     agent_available,
@@ -232,9 +233,9 @@ def generate_answer_with_agent(
     evidence: list[RetrievedChunk],
     plan: RetrievalPlan | None,
     settings: Settings,
-) -> AnswerDraft:
+) -> tuple[AnswerDraft, TokenUsage]:
     if not evidence:
-        return local_grounded_answer(question, [])
+        return local_grounded_answer(question, []), TokenUsage()
 
     evidence_text, tag_to_item = _build_evidence_context(evidence)
     valid_tags = list(tag_to_item.keys())
@@ -251,13 +252,19 @@ def generate_answer_with_agent(
         first = agent.run_sync(prompt)
     except Exception as exc:  # noqa: BLE001 - all failures fall back
         logger.warning("generator_first_pass_failed", extra={"error": str(exc)})
-        return local_grounded_answer(
-            question,
-            evidence,
-            insufficiency_reason="Generator agent failed; using extractive fallback.",
-            generator="local-extractive-after-agent-error",
+        return (
+            local_grounded_answer(
+                question,
+                evidence,
+                insufficiency_reason="Generator agent failed; using extractive fallback.",
+                generator="local-extractive-after-agent-error",
+            ),
+            TokenUsage(),
         )
 
+    accumulated_usage = safe_pydantic_ai_usage(
+        first, provider="openrouter", model=settings.openrouter_chat_model
+    )
     ok, invalid_tags = _validate_citations(first.output, set(valid_tags))
     citation_validation = "passed"
     repair_used = False
@@ -278,6 +285,12 @@ def generate_answer_with_agent(
         )
         try:
             second = agent.run_sync(repair_prompt)
+            accumulated_usage = merge(
+                accumulated_usage,
+                safe_pydantic_ai_usage(
+                    second, provider="openrouter", model=settings.openrouter_chat_model
+                ),
+            )
             second_ok, _ = _validate_citations(second.output, set(valid_tags))
             if second_ok:
                 citation_validation = "repaired"
@@ -289,11 +302,14 @@ def generate_answer_with_agent(
             citation_validation = "failed"
 
     if citation_validation == "failed":
-        return local_grounded_answer(
-            question,
-            evidence,
-            insufficiency_reason=("Generator citations could not be verified after one repair attempt."),
-            generator="local-extractive-after-citation-repair-failed",
+        return (
+            local_grounded_answer(
+                question,
+                evidence,
+                insufficiency_reason=("Generator citations could not be verified after one repair attempt."),
+                generator="local-extractive-after-citation-repair-failed",
+            ),
+            accumulated_usage,
         )
 
     rendered = _replace_tags_with_labels(final_output.answer, tag_to_item)
@@ -307,15 +323,18 @@ def generate_answer_with_agent(
         "citations_used": final_output.citations_used,
         "evidence_tag_count": len(valid_tags),
     }
-    return AnswerDraft(
-        answer=rendered,
-        confidence=confidence,
-        insufficiency_reason=final_output.insufficiency_reason,
-        metadata=metadata,
+    return (
+        AnswerDraft(
+            answer=rendered,
+            confidence=confidence,
+            insufficiency_reason=final_output.insufficiency_reason,
+            metadata=metadata,
+        ),
+        accumulated_usage,
     )
 
 
-def _llm_only_answer(question: str, settings: Settings) -> AnswerDraft:
+def _llm_only_answer(question: str, settings: Settings) -> tuple[AnswerDraft, TokenUsage]:
     provider = OpenRouterClient(settings)
     try:
         result = provider.chat(
@@ -327,22 +346,33 @@ def _llm_only_answer(question: str, settings: Settings) -> AnswerDraft:
                 {"role": "user", "content": question},
             ]
         )
-        return AnswerDraft(
-            answer=result.content,
-            confidence=0.2,
-            insufficiency_reason="LLM-only ablation used no retrieved filing evidence.",
-            metadata={
-                "generator": result.metadata.provider,
-                "model": result.metadata.model,
-                "usage": result.metadata.usage,
-            },
+        usage = from_openrouter_usage(
+            result.metadata.usage,
+            provider=result.metadata.provider,
+            model=result.metadata.model,
+        )
+        return (
+            AnswerDraft(
+                answer=result.content,
+                confidence=0.2,
+                insufficiency_reason="LLM-only ablation used no retrieved filing evidence.",
+                metadata={
+                    "generator": result.metadata.provider,
+                    "model": result.metadata.model,
+                    "usage": result.metadata.usage,
+                },
+            ),
+            usage,
         )
     except ProviderError:
-        return AnswerDraft(
-            answer="LLM-only ablation could not be run because the chat provider is unavailable.",
-            confidence=0.0,
-            insufficiency_reason="Chat provider unavailable.",
-            metadata={"generator": "provider-error"},
+        return (
+            AnswerDraft(
+                answer="LLM-only ablation could not be run because the chat provider is unavailable.",
+                confidence=0.0,
+                insufficiency_reason="Chat provider unavailable.",
+                metadata={"generator": "provider-error"},
+            ),
+            TokenUsage(),
         )
 
 
@@ -353,19 +383,22 @@ def generate_answer(
     retrieval_mode: str,
     plan: RetrievalPlan | None = None,
     settings: Settings | None = None,
-) -> AnswerDraft:
+) -> tuple[AnswerDraft, TokenUsage]:
     resolved = settings or get_settings()
     if retrieval_mode == "llm_only":
         return _llm_only_answer(question, resolved)
 
     if not evidence:
-        return local_grounded_answer(question, [])
+        return local_grounded_answer(question, []), TokenUsage()
 
     if not agent_available(resolved):
-        return local_grounded_answer(
-            question,
-            evidence,
-            generator="local-extractive-mock-provider",
+        return (
+            local_grounded_answer(
+                question,
+                evidence,
+                generator="local-extractive-mock-provider",
+            ),
+            TokenUsage(),
         )
 
     try:
@@ -377,9 +410,12 @@ def generate_answer(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("generator_unexpected_error", extra={"error": str(exc)})
-        return local_grounded_answer(
-            question,
-            evidence,
-            insufficiency_reason="Generator agent raised an unexpected error.",
-            generator="local-extractive-after-unexpected-error",
+        return (
+            local_grounded_answer(
+                question,
+                evidence,
+                insufficiency_reason="Generator agent raised an unexpected error.",
+                generator="local-extractive-after-unexpected-error",
+            ),
+            TokenUsage(),
         )

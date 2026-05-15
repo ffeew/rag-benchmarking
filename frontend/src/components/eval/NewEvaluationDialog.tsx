@@ -41,8 +41,12 @@ export function NewEvaluationDialog({ datasetId }: { datasetId: string }) {
   const [selectedCaseIds, setSelectedCaseIds] = useState<Array<string>>([])
 
   const casesQuery = useQuery({
-    queryKey: qk.evalCases.list(datasetId),
-    queryFn: () => api.evalCases(token, datasetId).catch(() => []),
+    queryKey: qk.evalCases.list({ datasetId, limit: 200 }),
+    queryFn: () =>
+      api
+        .evalCases(token, { dataset_id: datasetId, limit: 200 })
+        .then((page) => page.items)
+        .catch(() => []),
     enabled: open && tab === 'library',
   })
 

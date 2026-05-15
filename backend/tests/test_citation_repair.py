@@ -67,12 +67,13 @@ def test_citation_repair_recovers_invalid_first_response(monkeypatch: pytest.Mon
         lambda settings: SimpleNamespace(run_sync=fake_run_sync),  # noqa: ARG005
     )
 
-    answer = generate_answer_with_agent(
+    answer, usage = generate_answer_with_agent(
         question="What was Apple's revenue?",
         evidence=evidence,
         plan=None,
         settings=_settings(),
     )
+    assert usage.is_empty()
 
     assert calls["count"] == 2
     assert answer.metadata["citation_validation"] == "repaired"
@@ -100,12 +101,13 @@ def test_citation_validation_passes_on_first_try(monkeypatch: pytest.MonkeyPatch
         lambda settings: SimpleNamespace(run_sync=fake_run_sync),  # noqa: ARG005
     )
 
-    answer = generate_answer_with_agent(
+    answer, usage = generate_answer_with_agent(
         question="What was Apple's revenue?",
         evidence=evidence,
         plan=None,
         settings=_settings(),
     )
+    assert usage.is_empty()
 
     assert answer.metadata["citation_validation"] == "passed"
     assert answer.metadata["repair_used"] is False
@@ -131,12 +133,13 @@ def test_citation_failure_after_repair_falls_back_to_extractive(monkeypatch: pyt
         lambda settings: SimpleNamespace(run_sync=fake_run_sync),  # noqa: ARG005
     )
 
-    answer = generate_answer_with_agent(
+    answer, usage = generate_answer_with_agent(
         question="What was Apple's revenue?",
         evidence=evidence,
         plan=None,
         settings=_settings(),
     )
+    assert usage.is_empty()
 
     assert answer.insufficiency_reason is not None
     assert "citations could not be verified" in answer.insufficiency_reason

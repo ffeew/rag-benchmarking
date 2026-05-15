@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +10,7 @@ from rag_common.logging import configure_logging
 from rag_benchmarking.api.routes import (
     datasets,
     documents,
+    eval_cases,
     evaluations,
     health,
     ingestions,
@@ -42,6 +43,10 @@ app.include_router(ingestions.router)
 app.include_router(jobs.router)
 app.include_router(query.router)
 app.include_router(evaluations.router)
+app.include_router(eval_cases.router)
+
+
+_API_PATH_PREFIXES: tuple[str, ...] = ("v1/", "health", "ready", "docs", "redoc", "openapi.json")
 
 
 frontend_path = Path(settings.frontend_dist_path)
@@ -52,6 +57,11 @@ if frontend_path.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str) -> FileResponse:
+        # Guard: never serve the SPA HTML in response to unmatched API requests. This
+        # prevents a future router-registration regression from silently swallowing
+        # missing /v1/* endpoints as 200 HTML.
+        if full_path.startswith(_API_PATH_PREFIXES):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
         requested = frontend_path / full_path
         if requested.exists() and requested.is_file():
             return FileResponse(requested)

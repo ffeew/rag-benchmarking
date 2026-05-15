@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
+from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 from sqlalchemy import select
 
 from rag_retrieval.agents import (
@@ -284,7 +285,7 @@ def plan_query(
     question: str,
     filters: QueryFilters,
     settings: Settings | None = None,
-) -> tuple[RetrievalPlan, dict[str, object]]:
+) -> tuple[RetrievalPlan, dict[str, object], TokenUsage]:
     resolved = settings or get_settings()
     known_tickers = {
         ticker
@@ -300,9 +301,9 @@ def plan_query(
         plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
         metadata["model"] = resolved.openrouter_chat_model
         metadata["fallback_reason"] = "agent_unavailable"
-        return plan, metadata
+        return plan, metadata, TokenUsage()
 
-    def run_agent() -> RetrievalPlan:
+    def run_agent() -> tuple[RetrievalPlan, TokenUsage]:
         agent = _planner_agent(resolved)
         prompt = _build_planner_prompt(
             question=question,
@@ -311,13 +312,18 @@ def plan_query(
             today=today,
         )
         result = agent.run_sync(prompt)
-        return _normalize_planner_output(result.output, known_tickers, filters)
+        usage = safe_pydantic_ai_usage(
+            result,
+            provider="openrouter",
+            model=resolved.openrouter_chat_model,
+        )
+        return _normalize_planner_output(result.output, known_tickers, filters), usage
 
     def fallback() -> RetrievalPlan:
         return infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
 
-    plan, used_agent, error = run_with_fallback(run_agent, fallback, label="planner")
+    plan, used_agent, error, usage = run_with_fallback(run_agent, fallback, label="planner")
     metadata["agent_used"] = used_agent
     metadata["model"] = resolved.openrouter_chat_model
     metadata["error"] = error
-    return plan, metadata
+    return plan, metadata, usage

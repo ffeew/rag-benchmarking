@@ -27,7 +27,7 @@ def test_plan_query_falls_back_to_heuristic_in_mock_mode() -> None:
     settings = _mock_settings()
     session = _stub_session(["TSLA"])
 
-    plan, metadata = plan_query(
+    plan, metadata, usage = plan_query(
         session,  # type: ignore[arg-type]
         dataset_id="d1",
         question="What is TSLA's latest 10-K debt?",
@@ -40,13 +40,15 @@ def test_plan_query_falls_back_to_heuristic_in_mock_mode() -> None:
     assert plan.latest is True
     assert metadata["agent_used"] is False
     assert metadata["fallback_reason"] == "agent_unavailable"
+    assert usage.is_empty()
 
 
 def test_verify_evidence_falls_back_when_no_evidence() -> None:
     settings = _mock_settings()
-    result, metadata = verify_evidence("any question", [], settings=settings)
+    result, metadata, usage = verify_evidence("any question", [], settings=settings)
 
     assert result.supported_chunk_ids == []
     assert result.confidence < 0.3
     assert metadata["agent_used"] is False
     assert metadata["fallback_reason"] == "no_retrieved_evidence"
+    assert usage.is_empty()

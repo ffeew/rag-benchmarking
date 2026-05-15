@@ -13,6 +13,12 @@ const config = defineConfig({
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
   ],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
+  },
 })
 
 export default config

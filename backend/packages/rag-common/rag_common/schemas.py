@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from rag_common.usage import RoleUsage
 
 
 class Page[T](BaseModel):
@@ -46,6 +48,31 @@ class DocumentRead(BaseModel):
     active_ingestion_run_id: str | None
     ingestion_status: str | None = None
     created_at: datetime
+
+
+class DocumentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticker: str | None = None
+    company_name: str | None = None
+    form_type: str | None = None
+    filing_date: date | None = None
+    report_period: date | None = None
+    fiscal_year: int | None = None
+    fiscal_quarter: int | None = None
+
+
+class ParsedPageRead(BaseModel):
+    page_number: int
+    text: str
+    text_char_count: int
+    table_count: int
+
+
+class DocumentExtracted(BaseModel):
+    document_id: str
+    ingestion_run_id: str
+    pages: list[ParsedPageRead]
 
 
 class RegisterLocalCorpusRequest(BaseModel):
@@ -131,6 +158,7 @@ class QueryRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=20)
     include_trace: bool = True
     retrieval_mode: RetrievalMode = "full_agentic"
+    include_full_retrieval: bool = False
 
 
 class CitationRead(BaseModel):
@@ -161,6 +189,18 @@ class EvidenceRead(BaseModel):
     snippet: str
 
 
+class RetrievedChunkRef(BaseModel):
+    """Lightweight reference to a retrieved chunk, used for retriever metrics."""
+
+    chunk_id: str
+    document_id: str
+    ticker: str
+    form_type: str
+    page_start: int
+    page_end: int
+    rank: int
+
+
 class QueryResponse(BaseModel):
     answer: str
     citations: list[CitationRead]
@@ -168,6 +208,10 @@ class QueryResponse(BaseModel):
     trace_id: str
     confidence: float
     insufficiency_reason: str | None = None
+    usage_summary: RoleUsage | None = None
+    cost_estimate_usd: float | None = None
+    generator_metadata: dict[str, Any] | None = None
+    full_retrieval: list[RetrievedChunkRef] | None = None
 
 
 class TraceRead(BaseModel):
@@ -185,11 +229,56 @@ class TraceRead(BaseModel):
     created_at: datetime
 
 
+class ExpectedCitation(BaseModel):
+    """Expected-citation hint used in eval cases for retriever/citation scoring."""
+
+    ticker: str | None = None
+    form_type: str | None = None
+    page_number: int | None = None
+    document_id: str | None = None
+    evidence_text: str | None = None
+
+
 class EvalCaseCreate(BaseModel):
     question: str = Field(min_length=1)
     expected_answer: str | None = None
     expected_citations: list[dict[str, Any]] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+
+
+class EvalCaseCreateRequest(BaseModel):
+    dataset_id: str
+    case_key: str | None = Field(default=None, max_length=64)
+    category: str | None = Field(default=None, max_length=64)
+    difficulty: str | None = Field(default=None, max_length=16)
+    question: str = Field(min_length=1)
+    expected_answer: str | None = None
+    expected_citations: list[dict[str, Any]] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class EvalCaseUpdate(BaseModel):
+    case_key: str | None = Field(default=None, max_length=64)
+    category: str | None = Field(default=None, max_length=64)
+    difficulty: str | None = Field(default=None, max_length=16)
+    question: str | None = Field(default=None, min_length=1)
+    expected_answer: str | None = None
+    expected_citations: list[dict[str, Any]] | None = None
+    tags: list[str] | None = None
+
+
+class EvalCaseRead(BaseModel):
+    id: str
+    dataset_id: str
+    case_key: str | None
+    category: str | None
+    difficulty: str | None
+    question: str
+    expected_answer: str | None
+    expected_citations: list[dict[str, Any]]
+    tags: list[str]
+    created_at: datetime
+    updated_at: datetime
 
 
 class EvaluationCreate(BaseModel):
@@ -212,6 +301,9 @@ class EvalResultRead(BaseModel):
     trace_id: str | None
     metrics: dict[str, Any]
     error: str | None
+    usage: dict[str, Any] | None = None
+    cost_estimate: dict[str, Any] | None = None
+    latency_ms: int | None = None
 
 
 class EvalRunRead(BaseModel):

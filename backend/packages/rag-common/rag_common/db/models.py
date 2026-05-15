@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime  # noqa: TC003 - SQLAlchemy resolves postponed Mapped annotations at runtime.
+from decimal import Decimal  # noqa: TC003 - same reason as above for Numeric columns.
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
@@ -11,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -179,6 +181,8 @@ class QueryTrace(TimestampMixin, Base):
     model_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     final_answer_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     timings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    usage_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    cost_estimate_usd: Mapped[Decimal | None] = mapped_column(Numeric(precision=10, scale=6), nullable=True)
 
     citations: Mapped[list[Citation]] = relationship(back_populates="trace")
 
@@ -205,6 +209,9 @@ class EvalCase(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
+    case_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    difficulty: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     expected_answer: Mapped[str | None] = mapped_column(Text)
     expected_citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
@@ -238,5 +245,8 @@ class EvalResult(TimestampMixin, Base):
     trace_id: Mapped[str | None] = mapped_column(ForeignKey("query_traces.id", ondelete="SET NULL"))
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    cost_estimate: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     eval_run: Mapped[EvalRun] = relationship(back_populates="results")

@@ -2,15 +2,19 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from rag_common.db import models
 from rag_common.schemas import (
+    DocumentExtracted,
     DocumentRead,
+    DocumentUpdate,
     DocumentUploadResponse,
     Page,
+    ParsedPageRead,
     RegisterDocumentsResponse,
     RegisterLocalCorpusRequest,
 )
+from rag_common.storage.minio import ObjectStore
 from sqlalchemy import or_, select
 
 from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
@@ -134,3 +138,115 @@ def list_documents(
     if ingestion_status:
         items = [d for d in items if (d.ingestion_status or "new") == ingestion_status]
     return Page[DocumentRead](items=items, total=total, limit=limit, offset=offset)
+
+
+@router.patch("/v1/documents/{document_id}")
+def update_document(
+    document_id: str,
+    payload: DocumentUpdate,
+    session: DbSession,
+    _auth: AuthDep,
+) -> DocumentRead:
+    document = session.get(models.Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    nullable_fields = {"company_name", "filing_date", "report_period", "fiscal_year", "fiscal_quarter"}
+    for field, value in updates.items():
+        if field in nullable_fields and value == "":
+            value = None
+        setattr(document, field, value)
+    session.commit()
+    session.refresh(document)
+    return document_to_read(session, document)
+
+
+@router.delete("/v1/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: str,
+    session: DbSession,
+    _auth: AuthDep,
+) -> Response:
+    document = session.get(models.Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    session.delete(document)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/v1/documents/{document_id}/file")
+def get_document_file(
+    document_id: str,
+    session: DbSession,
+    settings: SettingsDep,
+    _auth: AuthDep,
+) -> Response:
+    document = session.get(models.Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    store = ObjectStore(settings)
+    data = store.get_bytes(
+        bucket=document.minio_bucket,
+        key=document.minio_key,
+        version_id=document.minio_version_id,
+    )
+    filename_parts = [document.ticker, document.form_type]
+    if document.filing_date is not None:
+        filename_parts.append(document.filing_date.isoformat())
+    filename = "-".join(filename_parts) + ".pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/v1/documents/{document_id}/extracted")
+def get_document_extracted(
+    document_id: str,
+    session: DbSession,
+    _auth: AuthDep,
+) -> DocumentExtracted:
+    document = session.get(models.Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    run_id = document.active_ingestion_run_id
+    if run_id is None:
+        run_id = session.scalar(
+            select(models.IngestionRun.id)
+            .where(
+                models.IngestionRun.document_id == document_id,
+                models.IngestionRun.status == "completed",
+            )
+            .order_by(models.IngestionRun.created_at.desc())
+            .limit(1)
+        )
+    if run_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No parsed pages for this document")
+
+    pages = list(
+        session.scalars(
+            select(models.ParsedPage)
+            .where(models.ParsedPage.ingestion_run_id == run_id)
+            .order_by(models.ParsedPage.page_number)
+        )
+    )
+    if not pages:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No parsed pages for this document")
+
+    return DocumentExtracted(
+        document_id=document_id,
+        ingestion_run_id=run_id,
+        pages=[
+            ParsedPageRead(
+                page_number=page.page_number,
+                text=page.text,
+                text_char_count=page.text_char_count,
+                table_count=page.table_count,
+            )
+            for page in pages
+        ],
+    )

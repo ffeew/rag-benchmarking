@@ -185,6 +185,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
     working_dir: /app/frontend
     command: sh -c "pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0"
     environment:

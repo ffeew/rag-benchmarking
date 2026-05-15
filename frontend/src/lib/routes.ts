@@ -32,6 +32,10 @@ export const paths = {
     to: '/datasets/$datasetId/evaluations',
     params: { datasetId },
   }),
+  datasetEvalCases: (datasetId: string) => ({
+    to: '/datasets/$datasetId/eval-cases',
+    params: { datasetId },
+  }),
   evaluation: (datasetId: string, evalRunId: string) => ({
     to: '/datasets/$datasetId/evaluations/$evalRunId',
     params: { datasetId, evalRunId },

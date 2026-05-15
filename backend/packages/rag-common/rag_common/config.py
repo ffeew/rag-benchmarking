@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     eval_timeout_seconds: Annotated[int, Field(gt=0)] = 1800
     query_trace_retention_days: Annotated[int, Field(gt=0)] = 30
 
+    pricing_overrides_path: Path | None = None
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: Any) -> list[str]:
