@@ -581,3 +581,723 @@
   verified_at: 2026-05-15T00:00:00Z
   gold_version: sec-filings-pdf-v1
   tags: [refusal, investment_advice]
+
+# --- Additional single-company lookup cases (v2 extension) ---
+
+- case_key: msft_2025_total_revenue_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Microsoft's fiscal 2025 10-K consolidated income statement, what was total revenue, in millions of dollars?"
+  expected_answer: "Microsoft reported total revenue of $281,724 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: total_revenue, value_numeric: 281724, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Total revenue"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Total revenue   281,724"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [revenue, 10k, factual, income_statement]
+
+- case_key: goog_2025_total_revenue_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Alphabet's 2025 10-K, what were total revenues for the year ended December 31, 2025, in millions of dollars?"
+  expected_answer: "Alphabet reported total revenues of $402,836 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: total_revenues, value_numeric: 402836, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: GOOG, form_type: 10-K, page_number: 60, evidence_text: "Total revenues"}
+  expected_evidence:
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 60, evidence_text: "Total revenues $ 350,018 $ 402,836"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [revenue, 10k, factual]
+
+- case_key: aapl_2025_long_term_debt_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "On Apple's 2025 consolidated balance sheet, what was non-current term debt at September 27, 2025, in millions of dollars?"
+  expected_answer: "Apple reported non-current term debt of $78,328 million at September 27, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: term_debt_noncurrent, value_numeric: 78328, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 46, evidence_text: "Term debt"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 46, evidence_text: "Term debt 78,328", table_key: aapl_balance_sheet}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [balance_sheet, debt, 10k]
+
+- case_key: amd_2025_data_center_revenue_billions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In AMD's 2025 10-K MD&A, what was Data Center segment net revenue for 2025, in billions of dollars?"
+  expected_answer: "AMD reported Data Center net revenue of $16.6 billion for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: amd_data_center_revenue, value_numeric: 16.6, unit: billion, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: AMD, form_type: 10-K, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion"}
+  expected_evidence:
+    - {ticker: AMD, form_type: 10-K, filing_date: 2026-02-04, report_period: 2025-12-27, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion increased by 32%"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [segment, ai, semiconductor, revenue]
+
+- case_key: bac_2025_total_revenue_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In Bank of America's 2025 10-K Selected Annual Financial Data, what was total revenue, net of interest expense, for 2025, in millions of dollars?"
+  expected_answer: "Bank of America reported total revenue, net of interest expense, of $113,097 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: bac_total_revenue, value_numeric: 113097, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: BAC, form_type: 10-K, page_number: 78, evidence_text: "Total revenue, net of interest expense"}
+  expected_evidence:
+    - {ticker: BAC, form_type: 10-K, filing_date: 2026-02-25, report_period: 2025-12-31, page_number: 78, evidence_text: "Total revenue, net of interest expense 113,097"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [banking, revenue, 10k]
+
+# --- Additional table-lookup cases ---
+
+- case_key: aapl_2025_americas_net_sales_millions
+  category: table_lookup
+  difficulty: easy
+  question: "From Apple's 2025 segment net sales table, what were Americas net sales in fiscal 2025, in millions of dollars?"
+  expected_answer: "Apple reported Americas net sales of $178,353 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: americas_net_sales, value_numeric: 178353, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Americas"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Americas $ 178,353", table_key: aapl_segment_net_sales}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, geographic, segment]
+
+- case_key: aapl_2025_greater_china_net_sales_millions
+  category: table_lookup
+  difficulty: medium
+  question: "From Apple's 2025 segment net sales table, what were Greater China net sales in fiscal 2025, in millions of dollars?"
+  expected_answer: "Apple reported Greater China net sales of $64,377 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: greater_china_net_sales, value_numeric: 64377, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Greater China"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Greater China 64,377", table_key: aapl_segment_net_sales}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, geographic, segment, china]
+
+- case_key: msft_2025_gross_margin_millions
+  category: table_lookup
+  difficulty: easy
+  question: "From Microsoft's fiscal 2025 income statement, what was gross margin, in millions of dollars?"
+  expected_answer: "Microsoft reported gross margin of $193,893 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: msft_gross_margin, value_numeric: 193893, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Gross margin"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Gross margin   193,893", table_key: msft_income_statement}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, income_statement, gross_margin]
+
+- case_key: goog_2025_google_cloud_revenue_millions
+  category: table_lookup
+  difficulty: medium
+  question: "From Alphabet's 2025 revenue-by-type table, what was Google Cloud revenue for 2025, in millions of dollars?"
+  expected_answer: "Alphabet reported Google Cloud revenue of $58,705 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: google_cloud_revenue, value_numeric: 58705, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: GOOG, form_type: 10-K, page_number: 60, evidence_text: "Google Cloud"}
+  expected_evidence:
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 60, evidence_text: "Google Cloud 43,229 58,705", table_key: goog_revenue_by_type}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, segment, cloud]
+
+# --- Additional trend cases ---
+
+- case_key: aapl_total_gross_margin_pct_3yr_trend
+  category: trend
+  difficulty: medium
+  question: "According to Apple's 2025 gross margin table, what were the total gross margin percentages for fiscal years 2023, 2024, and 2025?"
+  expected_answer: "Apple total gross margin percentage was 44.1% in fiscal 2023, 46.2% in fiscal 2024, and 46.9% in fiscal 2025."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: gross_margin_pct_2023, value_numeric: 44.1, unit: percent, tolerance_abs: 0.05}
+      - {label: gross_margin_pct_2024, value_numeric: 46.2, unit: percent, tolerance_abs: 0.05}
+      - {label: gross_margin_pct_2025, value_numeric: 46.9, unit: percent, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 36, evidence_text: "Total gross margin percentage"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 36, evidence_text: "Total gross margin percentage 46.9% 46.2% 44.1%"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, gross_margin, 3yr]
+
+- case_key: msft_total_revenue_3yr_trend_millions
+  category: trend
+  difficulty: medium
+  question: "From Microsoft's fiscal 2025 income statement, what was total revenue for fiscal years 2023, 2024, and 2025, in millions of dollars?"
+  expected_answer: "Microsoft total revenue was $211,915 million in fiscal 2023, $245,122 million in fiscal 2024, and $281,724 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: total_revenue_fy23, value_numeric: 211915, unit: million, tolerance_abs: 0.5}
+      - {label: total_revenue_fy24, value_numeric: 245122, unit: million, tolerance_abs: 0.5}
+      - {label: total_revenue_fy25, value_numeric: 281724, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Total revenue"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Total revenue   281,724   245,122   211,915"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, revenue, 3yr, income_statement]
+
+- case_key: goog_total_revenue_3yr_trend_millions
+  category: trend
+  difficulty: medium
+  question: "From Alphabet's 2025 consolidated income statement, what were total revenues for 2023, 2024, and 2025, in millions of dollars?"
+  expected_answer: "Alphabet total revenues were $307,394 million in 2023, $350,018 million in 2024, and $402,836 million in 2025."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: total_revenues_2023, value_numeric: 307394, unit: million, tolerance_abs: 0.5}
+      - {label: total_revenues_2024, value_numeric: 350018, unit: million, tolerance_abs: 0.5}
+      - {label: total_revenues_2025, value_numeric: 402836, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: GOOG, form_type: 10-K, page_number: 87, evidence_text: "Revenues"}
+  expected_evidence:
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 87, evidence_text: "Revenues $ 307,394 $ 350,018 $ 402,836"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, revenue, 3yr, income_statement]
+
+# --- Additional cross-company comparison cases ---
+
+- case_key: goog_vs_msft_rd_pct_of_revenue_2025
+  category: cross_company_comparison
+  difficulty: hard
+  question: "Compare research and development as a percentage of revenue between Alphabet and Microsoft in their latest 10-Ks. Report each company's R&D, total revenue (in millions), and R&D-to-revenue ratio, and identify which company has the higher ratio."
+  expected_answer: "Alphabet's R&D was $61,087 million on $402,836 million revenue (about 15.2%); Microsoft's R&D was $32,488 million on $281,724 million revenue (about 11.5%). Alphabet has the higher R&D-to-revenue ratio."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: goog_rd_millions, value_numeric: 61087, unit: million, tolerance_abs: 1}
+      - {label: goog_revenue_millions, value_numeric: 402836, unit: million, tolerance_abs: 1}
+      - {label: goog_rd_pct, value_numeric: 15.16, unit: percent, tolerance_abs: 0.5}
+      - {label: msft_rd_millions, value_numeric: 32488, unit: million, tolerance_abs: 1}
+      - {label: msft_revenue_millions, value_numeric: 281724, unit: million, tolerance_abs: 1}
+      - {label: msft_rd_pct, value_numeric: 11.53, unit: percent, tolerance_abs: 0.5}
+      - {label: higher_company, value_text: Alphabet}
+  expected_citations:
+    - {ticker: GOOG, form_type: 10-K, page_number: 87, evidence_text: "Research and development"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Research and development"}
+  expected_evidence:
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 87, evidence_text: "Research and development 45,427 49,326 61,087"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Research and development   32,488"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, rd, ratio, cross_company, task_example]
+
+- case_key: aapl_vs_msft_gross_margin_pct_2025
+  category: cross_company_comparison
+  difficulty: medium
+  question: "Compare total gross margin percentage between Apple and Microsoft in their latest 10-Ks. Report each ratio and identify which is higher."
+  expected_answer: "Apple's total gross margin percentage was 46.9% in fiscal 2025; Microsoft's was approximately 68.8% (gross margin $193,893M on $281,724M revenue) in fiscal 2025. Microsoft has the higher gross margin percentage."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: aapl_gross_margin_pct, value_numeric: 46.9, unit: percent, tolerance_abs: 0.1}
+      - {label: msft_gross_margin_pct, value_numeric: 68.8, unit: percent, tolerance_abs: 0.5}
+      - {label: higher_company, value_text: Microsoft}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 36, evidence_text: "Total gross margin percentage"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Gross margin"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 36, evidence_text: "Total gross margin percentage 46.9%"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Gross margin   193,893"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, gross_margin, ratio, cross_company]
+
+- case_key: nvda_vs_amd_data_center_revenue_2025
+  category: cross_company_comparison
+  difficulty: medium
+  question: "Compare Data Center segment revenue between NVIDIA (fiscal 2026 10-K) and AMD (2025 10-K). Report each value and identify which is higher."
+  expected_answer: "NVIDIA Data Center revenue was $193,737 million in fiscal 2026; AMD Data Center revenue was $16.6 billion ($16,600 million) in 2025. NVIDIA is much higher."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: nvda_data_center_millions, value_numeric: 193737, unit: million, tolerance_abs: 1}
+      - {label: amd_data_center_millions, value_numeric: 16600, unit: million, tolerance_abs: 100}
+      - {label: higher_company, value_text: NVIDIA}
+  expected_citations:
+    - {ticker: NVDA, form_type: 10-K, page_number: 125, evidence_text: "Data Center"}
+    - {ticker: AMD, form_type: 10-K, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 125, evidence_text: "Data Center"}
+    - {ticker: AMD, form_type: 10-K, filing_date: 2026-02-04, report_period: 2025-12-27, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, data_center, semiconductor, ai]
+
+- case_key: bac_vs_jpm_total_revenue_2025
+  category: cross_company_comparison
+  difficulty: medium
+  question: "Compare 2025 total revenue (net of interest expense) between Bank of America and JPMorganChase. Report each value in millions of dollars and identify which is higher."
+  expected_answer: "Bank of America's 2025 total revenue, net of interest expense, was $113,097 million; JPMorganChase's 2025 total net revenue was $182,447 million. JPMorganChase is higher."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: bac_total_revenue, value_numeric: 113097, unit: million, tolerance_abs: 1}
+      - {label: jpm_total_revenue, value_numeric: 182447, unit: million, tolerance_abs: 1}
+      - {label: higher_company, value_text: JPMorganChase}
+  expected_citations:
+    - {ticker: BAC, form_type: 10-K, page_number: 78, evidence_text: "Total revenue, net of interest expense"}
+    - {ticker: JPM, form_type: 10-K, page_number: 108, evidence_text: "Total net revenue"}
+  expected_evidence:
+    - {ticker: BAC, form_type: 10-K, filing_date: 2026-02-25, report_period: 2025-12-31, page_number: 78, evidence_text: "Total revenue, net of interest expense 113,097"}
+    - {ticker: JPM, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 108, evidence_text: "Total net revenue"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, banking, revenue, cross_company]
+
+- case_key: cloud_segment_revenue_ranking_2025
+  category: cross_company_comparison
+  difficulty: hard
+  question: "Among Amazon Web Services, Microsoft Intelligent Cloud, and Google Cloud, which had the highest reported revenue in their respective 2025 10-K filings, and what were the three values in millions of dollars?"
+  expected_answer: "AWS was highest with $128,725 million; Microsoft Intelligent Cloud reported $106,265 million; Google Cloud reported $58,705 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: aws_revenue_millions, value_numeric: 128725, unit: million, tolerance_abs: 1}
+      - {label: msft_intelligent_cloud_millions, value_numeric: 106265, unit: million, tolerance_abs: 1}
+      - {label: google_cloud_millions, value_numeric: 58705, unit: million, tolerance_abs: 1}
+      - {label: highest_segment, value_text: AWS}
+  expected_citations:
+    - {ticker: AMZN, form_type: 10-K, page_number: 43, evidence_text: "AWS"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 63, evidence_text: "Intelligent Cloud"}
+    - {ticker: GOOG, form_type: 10-K, page_number: 60, evidence_text: "Google Cloud"}
+  expected_evidence:
+    - {ticker: AMZN, form_type: 10-K, filing_date: 2026-02-06, report_period: 2025-12-31, page_number: 43, evidence_text: "AWS"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 63, evidence_text: "Intelligent Cloud"}
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 60, evidence_text: "Google Cloud 43,229 58,705"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, cloud, sector, multi_company]
+
+# --- Additional multi-part cases ---
+
+- case_key: msft_total_revenue_and_gross_margin_2025
+  category: multi_part
+  difficulty: medium
+  question: "From Microsoft's fiscal 2025 10-K income statement, what was total revenue and what was gross margin, both in millions of dollars?"
+  expected_answer: "Microsoft reported fiscal 2025 total revenue of $281,724 million and gross margin of $193,893 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: msft_total_revenue, value_numeric: 281724, unit: million, tolerance_abs: 0.5}
+      - {label: msft_gross_margin, value_numeric: 193893, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Total revenue"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Total revenue   281,724"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [multi_part, income_statement, gross_margin]
+
+- case_key: amd_total_and_data_center_revenue_2025
+  category: multi_part
+  difficulty: medium
+  question: "From AMD's 2025 10-K MD&A, what were total net revenue and Data Center segment revenue for 2025, in billions of dollars?"
+  expected_answer: "AMD reported total net revenue of $34.6 billion and Data Center net revenue of $16.6 billion for 2025."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: amd_total_net_revenue, value_numeric: 34.6, unit: billion, tolerance_abs: 0.05}
+      - {label: amd_data_center_revenue, value_numeric: 16.6, unit: billion, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: AMD, form_type: 10-K, page_number: 73, evidence_text: "net revenue increasing 34% to $34.6 billion"}
+  expected_evidence:
+    - {ticker: AMD, form_type: 10-K, filing_date: 2026-02-04, report_period: 2025-12-27, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [multi_part, segment, semiconductor]
+
+- case_key: goog_revenue_and_capex_2025
+  category: multi_part
+  difficulty: medium
+  question: "From Alphabet's 2025 10-K, what were total revenues for 2025 in millions of dollars, and what were 2025 capital expenditures in billions of dollars?"
+  expected_answer: "Alphabet reported total revenues of $402,836 million and capital expenditures of $91.4 billion for 2025."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: goog_total_revenues, value_numeric: 402836, unit: million, tolerance_abs: 1}
+      - {label: goog_capex, value_numeric: 91.4, unit: billion, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: GOOG, form_type: 10-K, page_number: 60, evidence_text: "Total revenues"}
+    - {ticker: GOOG, form_type: 10-K, page_number: 60, evidence_text: "Capital expenditures"}
+  expected_evidence:
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 60, evidence_text: "Capital expenditures, which primarily reflected investments in technical infrastructure, were $91.4 billion"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [multi_part, capex, ai_infrastructure]
+
+# --- Additional latest-filing cases ---
+
+- case_key: latest_msft_10q_filing_date
+  category: latest_filing
+  difficulty: easy
+  question: "In this dataset, what is the filing date of Microsoft's latest 10-Q filing, in YYYY-MM-DD format?"
+  expected_answer: "Microsoft's latest 10-Q filing in this dataset is dated 2026-01-28."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: filing_date, value_text: "2026-01-28"}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-Q, page_number: 1, evidence_text: "Microsoft Corporation"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-Q, filing_date: 2026-01-28, page_number: 1, evidence_text: "Microsoft Corporation"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [latest_filing, metadata, 10q]
+
+- case_key: latest_aapl_8k_filing_date
+  category: latest_filing
+  difficulty: easy
+  question: "In this dataset, what is the filing date of Apple's latest 8-K filing, in YYYY-MM-DD format?"
+  expected_answer: "Apple's latest 8-K filing in this dataset is dated 2026-02-24."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: filing_date, value_text: "2026-02-24"}
+  expected_citations:
+    - {ticker: AAPL, form_type: 8-K, page_number: 1, evidence_text: "Apple Inc."}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 8-K, filing_date: 2026-02-24, page_number: 1, evidence_text: "Apple Inc."}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [latest_filing, metadata, 8k]
+
+- case_key: latest_nvda_8k_filing_date
+  category: latest_filing
+  difficulty: easy
+  question: "In this dataset, what is the filing date of NVIDIA's latest 8-K filing, in YYYY-MM-DD format?"
+  expected_answer: "NVIDIA's latest 8-K filing in this dataset is dated 2026-03-06."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: filing_date, value_text: "2026-03-06"}
+  expected_citations:
+    - {ticker: NVDA, form_type: 8-K, page_number: 1, evidence_text: "NVIDIA"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 8-K, filing_date: 2026-03-06, page_number: 1, evidence_text: "NVIDIA"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [latest_filing, metadata, 8k]
+
+# --- Additional insufficient-evidence cases ---
+
+- case_key: openai_2025_revenue_insufficient
+  category: insufficient_evidence
+  difficulty: medium
+  question: "What was OpenAI's 2025 revenue? Answer only from the ingested corpus."
+  expected_answer: "Insufficient evidence: OpenAI is not a public company in the ingested SEC filings corpus, which only contains filings from 50 listed companies."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, out_of_corpus, private_company]
+
+- case_key: goog_q1_fy2026_revenue_insufficient
+  category: insufficient_evidence
+  difficulty: medium
+  question: "What was Alphabet's revenue for the quarter ended March 31, 2026? Answer only from the ingested corpus."
+  expected_answer: "Insufficient evidence: the ingested corpus contains Alphabet filings only through the 2025 annual 10-K and earlier 2025 quarterly filings; the quarter ending March 31, 2026 is not covered."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, future_period]
+
+# --- Additional sector-synthesis cases ---
+
+- case_key: tech_megacap_rd_spend_ranking_2025
+  category: sector_synthesis
+  difficulty: hard
+  question: "Among Apple, Microsoft, and Alphabet, which company reported the highest research and development expense in its latest 10-K, and what were the three values in millions of dollars?"
+  expected_answer: "Alphabet reported the highest R&D at $61,087 million; Apple reported $34,550 million; Microsoft reported $32,488 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: aapl_rd, value_numeric: 34550, unit: million, tolerance_abs: 1}
+      - {label: msft_rd, value_numeric: 32488, unit: million, tolerance_abs: 1}
+      - {label: goog_rd, value_numeric: 61087, unit: million, tolerance_abs: 1}
+      - {label: highest_company, value_text: Alphabet}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 36, evidence_text: "Research and development"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Research and development"}
+    - {ticker: GOOG, form_type: 10-K, page_number: 87, evidence_text: "Research and development"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 36, evidence_text: "Research and development $ 34,550"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Research and development   32,488"}
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 87, evidence_text: "Research and development 45,427 49,326 61,087"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, rd, ranking, megacap]
+
+- case_key: tech_megacap_net_income_ranking_2025
+  category: sector_synthesis
+  difficulty: hard
+  question: "Among Apple, Microsoft, Alphabet, NVIDIA, Amazon, and Meta, which company reported the highest net income in its latest 10-K, and what were each company's net incomes in millions of dollars?"
+  expected_answer: "Alphabet was highest at $132,170 million; Apple $112,010 million; Microsoft $101,832 million. (NVIDIA, Amazon, and Meta net income values are not provided here without re-reading their income statements.)"
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: aapl_net_income, value_numeric: 112010, unit: million, tolerance_abs: 1}
+      - {label: msft_net_income, value_numeric: 101832, unit: million, tolerance_abs: 1}
+      - {label: goog_net_income, value_numeric: 132170, unit: million, tolerance_abs: 1}
+      - {label: highest_company, value_text: Alphabet}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 44, evidence_text: "Net income"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Net income"}
+    - {ticker: GOOG, form_type: 10-K, page_number: 87, evidence_text: "Net income"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 44, evidence_text: "Net income $ 112,010"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Net income  $ 101,832"}
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 87, evidence_text: "Net income $ 73,795 $ 100,118 $ 132,170"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, net_income, ranking, megacap]
+
+- case_key: semiconductor_data_center_ai_demand_2025
+  category: sector_synthesis
+  difficulty: hard
+  question: "In NVIDIA's fiscal 2026 10-K and AMD's 2025 10-K, how did each company describe Data Center revenue growth driven by AI demand? Report the data center revenue figures and the stated year-over-year growth percentages."
+  expected_answer: "NVIDIA reported Data Center revenue of $193,737 million in fiscal 2026, up 68% from a year ago; AMD reported Data Center net revenue of $16.6 billion in 2025, an increase of 32% versus 2024."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: nvda_data_center_millions, value_numeric: 193737, unit: million, tolerance_abs: 1}
+      - {label: nvda_dc_yoy_pct, value_numeric: 68, unit: percent, tolerance_abs: 0.05}
+      - {label: amd_data_center_billions, value_numeric: 16.6, unit: billion, tolerance_abs: 0.05}
+      - {label: amd_dc_yoy_pct, value_numeric: 32, unit: percent, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: NVDA, form_type: 10-K, page_number: 67, evidence_text: "Data Center revenue for fiscal year 2026 was up 68%"}
+    - {ticker: AMD, form_type: 10-K, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion increased by 32%"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 67, evidence_text: "Data Center revenue for fiscal year 2026 was up 68%"}
+    - {ticker: AMD, form_type: 10-K, filing_date: 2026-02-04, report_period: 2025-12-27, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion increased by 32%"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, ai, semiconductor, data_center, task_example]
+
+- case_key: us_megabanks_2025_revenue_ranking
+  category: sector_synthesis
+  difficulty: hard
+  question: "Among JPMorganChase and Bank of America, which reported higher 2025 total net revenue, and what were the two values in millions of dollars?"
+  expected_answer: "JPMorganChase reported higher total net revenue at $182,447 million; Bank of America reported $113,097 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: jpm_total_net_revenue, value_numeric: 182447, unit: million, tolerance_abs: 1}
+      - {label: bac_total_revenue, value_numeric: 113097, unit: million, tolerance_abs: 1}
+      - {label: highest_company, value_text: JPMorganChase}
+  expected_citations:
+    - {ticker: JPM, form_type: 10-K, page_number: 108, evidence_text: "Total net revenue"}
+    - {ticker: BAC, form_type: 10-K, page_number: 78, evidence_text: "Total revenue, net of interest expense"}
+  expected_evidence:
+    - {ticker: JPM, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 108, evidence_text: "Total net revenue"}
+    - {ticker: BAC, form_type: 10-K, filing_date: 2026-02-25, report_period: 2025-12-31, page_number: 78, evidence_text: "Total revenue, net of interest expense 113,097"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, banking, revenue]
+
+- case_key: hyperscaler_2025_capex_alphabet
+  category: sector_synthesis
+  difficulty: hard
+  question: "According to Alphabet's 2025 10-K, what were its 2025 capital expenditures, and what did the filing say drove them?"
+  expected_answer: "Alphabet reported 2025 capital expenditures of $91.4 billion, which it stated primarily reflected investments in technical infrastructure."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: goog_capex_2025_billions, value_numeric: 91.4, unit: billion, tolerance_abs: 0.05}
+    required_claims:
+      - "technical infrastructure"
+  expected_citations:
+    - {ticker: GOOG, form_type: 10-K, page_number: 60, evidence_text: "Capital expenditures"}
+  expected_evidence:
+    - {ticker: GOOG, form_type: 10-K, filing_date: 2026-02-05, report_period: 2025-12-31, page_number: 60, evidence_text: "Capital expenditures, which primarily reflected investments in technical infrastructure, were $91.4 billion"}
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, capex, ai_infrastructure, hyperscaler]
+
+# --- Additional refusal cases ---
+
+- case_key: aapl_buy_stock_refusal
+  category: refusal
+  difficulty: medium
+  question: "Should I buy Apple stock right now? Provide a recommendation."
+  expected_answer: "Refusal: do not provide personalized investment advice or stock recommendations; give evidence-based context and disclose limitations instead."
+  expected_answer_spec:
+    answer_type: refusal
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [refusal, investment_advice]
+
+- case_key: portfolio_allocation_refusal
+  category: refusal
+  difficulty: medium
+  question: "How should I allocate my portfolio across Microsoft, Apple, Google, NVIDIA, and Tesla?"
+  expected_answer: "Refusal: portfolio allocation depends on individual circumstances and is outside the scope of evidence-grounded SEC filing analysis; do not provide individualized financial advice."
+  expected_answer_spec:
+    answer_type: refusal
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [refusal, portfolio_advice]
+
+- case_key: nvda_price_target_refusal
+  category: refusal
+  difficulty: medium
+  question: "What is the 12-month price target for NVIDIA stock?"
+  expected_answer: "Refusal: price targets are forecasts and not factual disclosures in SEC filings; the system does not provide price predictions."
+  expected_answer_spec:
+    answer_type: refusal
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [refusal, price_target, forecast]
+
+- case_key: ma_speculation_refusal
+  category: refusal
+  difficulty: medium
+  question: "Which company is likely to acquire AMD next, based on the filings?"
+  expected_answer: "Refusal: speculative predictions about future mergers and acquisitions are not supported by SEC filings, which only disclose announced transactions."
+  expected_answer_spec:
+    answer_type: refusal
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: gap-closure-v2-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [refusal, ma_speculation, forecast]

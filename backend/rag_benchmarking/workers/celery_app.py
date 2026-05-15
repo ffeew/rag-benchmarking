@@ -6,6 +6,7 @@ from rag_common.constants import (
     QUEUE_INGESTION,
     QUEUE_MAINTENANCE,
     TASK_INGEST_DOCUMENT,
+    TASK_PURGE_OLD_TRACES,
     TASK_RUN_EVALUATION,
     TASK_SWEEP_STUCK_JOBS,
 )
@@ -24,13 +25,17 @@ celery_app = Celery(
     "rag_benchmarking",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["rag_benchmarking.workers.sweeper"],
+    include=[
+        "rag_benchmarking.workers.sweeper",
+        "rag_benchmarking.workers.retention",
+    ],
 )
 
 celery_app.conf.task_routes = {
     TASK_INGEST_DOCUMENT: {"queue": QUEUE_INGESTION},
     TASK_RUN_EVALUATION: {"queue": QUEUE_EVALUATION},
     TASK_SWEEP_STUCK_JOBS: {"queue": QUEUE_MAINTENANCE},
+    TASK_PURGE_OLD_TRACES: {"queue": QUEUE_MAINTENANCE},
 }
 celery_app.conf.task_track_started = True
 
@@ -52,6 +57,12 @@ celery_app.conf.beat_schedule = {
     "sweep-stuck-jobs": {
         "task": TASK_SWEEP_STUCK_JOBS,
         "schedule": 60.0,
+    },
+    "purge-old-traces": {
+        "task": TASK_PURGE_OLD_TRACES,
+        # Hourly is plenty — deletions are cheap, idempotent, and the
+        # retention window is measured in days.
+        "schedule": 3600.0,
     },
 }
 

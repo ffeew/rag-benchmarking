@@ -26,6 +26,11 @@ dependencies = [
   "tenacity>=9.1.0",
 ]
 
+[project.scripts]
+rag-seed-eval-cases = "rag_benchmarking.scripts.seed_eval_cases:main"
+rag-run-eval = "rag_benchmarking.scripts.run_eval:main"
+rag-compare-ablations = "rag_benchmarking.scripts.compare_ablations:main"
+
 [tool.uv.workspace]
 members = ["packages/*"]
 
@@ -126,6 +131,7 @@ module = [
   "rag_ingestion_worker.tasks",
   "rag_evaluation_worker.tasks",
   "rag_benchmarking.workers.sweeper",
+  "rag_benchmarking.workers.retention",
 ]
 disallow_untyped_decorators = false
 

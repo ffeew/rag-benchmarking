@@ -86,13 +86,17 @@ def test_load_cases_rejects_invalid_entry(tmp_path: Path) -> None:
 
 
 def test_load_cases_loads_full_corpus_yaml() -> None:
-    """Smoke test against the verified corpus YAML in the repo."""
+    """Smoke test against the verified corpus YAML in the repo.
+
+    The design targets 60-80 verified cases with at least one case in each of
+    the nine categories so the report can slice metrics meaningfully.
+    """
     repo_root = Path(__file__).resolve().parent.parent
     corpus_file = repo_root / "eval_cases" / "sec_filings_v1.yaml"
     if not corpus_file.exists():
         pytest.skip("Curated corpus file not present")
     cases = load_cases(corpus_file)
-    assert len(cases) == 29
+    assert 60 <= len(cases) <= 80, f"expected 60-80 cases, got {len(cases)}"
 
     by_category: dict[str, int] = {}
     for case in cases:
@@ -100,14 +104,17 @@ def test_load_cases_loads_full_corpus_yaml() -> None:
         assert case.expected_answer_spec.get("answer_type") is not None
         key = case.category or "uncategorized"
         by_category[key] = by_category.get(key, 0) + 1
-    assert by_category == {
-        "cross_company_comparison": 3,
-        "insufficient_evidence": 3,
-        "latest_filing": 2,
-        "multi_part": 3,
-        "refusal": 1,
-        "sector_synthesis": 1,
-        "single_company_lookup": 5,
-        "table_lookup": 6,
-        "trend": 5,
+    required_categories = {
+        "cross_company_comparison",
+        "insufficient_evidence",
+        "latest_filing",
+        "multi_part",
+        "refusal",
+        "sector_synthesis",
+        "single_company_lookup",
+        "table_lookup",
+        "trend",
     }
+    assert required_categories <= by_category.keys(), f"missing categories: {required_categories - by_category.keys()}"
+    for category in required_categories:
+        assert by_category[category] >= 2, f"category {category} has fewer than 2 cases"
