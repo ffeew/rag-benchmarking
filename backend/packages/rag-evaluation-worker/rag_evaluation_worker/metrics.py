@@ -9,8 +9,12 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class ExpectedCitation(BaseModel):
@@ -76,6 +80,7 @@ class PlanFilters(BaseModel):
 
 # ---------- retriever metrics ----------
 
+
 def recall_at_k(expected: list[ExpectedCitation], retrieved: list[RetrievedChunkRef], k: int) -> float:
     """Fraction of expected citations covered by the top-k retrieval.
 
@@ -99,6 +104,34 @@ def mean_reciprocal_rank(expected: list[ExpectedCitation], retrieved: list[Retri
     for item in retrieved:
         for exp in expected:
             if _single_match(exp, item):
+                return 1.0 / max(item.rank, 1)
+    return 0.0
+
+
+def strict_recall_at_k(expected: Sequence[object], retrieved: list[RetrievedChunkRef], k: int) -> float:
+    """Recall@k for verified evidence only.
+
+    Unlike the legacy metric, this never treats ticker-only hints as evidence matches.
+    Expected evidence must include a page and either document_id or ticker+form_type.
+    """
+    eligible = [_as_strict_expected(item) for item in expected]
+    if not eligible or k <= 0:
+        return 0.0
+    top_k = retrieved[:k]
+    matched_indices: set[int] = set()
+    for index, exp in enumerate(eligible):
+        if any(_strict_single_match(exp, item) for item in top_k):
+            matched_indices.add(index)
+    return len(matched_indices) / len(eligible)
+
+
+def strict_mean_reciprocal_rank(expected: Sequence[object], retrieved: list[RetrievedChunkRef]) -> float:
+    eligible = [_as_strict_expected(item) for item in expected]
+    if not eligible or not retrieved:
+        return 0.0
+    for item in retrieved:
+        for exp in eligible:
+            if _strict_single_match(exp, item):
                 return 1.0 / max(item.rank, 1)
     return 0.0
 
@@ -146,6 +179,7 @@ def metadata_filter_correctness(plan_filters: PlanFilters, expected: list[Expect
 
 # ---------- citation metrics ----------
 
+
 def citation_validity(
     citations: list[CitationSnapshot],
     chunks_by_id: dict[str, ChunkSnapshot],
@@ -173,7 +207,10 @@ def citation_validity(
 
 _CITATION_TAG_RE = re.compile(r"##e(\d+)")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-_MATERIAL_CLAIM_RE = re.compile(r"[\d,]+(?:\.\d+)?\s*(?:%|million|billion|trillion|basis\s+points|bps|\$)", re.IGNORECASE)
+_MATERIAL_CLAIM_RE = re.compile(
+    r"[\d,]+(?:\.\d+)?\s*(?:%|million|billion|trillion|basis\s+points|bps|\$)",
+    re.IGNORECASE,
+)
 
 
 def citation_coverage(answer: str, citations_used: list[str]) -> float:
@@ -199,6 +236,7 @@ def citation_coverage(answer: str, citations_used: list[str]) -> float:
 
 # ---------- helpers ----------
 
+
 def _matches_any(expected: ExpectedCitation, retrieved: list[RetrievedChunkRef]) -> bool:
     return any(_single_match(expected, item) for item in retrieved)
 
@@ -215,6 +253,29 @@ def _single_match(expected: ExpectedCitation, item: RetrievedChunkRef) -> bool:
     if expected.page_number is not None:
         return item.page_start <= expected.page_number <= item.page_end
     return bool(expected.ticker)
+
+
+def _as_strict_expected(item: object) -> ExpectedCitation:
+    return ExpectedCitation(
+        ticker=getattr(item, "ticker", None),
+        form_type=getattr(item, "form_type", None),
+        page_number=getattr(item, "page_number", None),
+        document_id=getattr(item, "document_id", None),
+        evidence_text=getattr(item, "evidence_text", None),
+    )
+
+
+def _strict_single_match(expected: ExpectedCitation, item: RetrievedChunkRef) -> bool:
+    if expected.page_number is None:
+        return False
+    page_matches = item.page_start <= expected.page_number <= item.page_end
+    if not page_matches:
+        return False
+    if expected.document_id:
+        return expected.document_id == item.document_id
+    if not expected.ticker or not expected.form_type:
+        return False
+    return expected.ticker.upper() == item.ticker.upper() and expected.form_type.upper() == item.form_type.upper()
 
 
 def _evidence_grounded(evidence_text: str, chunk_text: str) -> bool:

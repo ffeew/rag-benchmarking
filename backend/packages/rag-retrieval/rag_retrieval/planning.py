@@ -285,6 +285,7 @@ def plan_query(
     question: str,
     filters: QueryFilters,
     settings: Settings | None = None,
+    force_heuristic: bool = False,
 ) -> tuple[RetrievalPlan, dict[str, object], TokenUsage]:
     resolved = settings or get_settings()
     known_tickers = {
@@ -296,6 +297,12 @@ def plan_query(
     }
     today = datetime.now(UTC).date()
     metadata: dict[str, object] = {"agent_used": False, "model": None, "error": None}
+
+    if force_heuristic:
+        plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
+        metadata["model"] = resolved.openrouter_chat_model
+        metadata["fallback_reason"] = "forced_heuristic"
+        return plan, metadata, TokenUsage()
 
     if not agent_available(resolved):
         plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)

@@ -10,10 +10,18 @@ from rag_evaluation_worker.metrics import (
     metadata_filter_correctness,
     page_evidence_f1,
     recall_at_k,
+    strict_mean_reciprocal_rank,
+    strict_recall_at_k,
 )
 
 
-def _chunk(rank: int, ticker: str = "AAPL", form: str = "10-K", page_start: int = 10, page_end: int = 11) -> RetrievedChunkRef:
+def _chunk(
+    rank: int,
+    ticker: str = "AAPL",
+    form: str = "10-K",
+    page_start: int = 10,
+    page_end: int = 11,
+) -> RetrievedChunkRef:
     return RetrievedChunkRef(
         chunk_id=f"c{rank}",
         document_id=f"doc-{ticker}-{form}",
@@ -26,6 +34,7 @@ def _chunk(rank: int, ticker: str = "AAPL", form: str = "10-K", page_start: int 
 
 
 # ---------- recall_at_k ----------
+
 
 def test_recall_at_k_exact_match() -> None:
     expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
@@ -63,7 +72,15 @@ def test_recall_at_k_page_out_of_range_misses() -> None:
     assert recall_at_k(expected, retrieved, k=5) == 0.0
 
 
+def test_strict_recall_requires_page_and_document_or_form() -> None:
+    retrieved = [_chunk(1)]
+    assert strict_recall_at_k([ExpectedCitation(ticker="AAPL", form_type="10-K")], retrieved, k=5) == 0.0
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    assert strict_recall_at_k(expected, retrieved, k=5) == 1.0
+
+
 # ---------- mean_reciprocal_rank ----------
+
 
 def test_mrr_first_position() -> None:
     expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
@@ -88,7 +105,12 @@ def test_mrr_empty_returns_zero() -> None:
     assert mean_reciprocal_rank([ExpectedCitation(ticker="X")], []) == 0.0
 
 
+def test_strict_mrr_rejects_ticker_only_hint() -> None:
+    assert strict_mean_reciprocal_rank([ExpectedCitation(ticker="AAPL")], [_chunk(1)]) == 0.0
+
+
 # ---------- page_evidence_f1 ----------
+
 
 def test_page_f1_full_overlap() -> None:
     assert page_evidence_f1({("AAPL", 10)}, {("AAPL", 10)}) == 1.0
@@ -114,6 +136,7 @@ def test_page_f1_one_empty_returns_zero() -> None:
 
 
 # ---------- metadata_filter_correctness ----------
+
 
 def test_metadata_filter_correctness_no_filters_passes() -> None:
     filters = PlanFilters()
@@ -151,9 +174,18 @@ def test_plan_filters_from_dict_handles_missing_fields() -> None:
 
 # ---------- citation_validity ----------
 
+
 def test_citation_validity_all_grounded() -> None:
-    chunk = ChunkSnapshot(chunk_id="c1", document_id="doc", text="The total revenue was $94 billion.", page_start=10, page_end=11)
-    citations = [CitationSnapshot(chunk_id="c1", document_id="doc", page_number=10, evidence_text="total revenue was $94")]
+    chunk = ChunkSnapshot(
+        chunk_id="c1",
+        document_id="doc",
+        text="The total revenue was $94 billion.",
+        page_start=10,
+        page_end=11,
+    )
+    citations = [
+        CitationSnapshot(chunk_id="c1", document_id="doc", page_number=10, evidence_text="total revenue was $94")
+    ]
     assert citation_validity(citations, {"c1": chunk}) == 1.0
 
 
@@ -163,8 +195,21 @@ def test_citation_validity_missing_chunk_id() -> None:
 
 
 def test_citation_validity_evidence_not_in_chunk() -> None:
-    chunk = ChunkSnapshot(chunk_id="c1", document_id="doc", text="The total revenue was $94 billion.", page_start=10, page_end=11)
-    citations = [CitationSnapshot(chunk_id="c1", document_id="doc", page_number=10, evidence_text="completely fabricated quote")]
+    chunk = ChunkSnapshot(
+        chunk_id="c1",
+        document_id="doc",
+        text="The total revenue was $94 billion.",
+        page_start=10,
+        page_end=11,
+    )
+    citations = [
+        CitationSnapshot(
+            chunk_id="c1",
+            document_id="doc",
+            page_number=10,
+            evidence_text="completely fabricated quote",
+        )
+    ]
     assert citation_validity(citations, {"c1": chunk}) == 0.0
 
 
@@ -183,6 +228,7 @@ def test_citation_validity_partial() -> None:
 
 
 # ---------- citation_coverage ----------
+
 
 def test_citation_coverage_every_material_claim_cited() -> None:
     answer = "Apple revenue was $94 billion ##e1. Microsoft revenue was $245 billion ##e2."

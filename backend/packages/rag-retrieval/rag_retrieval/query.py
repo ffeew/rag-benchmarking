@@ -150,6 +150,7 @@ def run_query(
         question=request.question,
         filters=request.filters,
         settings=resolved,
+        force_heuristic=request.retrieval_mode == "single_pass",
     )
     top_k = request.top_k or resolved.evidence_top_k
     retrieval_calls: list[dict[str, Any]] = []
@@ -182,21 +183,22 @@ def run_query(
         embedding_usage_total = embedding_usage
         rerank_usage_total = rerank_usage
         retrieval_calls.append({"query": request.question, **retrieval_trace})
-        verification, verifier_meta, first_verifier_usage = verify_evidence(
-            request.question, retrieved, settings=resolved
-        )
-        verifier_usage = first_verifier_usage
-        verifier_result = verification.as_dict()
+        if request.retrieval_mode == "full_agentic":
+            verification, verifier_meta, first_verifier_usage = verify_evidence(
+                request.question, retrieved, settings=resolved
+            )
+            verifier_usage = first_verifier_usage
+            verifier_result = verification.as_dict()
         if (
             request.retrieval_mode == "full_agentic"
-            and not verification.supported_chunk_ids
-            and verification.retry_query
+            and not verifier_result.get("supported_chunk_ids")
+            and verifier_result.get("retry_query")
             and resolved.agent_retry_budget > 0
         ):
             retry_retrieved, retry_trace, retry_embedding_usage, retry_rerank_usage = hybrid_retrieve(
                 session,
                 dataset_id=request.dataset_id,
-                question=verification.retry_query,
+                question=str(verifier_result["retry_query"]),
                 filters=request.filters,
                 plan=plan,
                 top_k=top_k,
@@ -277,9 +279,7 @@ def run_query(
 
     full_retrieval_refs: list[RetrievedChunkRef] | None = None
     if request.include_full_retrieval:
-        full_retrieval_refs = [
-            _to_retrieved_ref(rank, item) for rank, item in enumerate(full_retrieval, start=1)
-        ]
+        full_retrieval_refs = [_to_retrieved_ref(rank, item) for rank, item in enumerate(full_retrieval, start=1)]
     generator_metadata_with_plan: dict[str, Any] = {
         **(answer.metadata or {}),
         "plan": plan.as_dict(),

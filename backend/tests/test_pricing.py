@@ -24,7 +24,9 @@ def test_estimate_cost_returns_zero_for_empty_usage() -> None:
 def test_estimate_cost_for_chat_role_combines_input_and_output() -> None:
     usage = TokenUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000)
     cost = estimate_cost("openai/gpt-4.1-mini", usage, "generator")
-    expected = DEFAULT_PRICING["openai/gpt-4.1-mini"].input_per_mtok + DEFAULT_PRICING["openai/gpt-4.1-mini"].output_per_mtok
+    expected = (
+        DEFAULT_PRICING["openai/gpt-4.1-mini"].input_per_mtok + DEFAULT_PRICING["openai/gpt-4.1-mini"].output_per_mtok
+    )
     assert abs(cost - expected) < 1e-9
 
 

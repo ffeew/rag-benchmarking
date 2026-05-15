@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Field } from '#/components/ui/field'
-import { Input, Textarea } from '#/components/ui/input'
+import { Input, Select, Textarea } from '#/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { api, RETRIEVAL_MODES } from '#/lib/api'
 import type { RetrievalMode } from '#/lib/api'
@@ -35,6 +35,9 @@ export function NewEvaluationDialog({ datasetId }: { datasetId: string }) {
     "What was Microsoft's total revenue in FY2024?\nWhat is Tesla's current long-term debt as reported in their latest 10-K?",
   )
   const [expected, setExpected] = useState('')
+  const [benchmarkProfile, setBenchmarkProfile] = useState<
+    'scientific' | 'diagnostic'
+  >('diagnostic')
   const [variants, setVariants] = useState<Array<RetrievalMode>>([
     ...RETRIEVAL_MODES,
   ])
@@ -70,6 +73,7 @@ export function NewEvaluationDialog({ datasetId }: { datasetId: string }) {
       api.createEvaluation(token, {
         dataset_id: datasetId,
         system_variants: variants,
+        benchmark_profile: benchmarkProfile,
         cases:
           tab === 'inline'
             ? parsedQuestions.map((q) => ({
@@ -206,6 +210,18 @@ export function NewEvaluationDialog({ datasetId }: { datasetId: string }) {
               )}
             </TabsContent>
           </Tabs>
+
+          <Field label="BENCHMARK PROFILE">
+            <Select
+              value={benchmarkProfile}
+              onChange={(e) =>
+                setBenchmarkProfile(e.target.value as 'scientific' | 'diagnostic')
+              }
+            >
+              <option value="diagnostic">diagnostic</option>
+              <option value="scientific">scientific</option>
+            </Select>
+          </Field>
 
           <div className="border-t border-[var(--rule)] pt-3">
             <div className="mono-label mb-2">VARIANTS</div>

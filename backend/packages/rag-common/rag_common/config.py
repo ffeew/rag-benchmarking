@@ -87,8 +87,7 @@ class Settings(BaseSettings):
         upper = value.strip().upper()
         if upper not in logging.getLevelNamesMapping():
             raise ValueError(
-                f"LOG_LEVEL={value!r} is not a recognized level. "
-                "Use one of: DEBUG, INFO, WARNING, ERROR, CRITICAL."
+                f"LOG_LEVEL={value!r} is not a recognized level. Use one of: DEBUG, INFO, WARNING, ERROR, CRITICAL."
             )
         return upper
 

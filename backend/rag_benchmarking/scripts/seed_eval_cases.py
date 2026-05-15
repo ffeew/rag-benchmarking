@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import datetime  # noqa: TC003 - Pydantic needs the runtime type for YAML validation.
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,13 @@ class SeedExpectedCitation(BaseModel):
     evidence_text: str | None = None
 
 
+class SeedExpectedEvidence(SeedExpectedCitation):
+    filing_date: str | None = None
+    report_period: str | None = None
+    evidence_hash: str | None = None
+    table_key: str | None = None
+
+
 class SeedEvalCase(BaseModel):
     case_key: str = Field(min_length=1, max_length=64)
     category: str | None = Field(default=None, max_length=64)
@@ -43,6 +51,12 @@ class SeedEvalCase(BaseModel):
     question: str = Field(min_length=1)
     expected_answer: str | None = None
     expected_citations: list[SeedExpectedCitation] = Field(default_factory=list)
+    expected_answer_spec: dict[str, Any] = Field(default_factory=dict)
+    expected_evidence: list[SeedExpectedEvidence] = Field(default_factory=list)
+    verification_status: str = Field(default="draft", max_length=16)
+    verified_by: str | None = Field(default=None, max_length=128)
+    verified_at: datetime | None = None
+    gold_version: str = Field(default="v1", max_length=32)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -110,6 +124,12 @@ def _to_orm(dataset_id: str, case: SeedEvalCase) -> models.EvalCase:
         question=case.question,
         expected_answer=case.expected_answer,
         expected_citations=[citation.model_dump() for citation in case.expected_citations],
+        expected_answer_spec=_expected_answer_spec(case),
+        expected_evidence=[evidence.model_dump() for evidence in case.expected_evidence],
+        verification_status=case.verification_status,
+        verified_by=case.verified_by,
+        verified_at=case.verified_at,
+        gold_version=case.gold_version,
         tags=list(case.tags),
     )
 
@@ -120,7 +140,36 @@ def _apply_update(existing: models.EvalCase, case: SeedEvalCase) -> None:
     existing.question = case.question
     existing.expected_answer = case.expected_answer
     existing.expected_citations = [citation.model_dump() for citation in case.expected_citations]
+    existing.expected_answer_spec = _expected_answer_spec(case)
+    existing.expected_evidence = [evidence.model_dump() for evidence in case.expected_evidence]
+    existing.verification_status = case.verification_status
+    existing.verified_by = case.verified_by
+    existing.verified_at = case.verified_at
+    existing.gold_version = case.gold_version
     existing.tags = list(case.tags)
+
+
+def _expected_answer_spec(case: SeedEvalCase) -> dict[str, Any]:
+    if case.expected_answer_spec:
+        return case.expected_answer_spec
+    if not case.expected_answer:
+        return {}
+    answer_type = "refusal" if "refusal" in case.tags else "insufficient"
+    return {
+        "answer_type": answer_type,
+        "expected_values": [],
+        "required_claims": [],
+        "required_reason_keywords": _reason_keywords(case.expected_answer),
+    }
+
+
+def _reason_keywords(expected_answer: str) -> list[str]:
+    lowered = expected_answer.lower()
+    keywords: list[str] = []
+    for term in ("insufficient", "evidence", "not disclosed", "not in the ingested corpus", "refusal", "advice"):
+        if term in lowered:
+            keywords.append(term)
+    return keywords
 
 
 def main(argv: list[str] | None = None) -> int:

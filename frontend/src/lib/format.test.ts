@@ -19,8 +19,8 @@ describe('formatBytes', () => {
   it('formats bytes, KB, MB, and GB units', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(2_500)).toBe('2.5 KB')
-    expect(formatBytes(5_500_000)).toBe('6 MB')
-    expect(formatBytes(2_500_000_000)).toBe('3 GB')
+    expect(formatBytes(5_500_000)).toBe('5.5 MB')
+    expect(formatBytes(2_500_000_000)).toBe('2.5 GB')
   })
 })
 

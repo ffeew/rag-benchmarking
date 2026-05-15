@@ -24,6 +24,47 @@ def test_create_eval_case(client: TestClient, seed_dataset: models.Dataset) -> N
     assert body["expected_citations"] == [{"ticker": "AAPL", "form_type": "10-K"}]
 
 
+def test_create_verified_eval_case_with_structured_gold(client: TestClient, seed_dataset: models.Dataset) -> None:
+    response = client.post(
+        "/v1/eval-cases",
+        json={
+            "dataset_id": seed_dataset.id,
+            "case_key": "verified_a",
+            "category": "table_lookup",
+            "difficulty": "medium",
+            "question": "What was AAPL revenue?",
+            "expected_answer_spec": {
+                "answer_type": "numeric",
+                "expected_values": [
+                    {
+                        "label": "revenue",
+                        "value_numeric": 94.0,
+                        "unit": "billion",
+                        "tolerance_abs": 0.1,
+                    }
+                ],
+            },
+            "expected_evidence": [
+                {
+                    "ticker": "AAPL",
+                    "form_type": "10-K",
+                    "page_number": 10,
+                    "evidence_text": "Total net sales",
+                }
+            ],
+            "verification_status": "verified",
+            "verified_by": "analyst",
+            "gold_version": "v1",
+            "tags": ["revenue", "verified"],
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["verification_status"] == "verified"
+    assert body["expected_answer_spec"]["answer_type"] == "numeric"
+    assert body["expected_evidence"][0]["page_number"] == 10
+
+
 def test_create_eval_case_duplicate_key_returns_409(
     client: TestClient,
     seed_dataset: models.Dataset,
@@ -196,3 +237,21 @@ def test_delete_eval_case_409_when_referenced_by_results(
     db_session.commit()
     response = client.delete(f"/v1/eval-cases/{seed_eval_case.id}")
     assert response.status_code == 409
+
+
+def test_scientific_evaluation_rejects_draft_cases(
+    client: TestClient,
+    seed_dataset: models.Dataset,
+    seed_eval_case: models.EvalCase,
+) -> None:
+    response = client.post(
+        "/v1/evaluations",
+        json={
+            "dataset_id": seed_dataset.id,
+            "case_ids": [seed_eval_case.id],
+            "system_variants": ["full_agentic"],
+            "benchmark_profile": "scientific",
+        },
+    )
+    assert response.status_code == 400
+    assert "Scientific evaluations require verified cases" in response.json()["detail"]

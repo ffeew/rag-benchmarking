@@ -7,6 +7,7 @@ introduced in Phase 4.3 (test_eval_cases_api.py); they are exercised there.
 from pathlib import Path
 
 import pytest
+
 from rag_benchmarking.scripts.seed_eval_cases import (
     SeedEvalCase,
     SeedExpectedCitation,

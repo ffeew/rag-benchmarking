@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import yaml
 from pydantic import BaseModel, Field, NonNegativeFloat
 
-from rag_common.usage import Role, TokenUsage
+if TYPE_CHECKING:
+    from rag_common.usage import Role, TokenUsage
 
 
 class ModelPrice(BaseModel):
@@ -81,7 +82,7 @@ def load_pricing_overrides(path: Path | None) -> dict[str, ModelPrice]:
     for model_name, fields in raw.items():
         if not isinstance(fields, dict):
             raise ValueError(f"Pricing override for {model_name!r} must be a mapping")
-        overrides[str(model_name)] = ModelPrice(**cast(dict[str, object], fields))
+        overrides[str(model_name)] = ModelPrice(**cast("dict[str, object]", fields))
     return overrides
 
 

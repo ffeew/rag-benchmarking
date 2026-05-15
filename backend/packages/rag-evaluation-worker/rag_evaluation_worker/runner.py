@@ -29,9 +29,19 @@ from rag_evaluation_worker.metrics import (
     metadata_filter_correctness,
     page_evidence_f1,
     recall_at_k,
+    strict_mean_reciprocal_rank,
+    strict_recall_at_k,
+)
+from rag_evaluation_worker.scoring import (
+    bootstrap_mean_ci,
+    coerce_expected_evidence,
+    score_answer,
+    strict_evidence_eligible,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from rag_common.schemas import QueryResponse
     from sqlalchemy.orm import Session
 
@@ -104,6 +114,31 @@ def _retrieved_page_set(retrieved: list[RetrievedChunkRef]) -> set[tuple[str, in
     return pages
 
 
+def _strict_expected_page_set(expected: Sequence[object]) -> set[tuple[str, int]]:
+    pages: set[tuple[str, int]] = set()
+    for exp in expected:
+        page_number = getattr(exp, "page_number", None)
+        if page_number is None:
+            continue
+        document_id = getattr(exp, "document_id", None)
+        ticker = getattr(exp, "ticker", None)
+        form_type = getattr(exp, "form_type", None)
+        if document_id:
+            pages.add((str(document_id), int(page_number)))
+        if ticker and form_type:
+            pages.add((f"{str(ticker).upper()}:{str(form_type).upper()}", int(page_number)))
+    return pages
+
+
+def _strict_retrieved_page_set(retrieved: list[RetrievedChunkRef]) -> set[tuple[str, int]]:
+    pages: set[tuple[str, int]] = set()
+    for item in retrieved:
+        for page in range(item.page_start, item.page_end + 1):
+            pages.add((item.document_id, page))
+            pages.add((f"{item.ticker.upper()}:{item.form_type.upper()}", page))
+    return pages
+
+
 def _load_chunk_snapshots(session: Session, chunk_ids: list[str]) -> dict[str, ChunkSnapshot]:
     if not chunk_ids:
         return {}
@@ -140,6 +175,103 @@ def _citation_snapshots_from_response(response: QueryResponse) -> list[CitationS
     ]
 
 
+def _citation_matches_expected(citation: Any, expected: object) -> bool:
+    page_number = getattr(expected, "page_number", None)
+    if page_number is None or citation.page_number != page_number:
+        return False
+    document_id = getattr(expected, "document_id", None)
+    if document_id:
+        return bool(citation.document_id == document_id)
+    ticker = getattr(expected, "ticker", None)
+    form_type = getattr(expected, "form_type", None)
+    if not ticker or not form_type:
+        return False
+    return bool(citation.ticker.upper() == ticker.upper() and citation.form_type.upper() == form_type.upper())
+
+
+def _citation_gold_scores(response: QueryResponse, expected: Sequence[object]) -> dict[str, Any]:
+    if not expected:
+        return {
+            "citation_gold_precision": None,
+            "citation_gold_recall": None,
+        }
+    matched_citations = sum(
+        1 for citation in response.citations if any(_citation_matches_expected(citation, exp) for exp in expected)
+    )
+    matched_expected = sum(
+        1 for exp in expected if any(_citation_matches_expected(citation, exp) for citation in response.citations)
+    )
+    precision = matched_citations / len(response.citations) if response.citations else 0.0
+    recall = matched_expected / len(expected)
+    return {
+        "citation_gold_precision": precision,
+        "citation_gold_recall": recall,
+    }
+
+
+def _parser_table_diagnostics(session: Session, expected: Sequence[object]) -> dict[str, Any]:
+    eligible = [item for item in expected if getattr(item, "document_id", None) and getattr(item, "page_number", None)]
+    if not eligible:
+        return {}
+
+    page_hits = 0
+    chunk_hits = 0
+    table_required = 0
+    table_preserved = 0
+    for item in eligible:
+        document_id = str(getattr(item, "document_id"))
+        page_number = int(getattr(item, "page_number"))
+        evidence_text = getattr(item, "evidence_text", None)
+        table_key = getattr(item, "table_key", None)
+        parsed_page = session.scalar(
+            select(models.ParsedPage).where(
+                models.ParsedPage.document_id == document_id,
+                models.ParsedPage.page_number == page_number,
+            )
+        )
+        page_text = parsed_page.text if parsed_page is not None else ""
+        if _evidence_text_hit(evidence_text, page_text) or (parsed_page is not None and not evidence_text):
+            page_hits += 1
+
+        chunks = list(
+            session.scalars(
+                select(models.Chunk).where(
+                    models.Chunk.document_id == document_id,
+                    models.Chunk.page_start <= page_number,
+                    models.Chunk.page_end >= page_number,
+                    models.Chunk.is_active.is_(True),
+                )
+            )
+        )
+        if any(_evidence_text_hit(evidence_text, chunk.text) or not evidence_text for chunk in chunks):
+            chunk_hits += 1
+        if table_key:
+            table_required += 1
+            if any(
+                chunk.contains_table and _evidence_text_hit(evidence_text or table_key, chunk.text) for chunk in chunks
+            ):
+                table_preserved += 1
+
+    diagnostics: dict[str, Any] = {
+        "parser_expected_evidence_count": len(eligible),
+        "parser_page_text_hit_rate": page_hits / len(eligible),
+        "chunk_evidence_hit_rate": chunk_hits / len(eligible),
+    }
+    if table_required:
+        diagnostics["table_chunk_preservation_rate"] = table_preserved / table_required
+    return diagnostics
+
+
+def _evidence_text_hit(needle: str | None, haystack: str) -> bool:
+    if not needle:
+        return False
+    return _normalize_whitespace(needle) in _normalize_whitespace(haystack)
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
 def _ensure_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -154,6 +286,8 @@ def _compute_case_metrics(
     latency_ms: int,
 ) -> dict[str, Any]:
     expected = _coerce_expected_citations(case.expected_citations or [])
+    expected_evidence = coerce_expected_evidence(case.expected_evidence or [])
+    strict_expected = strict_evidence_eligible(expected_evidence)
     retrieved = _coerce_retrieved(response.full_retrieval)
     generator_metadata = _ensure_dict(response.generator_metadata)
     plan_dict = _ensure_dict(generator_metadata.get("plan"))
@@ -165,8 +299,26 @@ def _compute_case_metrics(
 
     citations_used_raw = generator_metadata.get("citations_used")
     citations_used = [str(item) for item in citations_used_raw] if isinstance(citations_used_raw, list) else []
+    answer_metrics = score_answer(
+        answer=response.answer,
+        insufficiency_reason=response.insufficiency_reason,
+        raw_spec=case.expected_answer_spec,
+    )
+    verified = case.verification_status == "verified"
+    answer_gold_eligible = verified and bool(answer_metrics.get("answer_scoreable"))
+    evidence_gold_eligible = verified and bool(strict_expected)
 
     metrics: dict[str, Any] = {
+        "eval_case_id": case.id,
+        "case_key": case.case_key,
+        "category": case.category or "uncategorized",
+        "difficulty": case.difficulty or "uncategorized",
+        "tags": case.tags or [],
+        "verification_status": case.verification_status,
+        "gold_version": case.gold_version,
+        "gold_eligible": answer_gold_eligible or evidence_gold_eligible,
+        "answer_gold_eligible": answer_gold_eligible,
+        "evidence_gold_eligible": evidence_gold_eligible,
         "answer_present": 1.0 if response.answer.strip() else 0.0,
         "expected_contains": normalized_contains(response.answer, case.expected_answer),
         "citation_page_hit": citation_page_hit(response.citations, case.expected_citations or []),
@@ -178,10 +330,28 @@ def _compute_case_metrics(
         "recall_at_10": recall_at_k(expected, retrieved, k=10),
         "mrr": mean_reciprocal_rank(expected, retrieved),
         "page_evidence_f1": page_evidence_f1(_expected_page_set(expected), _retrieved_page_set(retrieved)),
+        "evidence_recall_at_5": strict_recall_at_k(strict_expected, retrieved, k=5) if evidence_gold_eligible else None,
+        "evidence_recall_at_10": (
+            strict_recall_at_k(strict_expected, retrieved, k=10) if evidence_gold_eligible else None
+        ),
+        "evidence_mrr": strict_mean_reciprocal_rank(strict_expected, retrieved) if evidence_gold_eligible else None,
+        "evidence_page_f1": (
+            page_evidence_f1(_strict_expected_page_set(strict_expected), _strict_retrieved_page_set(retrieved))
+            if evidence_gold_eligible
+            else None
+        ),
         "metadata_filter_correctness": metadata_filter_correctness(plan_filters, expected),
         "citation_validity": citation_validity(citation_snapshots, chunks_by_id),
+        "citation_reference_validity": citation_validity(citation_snapshots, chunks_by_id),
+        "claim_citation_coverage": citation_coverage(response.answer, citations_used),
         "citation_coverage": citation_coverage(response.answer, citations_used),
     }
+    metrics.update(answer_metrics)
+    if evidence_gold_eligible:
+        metrics.update(_citation_gold_scores(response, strict_expected))
+        metrics.update(_parser_table_diagnostics(session, strict_expected))
+    else:
+        metrics.update({"citation_gold_precision": None, "citation_gold_recall": None})
     return metrics
 
 
@@ -201,7 +371,7 @@ def _build_pricing(settings: Settings) -> PricingResolver:
     return PricingResolver(table=merge_pricing(overrides))
 
 
-def aggregate_metrics(results: list[models.EvalResult]) -> dict[str, Any]:
+def aggregate_metrics(results: list[models.EvalResult], *, seed: int = 1729) -> dict[str, Any]:
     by_mode: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_mode_results: dict[str, list[models.EvalResult]] = defaultdict(list)
     for result in results:
@@ -212,23 +382,10 @@ def aggregate_metrics(results: list[models.EvalResult]) -> dict[str, Any]:
     for mode, metrics in by_mode.items():
         if not metrics:
             continue
-        per_mode: dict[str, Any] = {
-            "case_count": len(metrics),
-            "answer_present_rate": _mean(metric.get("answer_present", 0.0) for metric in metrics),
-            "expected_contains_rate": _mean(metric.get("expected_contains", 0.0) for metric in metrics),
-            "citation_page_hit_rate": _mean(metric.get("citation_page_hit", 0.0) for metric in metrics),
-            "insufficient_rate": _mean(metric.get("insufficient", 0.0) for metric in metrics),
-            "avg_recall_at_5": _mean(metric.get("recall_at_5", 0.0) for metric in metrics),
-            "avg_recall_at_10": _mean(metric.get("recall_at_10", 0.0) for metric in metrics),
-            "avg_mrr": _mean(metric.get("mrr", 0.0) for metric in metrics),
-            "avg_page_evidence_f1": _mean(metric.get("page_evidence_f1", 0.0) for metric in metrics),
-            "metadata_filter_correctness_rate": _mean(
-                metric.get("metadata_filter_correctness", 0.0) for metric in metrics
-            ),
-            "citation_validity_rate": _mean(metric.get("citation_validity", 0.0) for metric in metrics),
-            "citation_coverage_rate": _mean(metric.get("citation_coverage", 0.0) for metric in metrics),
-        }
-        latency_values = [metric["latency_ms"] for metric in metrics if isinstance(metric.get("latency_ms"), (int, float))]
+        per_mode = _summary_for_metrics(metrics, seed=seed)
+        latency_values = [
+            metric["latency_ms"] for metric in metrics if isinstance(metric.get("latency_ms"), (int, float))
+        ]
         if latency_values:
             per_mode["avg_latency_ms"] = sum(latency_values) / len(latency_values)
         cost_values = [
@@ -247,20 +404,151 @@ def aggregate_metrics(results: list[models.EvalResult]) -> dict[str, Any]:
         ]
         if token_values:
             per_mode["total_tokens"] = sum(token_values)
-        ragas_scores: dict[str, list[float]] = defaultdict(list)
-        for metric in metrics:
-            ragas = metric.get("ragas")
-            if not isinstance(ragas, dict):
-                continue
-            for key, value in ragas.items():
-                if isinstance(value, (int, float)) and not math.isnan(float(value)):
-                    ragas_scores[key].append(float(value))
-        if ragas_scores:
-            per_mode["ragas"] = {key: sum(values) / len(values) for key, values in ragas_scores.items()}
+        judge_scores = _judge_score_summary(metrics)
+        if judge_scores:
+            per_mode["judge_diagnostics"] = judge_scores
+        per_mode["by_category"] = _grouped_summaries(metrics, key="category", seed=seed)
+        per_mode["by_difficulty"] = _grouped_summaries(metrics, key="difficulty", seed=seed)
+        per_mode["by_tag"] = _tagged_summaries(metrics, seed=seed)
+        per_mode["representative_failures"] = _representative_failures(metrics)
         aggregate[mode] = per_mode
     if grand_total_cost > 0.0:
         aggregate["total_cost_usd"] = grand_total_cost
     return aggregate
+
+
+def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[str, Any]:
+    answer_values = _eligible_values(metrics, key="answer_accuracy", eligible_key="answer_gold_eligible")
+    evidence_recall_values = _eligible_values(
+        metrics, key="evidence_recall_at_10", eligible_key="evidence_gold_eligible"
+    )
+    citation_gold_recall_values = _eligible_values(
+        metrics, key="citation_gold_recall", eligible_key="evidence_gold_eligible"
+    )
+    summary: dict[str, Any] = {
+        "case_count": len(metrics),
+        "diagnostic_case_count": len(metrics),
+        "scientific_case_count": sum(1 for metric in metrics if metric.get("gold_eligible") is True),
+        "answer_scientific_case_count": len(answer_values),
+        "evidence_scientific_case_count": len(evidence_recall_values),
+        "draft_case_count": sum(1 for metric in metrics if metric.get("verification_status") != "verified"),
+        "answer_accuracy_rate": _mean_list(answer_values),
+        "answer_accuracy_ci_95": bootstrap_mean_ci(answer_values, seed=seed),
+        "avg_evidence_recall_at_10": _mean_list(evidence_recall_values),
+        "evidence_recall_at_10_ci_95": bootstrap_mean_ci(evidence_recall_values, seed=seed + 1),
+        "citation_gold_recall_rate": _mean_list(citation_gold_recall_values),
+        "answer_present_rate": _mean_metric(metrics, "answer_present"),
+        "expected_contains_rate": _mean_metric(metrics, "expected_contains"),
+        "citation_page_hit_rate": _mean_metric(metrics, "citation_page_hit"),
+        "insufficient_rate": _mean_metric(metrics, "insufficient"),
+        "avg_recall_at_5": _mean_metric(metrics, "recall_at_5"),
+        "avg_recall_at_10": _mean_metric(metrics, "recall_at_10"),
+        "avg_mrr": _mean_metric(metrics, "mrr"),
+        "avg_page_evidence_f1": _mean_metric(metrics, "page_evidence_f1"),
+        "avg_evidence_recall_at_5": _mean_metric(metrics, "evidence_recall_at_5"),
+        "avg_evidence_mrr": _mean_metric(metrics, "evidence_mrr"),
+        "avg_evidence_page_f1": _mean_metric(metrics, "evidence_page_f1"),
+        "metadata_filter_correctness_rate": _mean_metric(metrics, "metadata_filter_correctness"),
+        "citation_reference_validity_rate": _mean_metric(metrics, "citation_reference_validity"),
+        "citation_validity_rate": _mean_metric(metrics, "citation_validity"),
+        "claim_citation_coverage_rate": _mean_metric(metrics, "claim_citation_coverage"),
+        "citation_coverage_rate": _mean_metric(metrics, "citation_coverage"),
+        "citation_gold_precision_rate": _mean_metric(metrics, "citation_gold_precision"),
+    }
+    parser_page_values = _numeric_values(metrics, "parser_page_text_hit_rate")
+    chunk_values = _numeric_values(metrics, "chunk_evidence_hit_rate")
+    table_values = _numeric_values(metrics, "table_chunk_preservation_rate")
+    if parser_page_values:
+        summary["parser_page_text_hit_rate"] = _mean(parser_page_values)
+    if chunk_values:
+        summary["chunk_evidence_hit_rate"] = _mean(chunk_values)
+    if table_values:
+        summary["table_chunk_preservation_rate"] = _mean(table_values)
+    return summary
+
+
+def _eligible_values(metrics: list[dict[str, Any]], *, key: str, eligible_key: str) -> list[float]:
+    return [
+        float(metric[key])
+        for metric in metrics
+        if metric.get(eligible_key) is True and isinstance(metric.get(key), (int, float))
+    ]
+
+
+def _numeric_values(metrics: list[dict[str, Any]], key: str) -> list[float]:
+    return [float(metric[key]) for metric in metrics if isinstance(metric.get(key), (int, float))]
+
+
+def _mean_metric(metrics: list[dict[str, Any]], key: str) -> float:
+    return _mean(_numeric_values(metrics, key))
+
+
+def _mean_list(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return _mean(values)
+
+
+def _grouped_summaries(metrics: list[dict[str, Any]], *, key: str, seed: int) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for metric in metrics:
+        value = metric.get(key)
+        grouped[str(value or "uncategorized")].append(metric)
+    return {group: _summary_for_metrics(items, seed=seed) for group, items in grouped.items()}
+
+
+def _tagged_summaries(metrics: list[dict[str, Any]], *, seed: int) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for metric in metrics:
+        tags = metric.get("tags")
+        if not isinstance(tags, list) or not tags:
+            grouped["untagged"].append(metric)
+            continue
+        for tag in tags:
+            grouped[str(tag)].append(metric)
+    return {tag: _summary_for_metrics(items, seed=seed) for tag, items in grouped.items()}
+
+
+def _judge_score_summary(metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    scores: dict[str, list[float]] = defaultdict(list)
+    for metric in metrics:
+        diagnostics = metric.get("judge_diagnostics")
+        ragas = diagnostics.get("ragas") if isinstance(diagnostics, dict) else metric.get("ragas")
+        if not isinstance(ragas, dict):
+            continue
+        for key, value in ragas.items():
+            if isinstance(value, (int, float)) and not math.isnan(float(value)):
+                scores[key].append(float(value))
+    return {"ragas": {key: _mean(values) for key, values in scores.items()}} if scores else {}
+
+
+def _representative_failures(metrics: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for metric in metrics:
+        answer_failed = (
+            metric.get("answer_gold_eligible") is True and _numeric_or_one(metric.get("answer_accuracy")) < 1.0
+        )
+        evidence_failed = (
+            metric.get("evidence_gold_eligible") is True and _numeric_or_one(metric.get("evidence_recall_at_10")) < 1.0
+        )
+        if not answer_failed and not evidence_failed:
+            continue
+        failures.append(
+            {
+                "eval_case_id": metric.get("eval_case_id"),
+                "case_key": metric.get("case_key"),
+                "category": metric.get("category"),
+                "answer_accuracy": metric.get("answer_accuracy"),
+                "evidence_recall_at_10": metric.get("evidence_recall_at_10"),
+            }
+        )
+        if len(failures) >= limit:
+            break
+    return failures
+
+
+def _numeric_or_one(value: Any) -> float:
+    return float(value) if isinstance(value, (int, float)) else 1.0
 
 
 def _mean(values: Any) -> float:
@@ -278,6 +566,46 @@ def _extract_total_tokens(usage: dict[str, Any] | None) -> int:
         if isinstance(role_data, dict):
             total += int(role_data.get("total_tokens", 0) or 0)
     return total
+
+
+def _case_has_scientific_gold(case: models.EvalCase) -> bool:
+    if case.verification_status != "verified":
+        return False
+    answer_metrics = score_answer(answer="", insufficiency_reason=None, raw_spec=case.expected_answer_spec)
+    expected_evidence = strict_evidence_eligible(coerce_expected_evidence(case.expected_evidence or []))
+    return bool(answer_metrics.get("answer_scoreable")) or bool(expected_evidence)
+
+
+def _ingestion_diagnostics(session: Session, dataset_id: str) -> dict[str, Any]:
+    runs = list(session.scalars(select(models.IngestionRun).where(models.IngestionRun.dataset_id == dataset_id)))
+    pages = list(
+        session.scalars(
+            select(models.ParsedPage)
+            .join(models.Document, models.Document.id == models.ParsedPage.document_id)
+            .where(models.Document.dataset_id == dataset_id)
+        )
+    )
+    diagnostics: dict[str, Any] = {
+        "ingestion_run_count": len(runs),
+        "completed_ingestion_run_count": sum(1 for run in runs if run.status == "completed"),
+        "parsed_page_count": len(pages),
+    }
+    total_seconds = [
+        float(run.timings["total_seconds"])
+        for run in runs
+        if isinstance(run.timings, dict) and isinstance(run.timings.get("total_seconds"), (int, float))
+    ]
+    if total_seconds:
+        diagnostics["avg_ingestion_time_seconds"] = _mean(total_seconds)
+    if pages:
+        fallback_pages = [page for page in pages if page.parser != "mistral-ocr"]
+        flagged_pages = [
+            page for page in pages if isinstance(page.quality_flags, dict) and any(page.quality_flags.values())
+        ]
+        diagnostics["ocr_fallback_page_rate"] = len(fallback_pages) / len(pages)
+        diagnostics["parser_quality_flag_rate"] = len(flagged_pages) / len(pages)
+        diagnostics["table_page_rate"] = sum(1 for page in pages if page.table_count > 0) / len(pages)
+    return diagnostics
 
 
 def _ragas_sample(case: models.EvalCase, response_answer: str, contexts: list[str]) -> dict[str, Any]:
@@ -299,7 +627,7 @@ def _attach_ragas_scores(
     if not judge_available(settings):
         for entry, _ in pending:
             merged = dict(entry.metrics or {})
-            merged["ragas_skipped"] = "judge_unavailable"
+            merged["judge_diagnostics"] = {"ragas_skipped": "judge_unavailable"}
             entry.metrics = merged
         return {"skipped": "judge_unavailable"}
 
@@ -375,9 +703,11 @@ def _attach_ragas_scores(
                 scores[key] = value
         merged = dict(entry.metrics or {})
         if scores:
-            merged["ragas"] = scores
+            diagnostics = _ensure_dict(merged.get("judge_diagnostics"))
+            diagnostics["ragas"] = scores
+            merged["judge_diagnostics"] = diagnostics
         else:
-            merged["ragas_error"] = "no metric scored"
+            merged["judge_diagnostics"] = {"ragas_error": "no metric scored"}
         entry.metrics = merged
 
     return {"case_count": len(pending), "metrics": [key for key, _ in metrics_config]}
@@ -411,7 +741,16 @@ def run_evaluation(
                 .limit(80)
             )
         )
+    benchmark_profile = str(eval_run.run_config.get("benchmark_profile") or "scientific")
+    if benchmark_profile == "scientific":
+        invalid_cases = [case.case_key or case.id for case in cases if not _case_has_scientific_gold(case)]
+        if invalid_cases:
+            raise ValueError(
+                "Scientific evaluation requires verified cases with structured gold fields. "
+                f"Invalid cases: {', '.join(invalid_cases[:10])}"
+            )
     variants = eval_run.run_config.get("system_variants") or ["full_agentic", "single_pass", "llm_only"]
+    bootstrap_seed = int(eval_run.run_config.get("bootstrap_seed") or 1729)
     total = max(1, len(cases) * len(variants))
     completed = 0
     errors: list[dict[str, Any]] = []
@@ -426,6 +765,7 @@ def run_evaluation(
                         dataset_id=eval_run.dataset_id,
                         question=case.question,
                         filters=QueryFilters(),
+                        top_k=max(resolved.evidence_top_k, 10),
                         include_trace=True,
                         retrieval_mode=variant,
                         include_full_retrieval=True,
@@ -440,7 +780,9 @@ def run_evaluation(
                     latency_ms=latency_ms,
                 )
                 usage_dump = (
-                    response.usage_summary.model_dump() if response.usage_summary is not None else _empty_role_usage_dict()
+                    response.usage_summary.model_dump()
+                    if response.usage_summary is not None
+                    else (_empty_role_usage_dict())
                 )
                 cost_breakdown: dict[str, float] = {}
                 if response.usage_summary is not None:
@@ -494,7 +836,9 @@ def run_evaluation(
 
     results = list(session.scalars(select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)))
     eval_run.errors = errors
-    eval_run.metrics = aggregate_metrics(results)
+    eval_run.metrics = aggregate_metrics(results, seed=bootstrap_seed)
+    eval_run.metrics["benchmark_profile"] = benchmark_profile
+    eval_run.metrics["ingestion_diagnostics"] = _ingestion_diagnostics(session, eval_run.dataset_id)
     if ragas_summary:
         eval_run.metrics["ragas_run"] = ragas_summary
     eval_run.status = "completed" if not errors else "completed_with_errors"

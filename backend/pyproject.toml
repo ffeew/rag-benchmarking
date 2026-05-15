@@ -108,7 +108,17 @@ warn_unused_ignores = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "pgvector.*", "chonkie.*", "pypdf.*", "ragas.*", "docling.*", "docling_core.*"]
+module = [
+  "celery.*",
+  "pgvector.*",
+  "chonkie.*",
+  "pypdf.*",
+  "ragas.*",
+  "docling.*",
+  "docling_core.*",
+  "yaml.*",
+  "testcontainers.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

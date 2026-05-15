@@ -12,17 +12,20 @@ fixture (faster than rebuilding the schema each time).
 from __future__ import annotations
 
 import os
-from collections.abc import Generator
-from typing import cast
+from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from rag_common.db import models
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from fastapi import FastAPI
+    from sqlalchemy.engine import Engine
 
 
 def _ensure_settings_env() -> None:
@@ -35,11 +38,11 @@ _ensure_settings_env()
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer, None, None]:
+def postgres_container() -> Generator[PostgresContainer]:
     container = PostgresContainer(
         image="pgvector/pgvector:pg17",
         username="rag",
-        password="rag",
+        password="rag",  # noqa: S106 - testcontainer password for an isolated throwaway database.
         dbname="rag",
         driver="psycopg",
     )
@@ -57,7 +60,7 @@ def postgres_container() -> Generator[PostgresContainer, None, None]:
 
 
 @pytest.fixture(scope="session")
-def engine(postgres_container: PostgresContainer) -> Generator[Engine, None, None]:
+def engine(postgres_container: PostgresContainer) -> Generator[Engine]:
     engine = create_engine(postgres_container.get_connection_url(), future=True)
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -76,9 +79,9 @@ def engine(postgres_container: PostgresContainer) -> Generator[Engine, None, Non
 
 
 @pytest.fixture
-def db_session(engine: Engine) -> Generator[Session, None, None]:
-    SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
-    session = SessionLocal()
+def db_session(engine: Engine) -> Generator[Session]:
+    session_local = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    session = session_local()
     try:
         yield session
     finally:
@@ -93,14 +96,14 @@ def db_session(engine: Engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def app(db_session: Session) -> Generator[FastAPI, None, None]:
+def app(db_session: Session) -> Generator[FastAPI]:
     """Build the FastAPI app with auth + DB dependencies overridden to use the test session."""
-    from rag_benchmarking.api.deps import db_session as db_session_dep, require_bearer_token
-
     # Late import so the patched DATABASE_URL is in place when the app is built.
+    from rag_benchmarking.api.deps import db_session as db_session_dep
+    from rag_benchmarking.api.deps import require_bearer_token
     from rag_benchmarking.main import app as real_app
 
-    def _session_override() -> Generator[Session, None, None]:
+    def _session_override() -> Generator[Session]:
         yield db_session
 
     def _auth_override() -> None:
@@ -115,12 +118,13 @@ def app(db_session: Session) -> Generator[FastAPI, None, None]:
 
 
 @pytest.fixture
-def client(app: FastAPI) -> Generator[TestClient, None, None]:
+def client(app: FastAPI) -> Generator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
 
 
 # ---------------------- factories ----------------------
+
 
 @pytest.fixture
 def seed_dataset(db_session: Session) -> models.Dataset:
@@ -137,17 +141,14 @@ def seed_dataset(db_session: Session) -> models.Dataset:
 
 @pytest.fixture
 def seed_document(db_session: Session, seed_dataset: models.Dataset) -> models.Document:
-    document = cast(
-        models.Document,
-        models.Document(
-            dataset_id=seed_dataset.id,
-            ticker="AAPL",
-            form_type="10-K",
-            checksum="abc123",
-            minio_bucket="bucket",
-            minio_key="raw/x.pdf",
-            byte_size=42,
-        ),
+    document = models.Document(
+        dataset_id=seed_dataset.id,
+        ticker="AAPL",
+        form_type="10-K",
+        checksum="abc123",
+        minio_bucket="bucket",
+        minio_key="raw/x.pdf",
+        byte_size=42,
     )
     db_session.add(document)
     db_session.commit()

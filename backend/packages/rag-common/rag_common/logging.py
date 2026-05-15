@@ -47,9 +47,7 @@ def configure_logging() -> None:
         cache_logger_on_first_use=True,
     )
 
-    use_console = settings.log_format == "console" or (
-        settings.log_format == "auto" and sys.stdout.isatty()
-    )
+    use_console = settings.log_format == "console" or (settings.log_format == "auto" and sys.stdout.isatty())
     renderer: Processor = (
         structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty())
         if use_console

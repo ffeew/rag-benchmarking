@@ -12,9 +12,9 @@ def test_health_returns_ok(client: TestClient) -> None:
 
 def test_ready_reports_status(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
     # Patch dependency checks to avoid hitting real services
+    import redis
     from rag_common.db import session as session_module
     from rag_common.storage import minio as minio_module
-    import redis
 
     monkeypatch.setattr(session_module, "check_database", lambda *_args, **_kw: True, raising=False)
 

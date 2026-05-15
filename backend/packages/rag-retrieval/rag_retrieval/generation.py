@@ -262,9 +262,7 @@ def generate_answer_with_agent(
             TokenUsage(),
         )
 
-    accumulated_usage = safe_pydantic_ai_usage(
-        first, provider="openrouter", model=settings.openrouter_chat_model
-    )
+    accumulated_usage = safe_pydantic_ai_usage(first, provider="openrouter", model=settings.openrouter_chat_model)
     ok, invalid_tags = _validate_citations(first.output, set(valid_tags))
     citation_validation = "passed"
     repair_used = False
@@ -287,9 +285,7 @@ def generate_answer_with_agent(
             second = agent.run_sync(repair_prompt)
             accumulated_usage = merge(
                 accumulated_usage,
-                safe_pydantic_ai_usage(
-                    second, provider="openrouter", model=settings.openrouter_chat_model
-                ),
+                safe_pydantic_ai_usage(second, provider="openrouter", model=settings.openrouter_chat_model),
             )
             second_ok, _ = _validate_citations(second.output, set(valid_tags))
             if second_ok:
@@ -355,10 +351,11 @@ def _llm_only_answer(question: str, settings: Settings) -> tuple[AnswerDraft, To
             AnswerDraft(
                 answer=result.content,
                 confidence=0.2,
-                insufficiency_reason="LLM-only ablation used no retrieved filing evidence.",
+                insufficiency_reason=None,
                 metadata={
                     "generator": result.metadata.provider,
                     "model": result.metadata.model,
+                    "ablation": "llm_only_no_retrieved_context",
                     "usage": result.metadata.usage,
                 },
             ),

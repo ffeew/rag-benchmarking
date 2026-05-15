@@ -141,6 +141,9 @@ def eval_run_to_read(eval_run: models.EvalRun) -> EvalRunRead:
                 trace_id=result.trace_id,
                 metrics=result.metrics,
                 error=result.error,
+                usage=result.usage,
+                cost_estimate=result.cost_estimate,
+                latency_ms=result.latency_ms,
             )
             for result in eval_run.results
         ],

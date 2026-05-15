@@ -215,6 +215,12 @@ class EvalCase(TimestampMixin, Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     expected_answer: Mapped[str | None] = mapped_column(Text)
     expected_citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    expected_answer_spec: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    expected_evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft", index=True)
+    verified_by: Mapped[str | None] = mapped_column(String(128))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    gold_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
 
 

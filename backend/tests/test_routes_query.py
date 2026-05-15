@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import pytest
 from fastapi.testclient import TestClient
 from rag_common.db import models
@@ -9,6 +7,7 @@ from rag_common.schemas import (
     QueryRequest,
     QueryResponse,
 )
+from sqlalchemy.orm import Session
 
 
 def _build_response() -> QueryResponse:
@@ -99,7 +98,7 @@ def test_trace_returns_404_when_missing(client: TestClient) -> None:
 def test_trace_returns_persisted_trace(
     client: TestClient,
     seed_dataset: models.Dataset,
-    db_session,
+    db_session: Session,
 ) -> None:
     trace = models.QueryTrace(
         dataset_id=seed_dataset.id,

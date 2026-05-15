@@ -25,6 +25,12 @@ def _to_read(case: models.EvalCase) -> EvalCaseRead:
         question=case.question,
         expected_answer=case.expected_answer,
         expected_citations=case.expected_citations or [],
+        expected_answer_spec=case.expected_answer_spec or {},
+        expected_evidence=case.expected_evidence or [],
+        verification_status=case.verification_status,
+        verified_by=case.verified_by,
+        verified_at=case.verified_at,
+        gold_version=case.gold_version,
         tags=case.tags or [],
         created_at=case.created_at,
         updated_at=case.updated_at,
@@ -60,6 +66,12 @@ def create_eval_case(
         question=payload.question,
         expected_answer=payload.expected_answer,
         expected_citations=payload.expected_citations,
+        expected_answer_spec=payload.expected_answer_spec.model_dump(mode="json"),
+        expected_evidence=[item.model_dump(mode="json") for item in payload.expected_evidence],
+        verification_status=payload.verification_status,
+        verified_by=payload.verified_by,
+        verified_at=payload.verified_at,
+        gold_version=payload.gold_version,
         tags=payload.tags,
     )
     session.add(case)
@@ -138,6 +150,16 @@ def update_eval_case(
                 detail=f"case_key {payload.case_key!r} already exists for this dataset",
             )
     update_data = payload.model_dump(exclude_unset=True)
+    if "expected_answer_spec" in update_data:
+        update_data["expected_answer_spec"] = (
+            payload.expected_answer_spec.model_dump(mode="json") if payload.expected_answer_spec is not None else {}
+        )
+    if "expected_evidence" in update_data:
+        update_data["expected_evidence"] = (
+            [item.model_dump(mode="json") for item in payload.expected_evidence]
+            if payload.expected_evidence is not None
+            else []
+        )
     for field, value in update_data.items():
         setattr(case, field, value)
     try:
@@ -170,4 +192,3 @@ def delete_eval_case(case_id: str, session: DbSession, _auth: AuthDep) -> None:
         )
     session.delete(case)
     session.commit()
-    return None

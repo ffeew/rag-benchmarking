@@ -145,6 +145,9 @@ class QueryFilters(BaseModel):
 
 
 RetrievalMode = Literal["full_agentic", "single_pass", "llm_only"]
+BenchmarkProfile = Literal["scientific", "diagnostic"]
+VerificationStatus = Literal["draft", "verified", "deprecated"]
+ExpectedAnswerType = Literal["numeric", "text", "multi_part", "insufficient", "refusal"]
 
 
 def default_eval_variants() -> list[RetrievalMode]:
@@ -239,10 +242,50 @@ class ExpectedCitation(BaseModel):
     evidence_text: str | None = None
 
 
+class ExpectedValue(BaseModel):
+    """Structured gold value for deterministic answer scoring."""
+
+    label: str
+    value_numeric: float | None = None
+    value_text: str | None = None
+    unit: str | None = None
+    tolerance_abs: float | None = Field(default=None, ge=0)
+    tolerance_pct: float | None = Field(default=None, ge=0)
+
+
+class ExpectedAnswerSpec(BaseModel):
+    """Structured answer gold data. Draft cases may leave every field empty."""
+
+    answer_type: ExpectedAnswerType | None = None
+    expected_values: list[ExpectedValue] = Field(default_factory=list)
+    required_claims: list[str] = Field(default_factory=list)
+    required_reason_keywords: list[str] = Field(default_factory=list)
+
+
+class ExpectedEvidenceSpec(BaseModel):
+    """Verified source evidence used for retrieval, citation, parser, and table scoring."""
+
+    ticker: str | None = None
+    form_type: str | None = None
+    document_id: str | None = None
+    filing_date: date | None = None
+    report_period: date | None = None
+    page_number: int | None = None
+    evidence_text: str | None = None
+    evidence_hash: str | None = None
+    table_key: str | None = None
+
+
 class EvalCaseCreate(BaseModel):
     question: str = Field(min_length=1)
     expected_answer: str | None = None
     expected_citations: list[dict[str, Any]] = Field(default_factory=list)
+    expected_answer_spec: ExpectedAnswerSpec = Field(default_factory=ExpectedAnswerSpec)
+    expected_evidence: list[ExpectedEvidenceSpec] = Field(default_factory=list)
+    verification_status: VerificationStatus = "draft"
+    verified_by: str | None = Field(default=None, max_length=128)
+    verified_at: datetime | None = None
+    gold_version: str = Field(default="v1", max_length=32)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -254,6 +297,12 @@ class EvalCaseCreateRequest(BaseModel):
     question: str = Field(min_length=1)
     expected_answer: str | None = None
     expected_citations: list[dict[str, Any]] = Field(default_factory=list)
+    expected_answer_spec: ExpectedAnswerSpec = Field(default_factory=ExpectedAnswerSpec)
+    expected_evidence: list[ExpectedEvidenceSpec] = Field(default_factory=list)
+    verification_status: VerificationStatus = "draft"
+    verified_by: str | None = Field(default=None, max_length=128)
+    verified_at: datetime | None = None
+    gold_version: str = Field(default="v1", max_length=32)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -264,6 +313,12 @@ class EvalCaseUpdate(BaseModel):
     question: str | None = Field(default=None, min_length=1)
     expected_answer: str | None = None
     expected_citations: list[dict[str, Any]] | None = None
+    expected_answer_spec: ExpectedAnswerSpec | None = None
+    expected_evidence: list[ExpectedEvidenceSpec] | None = None
+    verification_status: VerificationStatus | None = None
+    verified_by: str | None = Field(default=None, max_length=128)
+    verified_at: datetime | None = None
+    gold_version: str | None = Field(default=None, max_length=32)
     tags: list[str] | None = None
 
 
@@ -276,6 +331,12 @@ class EvalCaseRead(BaseModel):
     question: str
     expected_answer: str | None
     expected_citations: list[dict[str, Any]]
+    expected_answer_spec: ExpectedAnswerSpec
+    expected_evidence: list[ExpectedEvidenceSpec]
+    verification_status: str
+    verified_by: str | None
+    verified_at: datetime | None
+    gold_version: str
     tags: list[str]
     created_at: datetime
     updated_at: datetime
@@ -286,6 +347,7 @@ class EvaluationCreate(BaseModel):
     cases: list[EvalCaseCreate] | None = None
     case_ids: list[str] | None = None
     system_variants: list[RetrievalMode] = Field(default_factory=default_eval_variants)
+    benchmark_profile: BenchmarkProfile = "scientific"
 
 
 class EvaluationCreateResponse(BaseModel):

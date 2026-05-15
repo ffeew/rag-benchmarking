@@ -160,6 +160,37 @@ export const evalRunSchema = z.object({
   created_at: z.string(),
 })
 
+export const expectedValueSchema = z.object({
+  label: z.string(),
+  value_numeric: z.number().nullable().optional(),
+  value_text: z.string().nullable().optional(),
+  unit: z.string().nullable().optional(),
+  tolerance_abs: z.number().nullable().optional(),
+  tolerance_pct: z.number().nullable().optional(),
+})
+
+export const expectedAnswerSpecSchema = z.object({
+  answer_type: z
+    .enum(['numeric', 'text', 'multi_part', 'insufficient', 'refusal'])
+    .nullable()
+    .optional(),
+  expected_values: z.array(expectedValueSchema).default([]),
+  required_claims: z.array(z.string()).default([]),
+  required_reason_keywords: z.array(z.string()).default([]),
+})
+
+export const expectedEvidenceSchema = z.object({
+  ticker: z.string().nullable().optional(),
+  form_type: z.string().nullable().optional(),
+  document_id: z.string().nullable().optional(),
+  filing_date: z.string().nullable().optional(),
+  report_period: z.string().nullable().optional(),
+  page_number: z.number().nullable().optional(),
+  evidence_text: z.string().nullable().optional(),
+  evidence_hash: z.string().nullable().optional(),
+  table_key: z.string().nullable().optional(),
+})
+
 export const evalCaseSchema = z.object({
   id: z.string(),
   dataset_id: z.string().nullable(),
@@ -169,6 +200,16 @@ export const evalCaseSchema = z.object({
   question: z.string(),
   expected_answer: z.string().nullable(),
   expected_citations: z.array(z.record(z.string(), z.unknown())),
+  expected_answer_spec: expectedAnswerSpecSchema.default({
+    expected_values: [],
+    required_claims: [],
+    required_reason_keywords: [],
+  }),
+  expected_evidence: z.array(expectedEvidenceSchema).default([]),
+  verification_status: z.string().default('draft'),
+  verified_by: z.string().nullable().default(null),
+  verified_at: z.string().nullable().default(null),
+  gold_version: z.string().default('v1'),
   tags: z.array(z.string()),
   created_at: z.string(),
   updated_at: z.string().optional(),
@@ -620,10 +661,14 @@ export const api = {
       cases?: Array<{
         question: string
         expected_answer?: string
+        expected_answer_spec?: Record<string, unknown>
+        expected_evidence?: Array<Record<string, unknown>>
+        verification_status?: string
         tags?: Array<string>
       }>
       case_ids?: Array<string>
       system_variants?: Array<RetrievalMode>
+      benchmark_profile?: 'scientific' | 'diagnostic'
     },
   ) {
     return evaluationCreateResponseSchema.parse(
@@ -669,6 +714,12 @@ export const api = {
       question: string
       expected_answer?: string | null
       expected_citations?: Array<Record<string, unknown>>
+      expected_answer_spec?: Record<string, unknown>
+      expected_evidence?: Array<Record<string, unknown>>
+      verification_status?: string
+      verified_by?: string | null
+      verified_at?: string | null
+      gold_version?: string
       tags?: Array<string>
     },
   ) {
@@ -686,6 +737,12 @@ export const api = {
       question?: string
       expected_answer?: string | null
       expected_citations?: Array<Record<string, unknown>>
+      expected_answer_spec?: Record<string, unknown> | null
+      expected_evidence?: Array<Record<string, unknown>> | null
+      verification_status?: string | null
+      verified_by?: string | null
+      verified_at?: string | null
+      gold_version?: string | null
       tags?: Array<string>
     },
   ) {
