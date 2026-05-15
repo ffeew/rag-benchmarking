@@ -57,7 +57,11 @@ class Settings(BaseSettings):
     evidence_top_k: Annotated[int, Field(gt=0, le=20)] = 8
     rerank_candidates: Annotated[int, Field(gt=0, le=100)] = 20
     reranker_enabled: bool = True
+    # Deprecated: superseded by retrieval_agent_tool_call_budget for full_agentic.
+    # Still consumed by the legacy verifier-driven retry path on non-agentic flows.
     agent_retry_budget: Annotated[int, Field(ge=0, le=3)] = 1
+    hyde_enabled: bool = True
+    retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 4
 
     embedding_dimension: Annotated[int, Field(gt=0)] = 1024
     chunk_target_tokens: Annotated[int, Field(gt=100)] = 1000

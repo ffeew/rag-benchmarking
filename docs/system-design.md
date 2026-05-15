@@ -184,9 +184,45 @@ Chunk text should include table captions/headings when available, because those 
 
 ## Retrieval Design
 
-### Query Planning
+### Retrieval Agent (full_agentic mode)
 
-The Pydantic AI agent first converts the user question into a structured retrieval plan:
+For the `full_agentic` retrieval mode, a single Pydantic AI tool-using agent absorbs
+the planner, retrieval, and verifier responsibilities. The agent exposes exactly one
+tool, `retrieve_evidence`, and decides when, how many times, and with what filters to
+call it. The bounded budget is enforced via `UsageLimits(request_limit=N+1)` with
+`N = retrieval_agent_tool_call_budget` (default 4).
+
+The agent's final structured output combines planner-style metadata (target tickers,
+forms, metrics, query_type, latest, subquestions, reasoning) with verifier-style
+signals (`selected_chunk_ids`, `missing_subclaims`, `contradictions`, `confidence`,
+`insufficient_evidence`). The generator step downstream sees the verifier signals and
+hedges accordingly.
+
+`retrieve_evidence` parameters:
+
+| Parameter | Purpose |
+| --- | --- |
+| `query` | Free-form text. FTS uses this verbatim; HyDE-expanded text is used for the vector probe. |
+| `tickers` | Restrict to known tickers (unknown tickers are silently dropped). |
+| `form_types` | Subset of {10-K, 10-Q, 8-K}; invalid forms are dropped. |
+| `filing_date_start` / `filing_date_end` | ISO date bounds on filing_date. |
+| `top_k` | 1 to 12; capped server-side. |
+| `use_hyde` | When True, generate a hypothetical SEC-filing passage with the chat model and embed that for the vector probe. Default True. |
+
+When the chat agent is unavailable (`ALLOW_MOCK_PROVIDERS=true`, missing key, or
+upstream failure) the orchestrator falls back to a single deterministic pass:
+`infer_query_plan` -> `hybrid_retrieve` -> `keyword_verify_evidence`. The fallback path
+honors the same `AgentRetrievalResult` shape so downstream code is uniform.
+
+The `single_pass` mode uses the heuristic planner and a single `hybrid_retrieve` with
+no HyDE and no agent, preserving a meaningful non-agentic baseline. The `llm_only`
+mode is unchanged.
+
+### Query Planning (legacy planner; used by single_pass + fallback)
+
+The legacy planner converts the user question into a structured retrieval plan. It is
+the planning step for `single_pass` mode and the heuristic fallback path; for
+`full_agentic` mode the retrieval agent does its own planning via tool-call decisions.
 
 | Field | Purpose |
 | --- | --- |

@@ -276,7 +276,11 @@ def run_document_ingestion(
                 batch_size=len(batch),
                 offset=offset,
             )
-            result = provider.embeddings([chunk.text for chunk in batch], model=embedding_model)
+            result = provider.embeddings(
+                [chunk.text for chunk in batch],
+                model=embedding_model,
+                dimensions=resolved.embedding_dimension,
+            )
             for chunk, vector in zip(batch, result.vectors, strict=True):
                 session.add(
                     models.Embedding(

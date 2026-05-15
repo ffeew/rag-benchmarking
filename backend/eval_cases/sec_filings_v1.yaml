@@ -1017,7 +1017,7 @@
   question: "In this dataset, what is the filing date of Microsoft's latest 10-Q filing, in YYYY-MM-DD format?"
   expected_answer: "Microsoft's latest 10-Q filing in this dataset is dated 2026-01-28."
   expected_answer_spec:
-    answer_type: multi_part
+    answer_type: text
     expected_values:
       - {label: filing_date, value_text: "2026-01-28"}
   expected_citations:
@@ -1036,7 +1036,7 @@
   question: "In this dataset, what is the filing date of Apple's latest 8-K filing, in YYYY-MM-DD format?"
   expected_answer: "Apple's latest 8-K filing in this dataset is dated 2026-02-24."
   expected_answer_spec:
-    answer_type: multi_part
+    answer_type: text
     expected_values:
       - {label: filing_date, value_text: "2026-02-24"}
   expected_citations:
@@ -1055,7 +1055,7 @@
   question: "In this dataset, what is the filing date of NVIDIA's latest 8-K filing, in YYYY-MM-DD format?"
   expected_answer: "NVIDIA's latest 8-K filing in this dataset is dated 2026-03-06."
   expected_answer_spec:
-    answer_type: multi_part
+    answer_type: text
     expected_values:
       - {label: filing_date, value_text: "2026-03-06"}
   expected_citations:
@@ -1174,9 +1174,11 @@
       - {label: amd_dc_yoy_pct, value_numeric: 32, unit: percent, tolerance_abs: 0.05}
   expected_citations:
     - {ticker: NVDA, form_type: 10-K, page_number: 67, evidence_text: "Data Center revenue for fiscal year 2026 was up 68%"}
+    - {ticker: NVDA, form_type: 10-K, page_number: 125, evidence_text: "Data Center $ 193,737"}
     - {ticker: AMD, form_type: 10-K, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion increased by 32%"}
   expected_evidence:
     - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 67, evidence_text: "Data Center revenue for fiscal year 2026 was up 68%"}
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 125, evidence_text: "Data Center $ 193,737"}
     - {ticker: AMD, form_type: 10-K, filing_date: 2026-02-04, report_period: 2025-12-27, page_number: 73, evidence_text: "Data Center net revenue of $16.6 billion increased by 32%"}
   verification_status: verified
   verified_by: gap-closure-v2-pdf-inspection
@@ -1301,3 +1303,730 @@
   verified_at: 2026-05-15T00:00:00Z
   gold_version: sec-filings-pdf-v1
   tags: [refusal, ma_speculation, forecast]
+
+# --- 10-Q content cases (validation-extension-v1) ---
+
+- case_key: msft_q2_fy2026_total_revenue_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Microsoft's fiscal 2026 Q2 10-Q (three months ended December 31, 2025) income statement, what was total revenue, in millions of dollars?"
+  expected_answer: "Microsoft reported total revenue of $81,273 million for the three months ended December 31, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: msft_q2_fy2026_total_revenue, value_numeric: 81273, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-Q, page_number: 3, evidence_text: "Total revenue   81,273"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-Q, filing_date: 2026-01-28, page_number: 3, evidence_text: "Total revenue   81,273"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [10q, revenue, quarterly]
+
+- case_key: aapl_q1_fy2026_iphone_net_sales_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Apple's Q1 fiscal 2026 10-Q (three months ended December 27, 2025), what were iPhone net sales for the quarter, in millions of dollars?"
+  expected_answer: "Apple reported iPhone net sales of $85,269 million for the quarter ended December 27, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: aapl_q1_fy2026_iphone_net_sales, value_numeric: 85269, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-Q, page_number: 23, evidence_text: "iPhone $ 85,269"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-Q, filing_date: 2026-01-30, page_number: 23, evidence_text: "iPhone $ 85,269"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [10q, iphone, quarterly]
+
+- case_key: nvda_q3_fy2026_data_center_revenue_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In NVIDIA's Q3 fiscal 2026 10-Q (three months ended October 26, 2025), what was Data Center revenue for the quarter, in millions of dollars?"
+  expected_answer: "NVIDIA reported Data Center revenue of $51,215 million for the three months ended October 26, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: nvda_q3_fy2026_data_center_revenue, value_numeric: 51215, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: NVDA, form_type: 10-Q, page_number: 31, evidence_text: "Data Center $ 51,215"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-Q, filing_date: 2025-11-19, page_number: 31, evidence_text: "Data Center $ 51,215"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [10q, ai, segment, quarterly]
+
+- case_key: jpm_q3_2025_net_interest_income_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In JPMorganChase's Q3 2025 10-Q (three months ended September 30, 2025), what was net interest income for the quarter, in millions of dollars?"
+  expected_answer: "JPMorganChase reported net interest income of $23,966 million for the three months ended September 30, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: jpm_q3_2025_net_interest_income, value_numeric: 23966, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: JPM, form_type: 10-Q, page_number: 9, evidence_text: "Net interest income 23,966"}
+  expected_evidence:
+    - {ticker: JPM, form_type: 10-Q, filing_date: 2025-11-04, page_number: 9, evidence_text: "Net interest income 23,966"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [10q, banking, quarterly]
+
+- case_key: tsla_q3_2025_total_revenues_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Tesla's Q3 2025 10-Q (three months ended September 30, 2025), what were total revenues for the quarter, in millions of dollars?"
+  expected_answer: "Tesla reported total revenues of $28,095 million for the three months ended September 30, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: tsla_q3_2025_total_revenues, value_numeric: 28095, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: TSLA, form_type: 10-Q, page_number: 7, evidence_text: "Total revenues 28,095"}
+  expected_evidence:
+    - {ticker: TSLA, form_type: 10-Q, filing_date: 2025-10-23, page_number: 7, evidence_text: "Total revenues 28,095"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [10q, revenue, quarterly]
+
+- case_key: amzn_q3_2025_aws_net_sales_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In Amazon's Q3 2025 10-Q (three months ended September 30, 2025), what were AWS net sales for the quarter, in millions of dollars?"
+  expected_answer: "Amazon reported AWS net sales of $33,006 million for the three months ended September 30, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: amzn_q3_2025_aws_net_sales, value_numeric: 33006, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: AMZN, form_type: 10-Q, page_number: 31, evidence_text: "AWS 27,452 33,006"}
+  expected_evidence:
+    - {ticker: AMZN, form_type: 10-Q, filing_date: 2025-10-31, page_number: 31, evidence_text: "AWS 27,452 33,006"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [10q, aws, segment, quarterly]
+
+# --- 8-K content cases (validation-extension-v1) ---
+
+- case_key: aapl_8k_2026_01_29_quarter_period
+  category: latest_filing
+  difficulty: easy
+  question: "On Apple's 8-K filed January 29, 2026 (Item 2.02), which fiscal period did the disclosed press release cover?"
+  expected_answer: "Apple's January 29, 2026 8-K disclosed a press release for the first fiscal quarter ended December 27, 2025."
+  expected_answer_spec:
+    answer_type: text
+    expected_values:
+      - {label: period, value_text: "first fiscal quarter ended December 27, 2025"}
+  expected_citations:
+    - {ticker: AAPL, form_type: 8-K, page_number: 3, evidence_text: "first fiscal quarter ended December 27, 2025"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 8-K, filing_date: 2026-01-29, page_number: 3, evidence_text: "first fiscal quarter ended December 27, 2025"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [8k, results_of_operations, metadata]
+
+- case_key: nvda_8k_2026_02_25_press_release_title
+  category: latest_filing
+  difficulty: easy
+  question: "On NVIDIA's 8-K filed February 25, 2026, what is the title of the press release attached as Exhibit 99.1?"
+  expected_answer: "Exhibit 99.1 is the press release titled \"NVIDIA Announces Financial Results for Fourth Quarter and Fiscal 2026\"."
+  expected_answer_spec:
+    answer_type: text
+    expected_values:
+      - {label: press_release_title, value_text: "NVIDIA Announces Financial Results for Fourth Quarter and Fiscal 2026"}
+  expected_citations:
+    - {ticker: NVDA, form_type: 8-K, page_number: 3, evidence_text: "NVIDIA Announces Financial Results for FourthQuarter and Fiscal 2026"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 8-K, filing_date: 2026-02-25, page_number: 3, evidence_text: "NVIDIA Announces Financial Results for FourthQuarter and Fiscal 2026"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [8k, press_release, metadata]
+
+- case_key: tsla_8k_2026_01_28_reporting_period
+  category: latest_filing
+  difficulty: easy
+  question: "On Tesla's 8-K filed January 28, 2026 (Item 2.02), what fiscal period did Tesla report results for?"
+  expected_answer: "Tesla released results for the fiscal quarter and year ended December 31, 2025."
+  expected_answer_spec:
+    answer_type: text
+    expected_values:
+      - {label: period, value_text: "fiscal quarter and year ended December 31, 2025"}
+  expected_citations:
+    - {ticker: TSLA, form_type: 8-K, page_number: 3, evidence_text: "fiscal quarter and year ended December 31, 2025"}
+  expected_evidence:
+    - {ticker: TSLA, form_type: 8-K, filing_date: 2026-01-28, page_number: 3, evidence_text: "fiscal quarter and year ended December 31, 2025"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [8k, results_of_operations, metadata]
+
+- case_key: pm_8k_2026_03_13_segment_realignment
+  category: single_company_lookup
+  difficulty: medium
+  question: "What new reportable segments did Philip Morris disclose in its 8-K filed March 13, 2026?"
+  expected_answer: "Philip Morris disclosed three new reportable segments: International Smoke-Free, International Combustibles, and U.S., effective January 1, 2026."
+  expected_answer_spec:
+    answer_type: text
+    expected_values: []
+    required_claims:
+      - "International Smoke-Free"
+      - "International Combustibles"
+      - "U.S."
+  expected_citations:
+    - {ticker: PM, form_type: 8-K, page_number: 6, evidence_text: "International Smoke-Free"}
+  expected_evidence:
+    - {ticker: PM, form_type: 8-K, filing_date: 2026-03-13, page_number: 6, evidence_text: "International Smoke-Free"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [8k, segment_realignment, narrative]
+
+# --- Sector coverage cases (validation-extension-v1) ---
+
+- case_key: lly_2025_revenue_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Eli Lilly's 2025 10-K Executive Overview, what was total revenue for the year ended December 31, 2025, in millions of dollars?"
+  expected_answer: "Eli Lilly reported revenue of $65,179 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: lly_revenue, value_numeric: 65179, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: LLY, form_type: 10-K, page_number: 69, evidence_text: "Revenue $ 65,179 $ 45,043"}
+  expected_evidence:
+    - {ticker: LLY, form_type: 10-K, filing_date: 2026-02-12, report_period: 2025-12-31, page_number: 69, evidence_text: "Revenue $ 65,179 $ 45,043"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [pharma, revenue, 10k]
+
+- case_key: mrk_2025_total_sales_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Merck's 2025 10-K consolidated income statement, what was total Sales for 2025, in millions of dollars?"
+  expected_answer: "Merck reported Sales of $65,011 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: mrk_total_sales, value_numeric: 65011, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: MRK, form_type: 10-K, page_number: 144, evidence_text: "Sales $ 65,011 $ 64,168 $ 60,115"}
+  expected_evidence:
+    - {ticker: MRK, form_type: 10-K, filing_date: 2026-02-24, report_period: 2025-12-31, page_number: 144, evidence_text: "Sales $ 65,011 $ 64,168 $ 60,115"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [pharma, revenue, 10k]
+
+- case_key: jnj_2025_sales_to_customers_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Johnson & Johnson's 2025 10-K consolidated statements of earnings, what were sales to customers for 2025, in millions of dollars?"
+  expected_answer: "Johnson & Johnson reported sales to customers of $94,193 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: jnj_sales_to_customers, value_numeric: 94193, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: JNJ, form_type: 10-K, page_number: 52, evidence_text: "Sales to customers $94,193"}
+  expected_evidence:
+    - {ticker: JNJ, form_type: 10-K, filing_date: 2026-02-11, report_period: 2025-12-31, page_number: 52, evidence_text: "Sales to customers $94,193"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [pharma, revenue, 10k]
+
+- case_key: unh_2025_total_revenues_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In UnitedHealth Group's 2025 10-K, what were total revenues for 2025, in millions of dollars?"
+  expected_answer: "UnitedHealth Group reported total revenues of $447,567 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: unh_total_revenues, value_numeric: 447567, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: UNH, form_type: 10-K, page_number: 54, evidence_text: "Total revenues 447,567"}
+  expected_evidence:
+    - {ticker: UNH, form_type: 10-K, filing_date: 2026-03-02, report_period: 2025-12-31, page_number: 54, evidence_text: "Total revenues 447,567"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [healthcare, revenue, 10k]
+
+- case_key: xom_2025_sales_other_operating_revenue_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In ExxonMobil's 2025 10-K consolidated statement of income, what was Sales and other operating revenue for 2025, in millions of dollars?"
+  expected_answer: "ExxonMobil reported Sales and other operating revenue of $323,905 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: xom_sales_other_operating_revenue, value_numeric: 323905, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: XOM, form_type: 10-K, page_number: 115, evidence_text: "Sales and other operating revenue 3 323,905"}
+  expected_evidence:
+    - {ticker: XOM, form_type: 10-K, filing_date: 2026-02-18, report_period: 2025-12-31, page_number: 115, evidence_text: "Sales and other operating revenue 3 323,905"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [energy, revenue, 10k]
+
+- case_key: cvx_2025_sales_other_operating_revenues_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Chevron's 2025 10-K, what were Sales and Other Operating Revenues for 2025, in millions of dollars?"
+  expected_answer: "Chevron reported Sales and Other Operating Revenues of $184,432 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: cvx_sales_other_operating, value_numeric: 184432, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: CVX, form_type: 10-K, page_number: 39, evidence_text: "Sales and Other Operating Revenues $ 184,432"}
+  expected_evidence:
+    - {ticker: CVX, form_type: 10-K, filing_date: 2026-02-24, report_period: 2025-12-31, page_number: 39, evidence_text: "Sales and Other Operating Revenues $ 184,432"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [energy, revenue, 10k]
+
+- case_key: wmt_fy2026_net_sales_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Walmart's fiscal 2026 10-K (year ended January 31, 2026), what were net sales for the fiscal year, in millions of dollars?"
+  expected_answer: "Walmart reported net sales of $706,413 million for fiscal 2026."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: wmt_net_sales, value_numeric: 706413, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: WMT, form_type: 10-K, page_number: 59, evidence_text: "Net sales $ 706,413"}
+  expected_evidence:
+    - {ticker: WMT, form_type: 10-K, filing_date: 2026-03-13, report_period: 2026-01-31, page_number: 59, evidence_text: "Net sales $ 706,413"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [retail, revenue, 10k]
+
+- case_key: cost_fy2025_net_sales_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Costco's fiscal 2025 10-K consolidated income statement, what were net sales for fiscal 2025, in millions of dollars?"
+  expected_answer: "Costco reported net sales of $269,912 million for fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: cost_net_sales, value_numeric: 269912, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: COST, form_type: 10-K, page_number: 59, evidence_text: "Net sales $ 269,912"}
+  expected_evidence:
+    - {ticker: COST, form_type: 10-K, filing_date: 2025-10-08, page_number: 59, evidence_text: "Net sales $ 269,912"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [retail, revenue, 10k]
+
+- case_key: ko_2025_net_operating_revenues_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Coca-Cola's 2025 10-K consolidated statements of income, what were net operating revenues for 2025, in millions of dollars?"
+  expected_answer: "Coca-Cola reported net operating revenues of $47,941 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: ko_net_operating_revenues, value_numeric: 47941, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: KO, form_type: 10-K, page_number: 113, evidence_text: "Net Operating Revenues $ 47,941"}
+  expected_evidence:
+    - {ticker: KO, form_type: 10-K, filing_date: 2026-02-20, report_period: 2025-12-31, page_number: 113, evidence_text: "Net Operating Revenues $ 47,941"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [consumer, revenue, 10k]
+
+- case_key: t_2025_total_operating_revenues_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In AT&T's 2025 10-K, what were total operating revenues for 2025, in millions of dollars?"
+  expected_answer: "AT&T reported total operating revenues of $125,648 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: t_total_operating_revenues, value_numeric: 125648, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: T, form_type: 10-K, page_number: 41, evidence_text: "Total Operating Revenues 125,648"}
+  expected_evidence:
+    - {ticker: T, form_type: 10-K, filing_date: 2026-02-09, report_period: 2025-12-31, page_number: 41, evidence_text: "Total Operating Revenues 125,648"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [telecom, revenue, 10k]
+
+- case_key: vz_2025_total_operating_revenues_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Verizon's 2025 10-K, what were Total Operating Revenues for 2025, in millions of dollars?"
+  expected_answer: "Verizon reported Total Operating Revenues of $106,807 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: vz_total_operating_revenues, value_numeric: 106807, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: VZ, form_type: 10-K, page_number: 54, evidence_text: "Total Operating Revenues $ 106,807"}
+  expected_evidence:
+    - {ticker: VZ, form_type: 10-K, filing_date: 2026-02-17, report_period: 2025-12-31, page_number: 54, evidence_text: "Total Operating Revenues $ 106,807"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [telecom, revenue, 10k]
+
+- case_key: gs_2025_total_net_revenues_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In Goldman Sachs' 2025 10-K consolidated statements of earnings, what were total net revenues for 2025, in millions of dollars?"
+  expected_answer: "Goldman Sachs reported total net revenues of $58,283 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: gs_total_net_revenues, value_numeric: 58283, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: GS, form_type: 10-K, page_number: 163, evidence_text: "Net revenues $ 58,283"}
+  expected_evidence:
+    - {ticker: GS, form_type: 10-K, filing_date: 2026-02-25, report_period: 2025-12-31, page_number: 163, evidence_text: "Net revenues $ 58,283"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [banking, revenue, 10k]
+
+- case_key: cat_2025_sales_and_revenues_millions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In Caterpillar's 2025 10-K, what were consolidated Sales and Revenues for 2025, in millions of dollars?"
+  expected_answer: "Caterpillar reported consolidated Sales and Revenues of $67,589 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: cat_sales_and_revenues, value_numeric: 67589, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: CAT, form_type: 10-K, page_number: 58, evidence_text: "Consolidated Sales and Revenues"}
+  expected_evidence:
+    - {ticker: CAT, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 58, evidence_text: "Consolidated Sales and Revenues"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [industrial, revenue, 10k]
+
+- case_key: avgo_fy2025_total_net_revenue_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Broadcom's fiscal 2025 10-K, what was total net revenue for fiscal 2025, in millions of dollars?"
+  expected_answer: "Broadcom reported total net revenue of $63,887 million for fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: avgo_total_net_revenue, value_numeric: 63887, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: AVGO, form_type: 10-K, page_number: 72, evidence_text: "Total net revenue 63,887"}
+  expected_evidence:
+    - {ticker: AVGO, form_type: 10-K, filing_date: 2025-12-18, page_number: 72, evidence_text: "Total net revenue 63,887"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [semiconductor, revenue, 10k]
+
+- case_key: intc_2025_total_net_revenue_millions
+  category: single_company_lookup
+  difficulty: easy
+  question: "In Intel's 2025 10-K, what was total net revenue for the year ended December 27, 2025, in millions of dollars?"
+  expected_answer: "Intel reported total net revenue of $52,853 million for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: intc_total_net_revenue, value_numeric: 52853, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: INTC, form_type: 10-K, page_number: 123, evidence_text: "Total net revenue $ 52,853"}
+  expected_evidence:
+    - {ticker: INTC, form_type: 10-K, filing_date: 2026-01-23, report_period: 2025-12-27, page_number: 123, evidence_text: "Total net revenue $ 52,853"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [semiconductor, revenue, 10k]
+
+- case_key: cross_sector_2025_revenue_ranking
+  category: sector_synthesis
+  difficulty: hard
+  question: "Among Eli Lilly, ExxonMobil, Walmart, AT&T, Goldman Sachs, and Caterpillar, which reported the highest 2025 top-line revenue (or equivalent net sales), and what were the six values in millions of dollars?"
+  expected_answer: "Walmart was highest with fiscal 2026 net sales of $706,413 million; ExxonMobil reported Sales and other operating revenue of $323,905 million; AT&T reported total operating revenues of $125,648 million; Caterpillar reported $67,589 million; Eli Lilly reported $65,179 million; Goldman Sachs reported $58,283 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: wmt_net_sales, value_numeric: 706413, unit: million, tolerance_abs: 1}
+      - {label: xom_sales_other_operating, value_numeric: 323905, unit: million, tolerance_abs: 1}
+      - {label: t_total_operating_revenues, value_numeric: 125648, unit: million, tolerance_abs: 1}
+      - {label: cat_sales_and_revenues, value_numeric: 67589, unit: million, tolerance_abs: 1}
+      - {label: lly_revenue, value_numeric: 65179, unit: million, tolerance_abs: 1}
+      - {label: gs_total_net_revenues, value_numeric: 58283, unit: million, tolerance_abs: 1}
+      - {label: highest_company, value_text: Walmart}
+  expected_citations:
+    - {ticker: WMT, form_type: 10-K, page_number: 59, evidence_text: "Net sales $ 706,413"}
+    - {ticker: XOM, form_type: 10-K, page_number: 115, evidence_text: "Sales and other operating revenue 3 323,905"}
+    - {ticker: T, form_type: 10-K, page_number: 41, evidence_text: "Total Operating Revenues 125,648"}
+    - {ticker: CAT, form_type: 10-K, page_number: 58, evidence_text: "Consolidated Sales and Revenues"}
+    - {ticker: LLY, form_type: 10-K, page_number: 69, evidence_text: "Revenue $ 65,179"}
+    - {ticker: GS, form_type: 10-K, page_number: 163, evidence_text: "Net revenues $ 58,283"}
+  expected_evidence:
+    - {ticker: WMT, form_type: 10-K, filing_date: 2026-03-13, report_period: 2026-01-31, page_number: 59, evidence_text: "Net sales $ 706,413"}
+    - {ticker: XOM, form_type: 10-K, filing_date: 2026-02-18, report_period: 2025-12-31, page_number: 115, evidence_text: "Sales and other operating revenue 3 323,905"}
+    - {ticker: T, form_type: 10-K, filing_date: 2026-02-09, report_period: 2025-12-31, page_number: 41, evidence_text: "Total Operating Revenues 125,648"}
+    - {ticker: CAT, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 58, evidence_text: "Consolidated Sales and Revenues"}
+    - {ticker: LLY, form_type: 10-K, filing_date: 2026-02-12, report_period: 2025-12-31, page_number: 69, evidence_text: "Revenue $ 65,179"}
+    - {ticker: GS, form_type: 10-K, filing_date: 2026-02-25, report_period: 2025-12-31, page_number: 163, evidence_text: "Net revenues $ 58,283"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, cross_sector, revenue, ranking]
+
+# --- Qualitative / narrative cases (validation-extension-v1) ---
+
+- case_key: aapl_2025_supply_chain_risk_factor
+  category: single_company_lookup
+  difficulty: medium
+  question: "How does Apple's 2025 10-K describe the geographic concentration risk in its supply chain?"
+  expected_answer: "Apple's 10-K explains that its global supply chain is large and complex and a majority of its supplier facilities, including manufacturing and assembly sites, are located outside the United States."
+  expected_answer_spec:
+    answer_type: text
+    expected_values: []
+    required_claims:
+      - "global supply chain"
+      - "outside the U.S."
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 11, evidence_text: "global supply chain is large and complex"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 11, evidence_text: "global supply chain is large and complex"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [risk_factor, supply_chain, narrative]
+
+- case_key: nvda_2026_h20_export_charge_billions
+  category: single_company_lookup
+  difficulty: medium
+  question: "In NVIDIA's fiscal 2026 10-K, what charge did NVIDIA take in the first quarter of fiscal 2026 in connection with the export licensing requirement on its H20 integrated circuits, in billions of dollars?"
+  expected_answer: "NVIDIA incurred a $4.5 billion charge in the first quarter of fiscal year 2026 associated with the H20 export licensing requirement."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: h20_charge, value_numeric: 4.5, unit: billion, tolerance_abs: 0.05}
+    required_claims:
+      - "H20"
+  expected_citations:
+    - {ticker: NVDA, form_type: 10-K, page_number: 17, evidence_text: "$4.5 billion charge in the ﬁrst quarter of ﬁscal year 2026"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 17, evidence_text: "$4.5 billion charge in the ﬁrst quarter of ﬁscal year 2026"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [export_restriction, ai, semiconductor, narrative]
+
+- case_key: meta_2025_advertising_revenue_drivers
+  category: multi_part
+  difficulty: medium
+  question: "According to Meta's 2025 10-K MD&A, by what percentage did advertising revenue increase in 2025, and what two drivers did the filing cite?"
+  expected_answer: "Meta's advertising revenue increased by 22% in 2025, driven by increases in ad impressions delivered and average price per ad."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: advertising_yoy_pct, value_numeric: 22, unit: percent, tolerance_abs: 0.05}
+    required_claims:
+      - "ad impressions delivered"
+      - "average price per ad"
+  expected_citations:
+    - {ticker: META, form_type: 10-K, page_number: 127, evidence_text: "ad impressions delivered"}
+  expected_evidence:
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 127, evidence_text: "ad impressions delivered"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [advertising, drivers, narrative]
+
+- case_key: msft_2025_ai_infrastructure_cost_commentary
+  category: single_company_lookup
+  difficulty: medium
+  question: "In Microsoft's fiscal 2025 10-K, how does the filing describe the cost impact of investments in cloud and AI infrastructure?"
+  expected_answer: "Microsoft warns that investments in cloud and AI infrastructure and devices will continue to increase operating costs and may decrease operating margins."
+  expected_answer_spec:
+    answer_type: text
+    expected_values: []
+    required_claims:
+      - "cloud and AI infrastructure"
+      - "operating margins"
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-K, page_number: 58, evidence_text: "cloud and AI infrastructure"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 58, evidence_text: "cloud and AI infrastructure"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [ai, capex, narrative]
+
+# --- Edge cases (validation-extension-v1) ---
+
+- case_key: aapl_q1_fy2026_vs_fy2025_total_net_sales
+  category: multi_part
+  difficulty: hard
+  question: "Report Apple's total net sales for both (a) the full fiscal 2025 from the 2025 10-K and (b) the first quarter of fiscal 2026 from the Q1 fiscal 2026 10-Q, each in millions of dollars."
+  expected_answer: "Apple reported fiscal 2025 total net sales of $416,161 million and Q1 fiscal 2026 total net sales of $143,756 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: fy2025_total_net_sales, value_numeric: 416161, unit: million, tolerance_abs: 1}
+      - {label: q1_fy2026_total_net_sales, value_numeric: 143756, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Total net sales"}
+    - {ticker: AAPL, form_type: 10-Q, page_number: 23, evidence_text: "Total net sales $ 143,756"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Total net sales"}
+    - {ticker: AAPL, form_type: 10-Q, filing_date: 2026-01-30, page_number: 23, evidence_text: "Total net sales $ 143,756"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [period_disambiguation, multi_period, edge_case]
+
+- case_key: nvda_fy25_vs_fy26_revenue_in_fy26_10k
+  category: multi_part
+  difficulty: medium
+  question: "From NVIDIA's fiscal 2026 10-K alone (no other filings), what were total revenues for fiscal 2025 and fiscal 2026, in millions of dollars?"
+  expected_answer: "NVIDIA's fiscal 2026 10-K reports total revenue of $130,497 million for fiscal 2025 and $215,938 million for fiscal 2026."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: fy2025_revenue, value_numeric: 130497, unit: million, tolerance_abs: 1}
+      - {label: fy2026_revenue, value_numeric: 215938, unit: million, tolerance_abs: 1}
+  expected_citations:
+    - {ticker: NVDA, form_type: 10-K, page_number: 67, evidence_text: "Revenue $ 215,938  $ 130,497"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 67, evidence_text: "Revenue $ 215,938  $ 130,497"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [cross_period, single_filing, edge_case]
+
+- case_key: meta_2025_diluted_eps_and_capex
+  category: multi_part
+  difficulty: medium
+  question: "From Meta's 2025 10-K Executive Overview, what were 2025 diluted earnings per share and capital expenditures (including principal payments on finance leases), in dollars per share and in billions of dollars respectively?"
+  expected_answer: "Meta reported 2025 diluted EPS of $23.49 and capital expenditures (including finance lease principal) of $72.22 billion."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: meta_diluted_eps_2025, value_numeric: 23.49, unit: dollar, tolerance_abs: 0.005}
+      - {label: meta_capex_2025_billions, value_numeric: 72.22, unit: billion, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: META, form_type: 10-K, page_number: 109, evidence_text: "diluted earnings per share (EPS) of $23.49"}
+  expected_evidence:
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 109, evidence_text: "diluted earnings per share (EPS) of $23.49"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [eps, capex, narrative]
+
+- case_key: tsla_2025_regulatory_credits_revenue_millions
+  category: table_lookup
+  difficulty: medium
+  question: "From Tesla's 2025 10-K revenue table, what was Automotive regulatory credits revenue for 2025, in millions of dollars?"
+  expected_answer: "Tesla reported Automotive regulatory credits revenue of $1,993 million in 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: tsla_regulatory_credits, value_numeric: 1993, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: TSLA, form_type: 10-K, page_number: 66, evidence_text: "Automotive regulatory credits 1,993"}
+  expected_evidence:
+    - {ticker: TSLA, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 66, evidence_text: "Automotive regulatory credits 1,993"}
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, regulatory_credits, narrow_line_item, edge_case]
+
+# --- Negative coverage cases (validation-extension-v1) ---
+
+- case_key: mcd_2025_10k_total_revenue_insufficient
+  category: insufficient_evidence
+  difficulty: medium
+  question: "What were McDonald's 2025 total revenues reported in its annual report on Form 10-K? Answer only from the ingested corpus."
+  expected_answer: "Insufficient evidence: the ingested corpus does not contain McDonald's 2025 10-K (only an 8-K filing is present for MCD)."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, missing_filing, retail]
+
+- case_key: nflx_q1_2025_revenue_insufficient
+  category: insufficient_evidence
+  difficulty: medium
+  question: "What was Netflix's revenue for the quarter ended March 31, 2025? Answer only from the ingested corpus."
+  expected_answer: "Insufficient evidence: the ingested corpus does not contain a Netflix 10-Q for the quarter ended March 31, 2025."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
+  expected_citations: []
+  expected_evidence: []
+  verification_status: verified
+  verified_by: validation-extension-v1
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, missing_quarter, streaming]

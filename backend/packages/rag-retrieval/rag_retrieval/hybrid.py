@@ -122,11 +122,24 @@ def hybrid_retrieve(
     plan: RetrievalPlan,
     top_k: int,
     settings: Settings | None = None,
+    semantic_query: str | None = None,
 ) -> tuple[list[RetrievedChunk], dict[str, Any], TokenUsage, TokenUsage]:
+    """Hybrid retrieval over pgvector + Postgres FTS with optional rerank.
+
+    When ``semantic_query`` is provided, it is embedded for vector search while FTS still
+    uses the original ``question``. This supports HyDE: pass the hypothetical answer
+    passage as ``semantic_query`` to align the vector probe with filing-style text while
+    keeping lexical matches anchored on the literal investor terms.
+    """
     resolved = settings or get_settings()
     provider = OpenRouterClient(resolved)
     embedding_model = resolved.openrouter_embedding_model or "mock-embedding"
-    embedding_result = provider.embeddings([question], model=embedding_model)
+    embedding_text = semantic_query if semantic_query else question
+    embedding_result = provider.embeddings(
+        [embedding_text],
+        model=embedding_model,
+        dimensions=resolved.embedding_dimension,
+    )
     query_vector = embedding_result.vectors[0]
     embedding_usage = from_openrouter_usage(
         embedding_result.metadata.usage,
@@ -175,6 +188,8 @@ def hybrid_retrieve(
         "lexical_count": len(lexical_rows),
         "fused_count": len(fused),
         "rerank_degraded": False,
+        "semantic_query_used": semantic_query is not None,
+        "semantic_query_preview": (semantic_query[:200] if semantic_query else None),
     }
     if resolved.reranker_enabled and fused:
         try:

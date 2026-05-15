@@ -117,13 +117,32 @@ class OpenRouterClient:
         )
 
     @retry(wait=wait_exponential(multiplier=1, min=1, max=8), stop=stop_after_attempt(3))
-    def embeddings(self, texts: list[str], model: str | None = None) -> EmbeddingResult:
+    def embeddings(
+        self,
+        texts: list[str],
+        model: str | None = None,
+        *,
+        dimensions: int | None = None,
+    ) -> EmbeddingResult:
+        """Embed ``texts`` with the configured (or supplied) model and dimensionality.
+
+        ``dimensions`` is forwarded to the OpenRouter request body and used by the
+        deterministic mock generator. The pgvector column is sized at ingestion time
+        and CANNOT be changed at query time without a reindex, so callers that read
+        from a specific index must pass the same dimension that was used to write it.
+        The returned vector length is validated to match the requested dimension; a
+        mismatch raises ``ProviderError`` rather than silently producing rows pgvector
+        will reject at query time.
+        """
         selected_model = model or self.settings.openrouter_embedding_model
         if not selected_model:
             raise ProviderError("OPENROUTER_EMBEDDING_MODEL is not configured")
+        requested_dimension = dimensions if dimensions is not None else self.settings.embedding_dimension
+        if requested_dimension <= 0:
+            raise ProviderError(f"Invalid embedding dimensions requested: {requested_dimension}")
         if not self.enabled:
             return EmbeddingResult(
-                vectors=[deterministic_embedding(text, self.settings.embedding_dimension) for text in texts],
+                vectors=[deterministic_embedding(text, requested_dimension) for text in texts],
                 metadata=ProviderMetadata(provider="mock-openrouter", model=selected_model),
             )
         response = self._client.post(
@@ -132,13 +151,19 @@ class OpenRouterClient:
             json={
                 "model": selected_model,
                 "input": texts,
-                "dimensions": self.settings.embedding_dimension,
+                "dimensions": requested_dimension,
             },
         )
         if response.status_code >= 400:
             raise ProviderError(f"OpenRouter embeddings failed: {response.status_code} {response.text[:500]}")
         data = response.json()
         vectors = [item["embedding"] for item in sorted(data["data"], key=lambda item: item["index"])]
+        for index, vector in enumerate(vectors):
+            if len(vector) != requested_dimension:
+                raise ProviderError(
+                    f"OpenRouter returned a vector of length {len(vector)} for input {index}; "
+                    f"expected {requested_dimension}. The model may not honor the dimensions parameter."
+                )
         return EmbeddingResult(
             vectors=vectors,
             metadata=ProviderMetadata(

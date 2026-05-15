@@ -202,6 +202,8 @@ def _build_generator_prompt(
     plan: RetrievalPlan | None,
     evidence_text: str,
     valid_tags: list[str],
+    missing_subclaims: list[str] | None = None,
+    contradictions: list[str] | None = None,
 ) -> str:
     plan_block = ""
     if plan is not None and (plan.subquestions or plan.metrics or plan.query_type):
@@ -213,8 +215,19 @@ def _build_generator_prompt(
         if plan.subquestions:
             parts.append("subquestions:\n- " + "\n- ".join(plan.subquestions))
         plan_block = "PLAN HINTS:\n" + "\n".join(parts) + "\n\n"
+    verifier_block = ""
+    flags: list[str] = []
+    if missing_subclaims:
+        flags.append("missing_subclaims:\n- " + "\n- ".join(missing_subclaims))
+    if contradictions:
+        flags.append("contradictions:\n- " + "\n- ".join(contradictions))
+    if flags:
+        verifier_block = (
+            "VERIFIER FLAGS (hedge or call these out explicitly in the answer):\n" + "\n".join(flags) + "\n\n"
+        )
     return (
         f"{plan_block}"
+        f"{verifier_block}"
         f"VALID CITATION TAGS: {', '.join(valid_tags)}\n\n"
         f"QUESTION:\n{question}\n\n"
         f"EVIDENCE:\n{evidence_text}"
@@ -233,6 +246,8 @@ def generate_answer_with_agent(
     evidence: list[RetrievedChunk],
     plan: RetrievalPlan | None,
     settings: Settings,
+    missing_subclaims: list[str] | None = None,
+    contradictions: list[str] | None = None,
 ) -> tuple[AnswerDraft, TokenUsage]:
     if not evidence:
         return local_grounded_answer(question, []), TokenUsage()
@@ -246,6 +261,8 @@ def generate_answer_with_agent(
         plan=plan,
         evidence_text=evidence_text,
         valid_tags=valid_tags,
+        missing_subclaims=missing_subclaims,
+        contradictions=contradictions,
     )
 
     try:
@@ -380,6 +397,8 @@ def generate_answer(
     retrieval_mode: str,
     plan: RetrievalPlan | None = None,
     settings: Settings | None = None,
+    missing_subclaims: list[str] | None = None,
+    contradictions: list[str] | None = None,
 ) -> tuple[AnswerDraft, TokenUsage]:
     resolved = settings or get_settings()
     if retrieval_mode == "llm_only":
@@ -404,6 +423,8 @@ def generate_answer(
             evidence=evidence,
             plan=plan,
             settings=resolved,
+            missing_subclaims=missing_subclaims,
+            contradictions=contradictions,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("generator_unexpected_error", extra={"error": str(exc)})

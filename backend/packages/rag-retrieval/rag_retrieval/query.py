@@ -12,7 +12,7 @@ from rag_common.schemas import (
     QueryResponse,
     RetrievedChunkRef,
 )
-from rag_common.usage import RoleUsage, TokenUsage, total
+from rag_common.usage import RoleUsage, TokenUsage, merge, total
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,8 +22,8 @@ from rag_retrieval.generation import (
     snippet,
 )
 from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve
-from rag_retrieval.planning import plan_query
-from rag_retrieval.verification import verify_evidence
+from rag_retrieval.planning import RetrievalPlan, plan_query
+from rag_retrieval.retrieval_tool import run_retrieval_agent
 
 
 def to_evidence_read(item: RetrievedChunk) -> EvidenceRead:
@@ -133,6 +133,47 @@ def _to_retrieved_ref(rank: int, item: RetrievedChunk) -> RetrievedChunkRef:
     )
 
 
+def _empty_verifier_result() -> dict[str, Any]:
+    return {
+        "supported_chunk_ids": [],
+        "missing_subclaims": [],
+        "contradictions": [],
+        "retry_query": None,
+        "confidence": 0.0,
+        "reasoning": None,
+    }
+
+
+def _empty_meta(resolved: Settings) -> dict[str, Any]:
+    return {"agent_used": False, "model": resolved.openrouter_chat_model, "error": None}
+
+
+def _known_tickers_for(session: Session, dataset_id: str) -> set[str]:
+    return {
+        ticker
+        for ticker in session.scalars(
+            select(models.Document.ticker).where(models.Document.dataset_id == dataset_id).distinct()
+        )
+        if ticker is not None
+    }
+
+
+def _heuristic_plan(
+    session: Session,
+    *,
+    request: QueryRequest,
+    resolved: Settings,
+) -> tuple[RetrievalPlan, dict[str, Any], TokenUsage]:
+    return plan_query(
+        session,
+        dataset_id=request.dataset_id,
+        question=request.question,
+        filters=request.filters,
+        settings=resolved,
+        force_heuristic=True,
+    )
+
+
 def run_query(
     session: Session,
     *,
@@ -144,32 +185,81 @@ def run_query(
     dataset = session.get(models.Dataset, request.dataset_id)
     if dataset is None:
         raise ValueError(f"Dataset {request.dataset_id} was not found")
-    plan, planner_meta, planner_usage = plan_query(
-        session,
-        dataset_id=request.dataset_id,
-        question=request.question,
-        filters=request.filters,
-        settings=resolved,
-        force_heuristic=request.retrieval_mode == "single_pass",
-    )
     top_k = request.top_k or resolved.evidence_top_k
+
+    plan: RetrievalPlan
+    planner_meta: dict[str, Any]
+    planner_usage: TokenUsage
     retrieval_calls: list[dict[str, Any]] = []
     retrieved: list[RetrievedChunk] = []
     full_retrieval: list[RetrievedChunk] = []
-    verifier_result: dict[str, Any] = {
-        "supported_chunk_ids": [],
-        "missing_subclaims": [],
-        "contradictions": [],
-        "retry_query": None,
-        "confidence": 0.0,
-        "reasoning": None,
-    }
-    verifier_meta: dict[str, Any] = {"agent_used": False, "model": None, "error": None}
+    verifier_result: dict[str, Any] = _empty_verifier_result()
+    verifier_meta: dict[str, Any] = _empty_meta(resolved)
     verifier_usage = TokenUsage()
     embedding_usage_total = TokenUsage()
     rerank_usage_total = TokenUsage()
+    missing_subclaims: list[str] = []
+    contradictions: list[str] = []
 
-    if request.retrieval_mode != "llm_only":
+    if request.retrieval_mode == "full_agentic":
+        known_tickers = _known_tickers_for(session, request.dataset_id)
+        agent_result, retrieval_agent_meta, agent_chat_usage = run_retrieval_agent(
+            session,
+            dataset_id=request.dataset_id,
+            question=request.question,
+            filters=request.filters,
+            known_tickers=known_tickers,
+            settings=resolved,
+        )
+        retrieved = list(agent_result.chunks)
+        full_retrieval = list(agent_result.chunks)
+        retrieval_calls = list(agent_result.tool_calls)
+        embedding_usage_total = agent_result.embedding_usage
+        rerank_usage_total = agent_result.rerank_usage
+        # The retrieval agent absorbed both planning and verification, so its chat tokens
+        # roll into RoleUsage.planner. HyDE chat tokens also fold in there because HyDE
+        # is part of the agent's planning work for each tool call.
+        planner_usage = merge(agent_chat_usage, agent_result.hyde_usage)
+        planner_meta = {
+            "agent_used": bool(retrieval_agent_meta.get("agent_used")),
+            "model": retrieval_agent_meta.get("model"),
+            "error": retrieval_agent_meta.get("error"),
+            "fallback_reason": retrieval_agent_meta.get("fallback_reason"),
+            "source": "retrieval_agent",
+            "tool_call_count": retrieval_agent_meta.get("tool_call_count"),
+            "tool_call_budget": retrieval_agent_meta.get("tool_call_budget"),
+        }
+        plan = RetrievalPlan(
+            target_tickers=list(agent_result.output.target_tickers),
+            forms=list(agent_result.output.forms),
+            filing_date_start=request.filters.filing_date_start,
+            filing_date_end=request.filters.filing_date_end,
+            metrics=list(agent_result.output.metrics),
+            subquestions=list(agent_result.output.subquestions),
+            query_type=agent_result.output.query_type,
+            latest=agent_result.output.latest,
+            ambiguity=None,
+            reasoning=agent_result.output.reasoning or None,
+        )
+        verifier_result = {
+            "supported_chunk_ids": list(agent_result.output.selected_chunk_ids),
+            "missing_subclaims": list(agent_result.output.missing_subclaims),
+            "contradictions": list(agent_result.output.contradictions),
+            "retry_query": None,
+            "confidence": agent_result.output.confidence,
+            "reasoning": agent_result.output.reasoning or None,
+        }
+        verifier_meta = {
+            "agent_used": bool(retrieval_agent_meta.get("agent_used")),
+            "model": retrieval_agent_meta.get("model"),
+            "error": retrieval_agent_meta.get("error"),
+            "source": "retrieval_agent",
+        }
+        verifier_usage = TokenUsage()  # subsumed into planner_usage above
+        missing_subclaims = list(agent_result.output.missing_subclaims)
+        contradictions = list(agent_result.output.contradictions)
+    elif request.retrieval_mode == "single_pass":
+        plan, planner_meta, planner_usage = _heuristic_plan(session, request=request, resolved=resolved)
         retrieved, retrieval_trace, embedding_usage, rerank_usage = hybrid_retrieve(
             session,
             dataset_id=request.dataset_id,
@@ -183,49 +273,18 @@ def run_query(
         embedding_usage_total = embedding_usage
         rerank_usage_total = rerank_usage
         retrieval_calls.append({"query": request.question, **retrieval_trace})
-        if request.retrieval_mode == "full_agentic":
-            verification, verifier_meta, first_verifier_usage = verify_evidence(
-                request.question, retrieved, settings=resolved
-            )
-            verifier_usage = first_verifier_usage
-            verifier_result = verification.as_dict()
-        if (
-            request.retrieval_mode == "full_agentic"
-            and not verifier_result.get("supported_chunk_ids")
-            and verifier_result.get("retry_query")
-            and resolved.agent_retry_budget > 0
-        ):
-            retry_retrieved, retry_trace, retry_embedding_usage, retry_rerank_usage = hybrid_retrieve(
-                session,
-                dataset_id=request.dataset_id,
-                question=str(verifier_result["retry_query"]),
-                filters=request.filters,
-                plan=plan,
-                top_k=top_k,
-                settings=resolved,
-            )
-            retrieval_calls.append({"query": verification.retry_query, "retry": True, **retry_trace})
-            retrieved = retry_retrieved
-            full_retrieval = list(retry_retrieved)
-            from rag_common.usage import merge
+    else:  # llm_only
+        plan, planner_meta, planner_usage = _heuristic_plan(session, request=request, resolved=resolved)
 
-            embedding_usage_total = merge(embedding_usage_total, retry_embedding_usage)
-            rerank_usage_total = merge(rerank_usage_total, retry_rerank_usage)
-            verification, verifier_meta, retry_verifier_usage = verify_evidence(
-                request.question, retrieved, settings=resolved
-            )
-            verifier_usage = merge(verifier_usage, retry_verifier_usage)
-            verifier_result = verification.as_dict()
-
-    raw_supported_ids = verifier_result.get("supported_chunk_ids") or []
-    supported_ids = set(raw_supported_ids if isinstance(raw_supported_ids, list) else [])
-    verified_evidence = [item for item in retrieved if not supported_ids or item.chunk.id in supported_ids][:top_k]
+    verified_evidence = retrieved[:top_k]
     answer, generator_usage = generate_answer(
         question=request.question,
         evidence=verified_evidence,
         retrieval_mode=request.retrieval_mode,
         plan=plan,
         settings=resolved,
+        missing_subclaims=missing_subclaims,
+        contradictions=contradictions,
     )
     timings = {"total_seconds": round(time.perf_counter() - start, 3)}
     generator_metadata = answer.metadata or {}
@@ -256,6 +315,9 @@ def run_query(
         "chunker": "chonkie",
         "planner_error": planner_meta.get("error"),
         "verifier_error": verifier_meta.get("error"),
+        "planner_source": planner_meta.get("source"),
+        "tool_call_count": planner_meta.get("tool_call_count"),
+        "tool_call_budget": planner_meta.get("tool_call_budget"),
         "usage_summary": usage_summary_dict,
         "cost_breakdown_usd": cost_breakdown,
         "cost_estimate_usd": cost_total,
@@ -273,6 +335,7 @@ def run_query(
         usage_summary=usage_summary_dict,
         cost_estimate_usd=cost_total,
     )
+    raw_supported_ids = verifier_result.get("supported_chunk_ids") or []
     citations = [to_citation_read(item) for item in verified_evidence]
     if request.retrieval_mode == "llm_only":
         citations = []
