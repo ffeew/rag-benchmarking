@@ -1,676 +1,583 @@
-# Curated eval cases for the SEC filings RAG benchmark.
+# Verified eval cases for the local SEC filings PDF corpus.
 #
-# IMPORTANT: page_number and evidence_text are template drafts based on typical SEC
-# filing structure. Before treating any case as ground truth, run ingestion against
-# this corpus and reconcile each expected_citation page_number against the actual
-# parsed pages via the document drawer in the frontend.
-#
-# Distribution per ADR-0009 categories:
-#   single_company_lookup   10
-#   table_lookup            10
-#   trend                    8
-#   cross_company_comparison 8
-#   sector_synthesis         6
-#   multi_part               6
-#   latest_filing            6
-#   ambiguous                6
-#   insufficient_evidence    8
-#   ----------------------- --
-#   total                   68
+# These cases are grounded in files under sec_filings_pdf and are intended for the
+# scientific benchmark profile. Numeric questions ask for the unit used in the
+# source table so deterministic scoring does not need to infer unit conversions.
 
-# ============================================================
-# Category 1: single_company_lookup (10 cases)
-# ============================================================
-- case_key: aapl_2025_total_net_sales
+- case_key: aapl_2025_total_net_sales_millions
   category: single_company_lookup
   difficulty: easy
-  question: "What were Apple's total net sales in fiscal year 2025?"
-  expected_answer: null
+  question: "In Apple's 2025 10-K, what were total net sales for fiscal 2025, in millions of dollars?"
+  expected_answer: "Apple reported fiscal 2025 total net sales of $416,161 million."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: total_net_sales, value_numeric: 416161, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: AAPL, form_type: 10-K, evidence_text: "Total net sales"}
-  tags: [revenue, factual, mdna]
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Total net sales"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Total net sales"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [revenue, 10k, factual]
 
-- case_key: msft_2025_cloud_revenue
+- case_key: msft_2025_intelligent_cloud_revenue_millions
   category: single_company_lookup
   difficulty: easy
-  question: "How much revenue did Microsoft's Intelligent Cloud segment generate in fiscal year 2025?"
-  expected_answer: null
+  question: "In Microsoft's fiscal 2025 10-K, what was Intelligent Cloud revenue, in millions of dollars?"
+  expected_answer: "Microsoft reported Intelligent Cloud revenue of $106,265 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: intelligent_cloud_revenue, value_numeric: 106265, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: MSFT, form_type: 10-K, evidence_text: "Intelligent Cloud"}
-  tags: [segment, revenue, cloud]
+    - {ticker: MSFT, form_type: 10-K, page_number: 63, evidence_text: "Intelligent Cloud"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 63, evidence_text: "Intelligent Cloud"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [segment, cloud, revenue]
 
-- case_key: nvda_2026_data_center_revenue
+- case_key: nvda_2026_data_center_revenue_millions
   category: single_company_lookup
   difficulty: easy
-  question: "What was NVIDIA's Data Center segment revenue for fiscal year 2026?"
-  expected_answer: null
+  question: "In NVIDIA's fiscal 2026 10-K, what was Data Center revenue, in millions of dollars?"
+  expected_answer: "NVIDIA reported fiscal 2026 Data Center revenue of $193,737 million."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: data_center_revenue, value_numeric: 193737, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: NVDA, form_type: 10-K, evidence_text: "Data Center"}
-  tags: [segment, revenue, ai]
+    - {ticker: NVDA, form_type: 10-K, page_number: 125, evidence_text: "Revenue by End Market"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 125, evidence_text: "Revenue by End Market"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [segment, ai, revenue]
 
-- case_key: goog_2025_ad_revenue
+- case_key: meta_2025_family_daily_active_people
   category: single_company_lookup
   difficulty: easy
-  question: "What was Alphabet's advertising revenue for the most recently reported fiscal year?"
-  expected_answer: null
+  question: "In Meta's 2025 10-K, what was Family daily active people on average for December 2025, in billions?"
+  expected_answer: "Meta reported Family daily active people of 3.58 billion on average for December 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: family_daily_active_people, value_numeric: 3.58, unit: billion, tolerance_abs: 0.01}
   expected_citations:
-    - {ticker: GOOG, form_type: 10-K}
-  tags: [revenue, advertising]
+    - {ticker: META, form_type: 10-K, page_number: 109, evidence_text: "Family daily active people (DAP) was 3.58 billion"}
+  expected_evidence:
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 109, evidence_text: "Family daily active people (DAP) was 3.58 billion"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [users, operating_metric, 10k]
 
-- case_key: amzn_2025_aws_operating_income
+- case_key: jpm_2025_total_net_revenue_millions
   category: single_company_lookup
   difficulty: medium
-  question: "What was AWS's operating income in the most recent fiscal year?"
-  expected_answer: null
+  question: "In JPMorganChase's 2025 10-K, what was total net revenue for 2025, in millions of dollars?"
+  expected_answer: "JPMorganChase reported 2025 total net revenue of $182,447 million."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: total_net_revenue, value_numeric: 182447, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: AMZN, form_type: 10-K}
-  tags: [segment, operating_income, cloud]
+    - {ticker: JPM, form_type: 10-K, page_number: 108, evidence_text: "Total net revenue"}
+  expected_evidence:
+    - {ticker: JPM, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 108, evidence_text: "Total net revenue"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [banking, revenue, 10k]
 
-- case_key: meta_2025_dau
-  category: single_company_lookup
-  difficulty: medium
-  question: "How many daily active people (DAP) did Meta report in its most recent 10-K?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: META, form_type: 10-K}
-  tags: [users, metrics]
-
-- case_key: tsla_2025_deliveries
-  category: single_company_lookup
-  difficulty: medium
-  question: "How many vehicles did Tesla deliver in the most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: TSLA, form_type: 10-K}
-  tags: [units, deliveries]
-
-- case_key: jpm_2025_net_interest_income
-  category: single_company_lookup
-  difficulty: medium
-  question: "What was JPMorgan's net interest income in the most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-  tags: [banking, nii]
-
-- case_key: brk_b_2025_insurance_float
-  category: single_company_lookup
-  difficulty: hard
-  question: "What was Berkshire Hathaway's insurance float at the end of its most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: BRK-B, form_type: 10-K}
-  tags: [insurance, float]
-
-- case_key: lly_2025_mounjaro_revenue
-  category: single_company_lookup
-  difficulty: hard
-  question: "What revenue did Eli Lilly report for Mounjaro in its most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: LLY, form_type: 10-K}
-  tags: [pharma, product_revenue]
-
-# ============================================================
-# Category 2: table_lookup (10 cases)
-# ============================================================
-- case_key: aapl_2025_iphone_revenue_table
-  category: table_lookup
-  difficulty: medium
-  question: "Per Apple's product revenue table, what was iPhone revenue in fiscal 2025?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: AAPL, form_type: 10-K, evidence_text: "iPhone"}
-  tags: [table, product_revenue]
-
-- case_key: msft_2025_segment_revenue_table
-  category: table_lookup
-  difficulty: medium
-  question: "From Microsoft's segment revenue table, what was the Productivity and Business Processes segment revenue in fiscal 2025?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: MSFT, form_type: 10-K}
-  tags: [table, segment]
-
-- case_key: nvda_2026_quarterly_revenue_table
-  category: table_lookup
-  difficulty: medium
-  question: "What was NVIDIA's quarterly revenue progression in fiscal 2026 per the quarterly data table?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: NVDA, form_type: 10-K}
-  tags: [table, quarterly]
-
-- case_key: amzn_2025_segment_operating_income_table
-  category: table_lookup
-  difficulty: medium
-  question: "Per Amazon's segment information table, what was the operating income for North America, International, and AWS in the most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: AMZN, form_type: 10-K}
-  tags: [table, segment, operating_income]
-
-- case_key: aapl_2025_balance_sheet_cash
+- case_key: aapl_2025_iphone_net_sales_millions
   category: table_lookup
   difficulty: easy
-  question: "What was Apple's cash and cash equivalents on the balance sheet at the end of fiscal 2025?"
-  expected_answer: null
+  question: "From Apple's 2025 product revenue table, what were iPhone net sales in fiscal 2025, in millions of dollars?"
+  expected_answer: "Apple reported fiscal 2025 iPhone net sales of $209,586 million."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: iphone_net_sales, value_numeric: 209586, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: AAPL, form_type: 10-K, evidence_text: "Cash and cash equivalents"}
-  tags: [table, balance_sheet]
+    - {ticker: AAPL, form_type: 10-K, page_number: 35, evidence_text: "iPhone"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 35, evidence_text: "iPhone", table_key: aapl_product_net_sales}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, product_revenue, iphone]
 
-- case_key: msft_2025_rd_expense_table
+- case_key: aapl_2025_cash_equivalents_millions
   category: table_lookup
   difficulty: easy
-  question: "What was Microsoft's research and development expense in fiscal 2025 per the income statement?"
-  expected_answer: null
+  question: "On Apple's 2025 balance sheet, what were cash and cash equivalents at September 27, 2025, in millions of dollars?"
+  expected_answer: "Apple reported cash and cash equivalents of $35,934 million at September 27, 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: cash_and_cash_equivalents, value_numeric: 35934, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: MSFT, form_type: 10-K}
+    - {ticker: AAPL, form_type: 10-K, page_number: 46, evidence_text: "Cash and cash equivalents"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 46, evidence_text: "Cash and cash equivalents", table_key: aapl_balance_sheet}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, balance_sheet, cash]
+
+- case_key: msft_2025_rd_expense_millions
+  category: table_lookup
+  difficulty: easy
+  question: "From Microsoft's fiscal 2025 income statement, what was research and development expense, in millions of dollars?"
+  expected_answer: "Microsoft reported research and development expense of $32,488 million in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: research_and_development, value_numeric: 32488, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Research and development"}
+  expected_evidence:
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Research and development", table_key: msft_income_statement}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
   tags: [table, income_statement, rd]
 
-- case_key: jpm_2025_capital_ratios_table
-  category: table_lookup
-  difficulty: hard
-  question: "What were JPMorgan's CET1 and Tier 1 capital ratios at the most recent fiscal year end?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-  tags: [table, banking, capital]
-
-- case_key: tsla_2025_vehicle_deliveries_by_model
-  category: table_lookup
-  difficulty: hard
-  question: "Per Tesla's delivery table, how many Model 3/Y vs other-model vehicles were delivered in the most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: TSLA, form_type: 10-K}
-  tags: [table, deliveries]
-
-- case_key: goog_2025_revenue_by_geography
+- case_key: amzn_2025_aws_operating_income_millions
   category: table_lookup
   difficulty: medium
-  question: "Per Alphabet's geographic revenue table, what was United States revenue in the most recent fiscal year?"
-  expected_answer: null
+  question: "From Amazon's 2025 segment operating income table, what was AWS operating income, in millions of dollars?"
+  expected_answer: "Amazon reported AWS operating income of $45,606 million in 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: aws_operating_income, value_numeric: 45606, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: GOOG, form_type: 10-K}
-  tags: [table, geography]
+    - {ticker: AMZN, form_type: 10-K, page_number: 49, evidence_text: "Operating income by segment"}
+  expected_evidence:
+    - {ticker: AMZN, form_type: 10-K, filing_date: 2026-02-06, report_period: 2025-12-31, page_number: 49, evidence_text: "Operating income by segment", table_key: amzn_segment_operating_income}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, segment, operating_income, aws]
 
-- case_key: ko_2025_unit_case_volume_table
+- case_key: tsla_2025_energy_revenue_millions
   category: table_lookup
-  difficulty: hard
-  question: "What was Coca-Cola's unit case volume by operating segment in the most recent fiscal year?"
-  expected_answer: null
+  difficulty: medium
+  question: "From Tesla's 2025 revenue table, what was Energy generation and storage segment revenue, in millions of dollars?"
+  expected_answer: "Tesla reported Energy generation and storage segment revenue of $12,771 million in 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: energy_generation_storage_revenue, value_numeric: 12771, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: KO, form_type: 10-K}
-  tags: [table, segment, units]
+    - {ticker: TSLA, form_type: 10-K, page_number: 66, evidence_text: "Energy generation and storage segment revenue"}
+  expected_evidence:
+    - {ticker: TSLA, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 66, evidence_text: "Energy generation and storage segment revenue", table_key: tsla_revenue_table}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, energy, revenue]
 
-# ============================================================
-# Category 3: trend (8 cases)
-# ============================================================
-- case_key: aapl_iphone_revenue_yoy
+- case_key: jpm_2025_cet1_standardized_percent
+  category: table_lookup
+  difficulty: medium
+  question: "From JPMorganChase's 2025 financial highlights table, what was the standardized CET1 capital ratio for 2025?"
+  expected_answer: "JPMorganChase's standardized CET1 capital ratio was 14.6% for 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: cet1_standardized_ratio, value_numeric: 14.6, unit: percent, tolerance_abs: 0.05}
+  expected_citations:
+    - {ticker: JPM, form_type: 10-K, page_number: 108, evidence_text: "CET1"}
+  expected_evidence:
+    - {ticker: JPM, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 108, evidence_text: "CET1", table_key: jpm_financial_highlights}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [table, banking, capital_ratio]
+
+- case_key: aapl_iphone_net_sales_yoy_percent
   category: trend
   difficulty: medium
-  question: "How did Apple's iPhone revenue change year-over-year in the most recent 10-K?"
-  expected_answer: null
+  question: "According to Apple's 2025 product revenue table, what was the year-over-year percentage change in iPhone net sales for fiscal 2025?"
+  expected_answer: "Apple's iPhone net sales increased by 4% in fiscal 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: iphone_yoy_change, value_numeric: 4, unit: percent, tolerance_abs: 0.05}
   expected_citations:
-    - {ticker: AAPL, form_type: 10-K}
-  tags: [trend, yoy, product]
+    - {ticker: AAPL, form_type: 10-K, page_number: 35, evidence_text: "iPhone"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 35, evidence_text: "iPhone"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, yoy, product_revenue]
 
-- case_key: msft_cloud_revenue_3y_trend
+- case_key: nvda_data_center_revenue_yoy_percent
   category: trend
   difficulty: medium
-  question: "What was the trend in Microsoft's Intelligent Cloud revenue over the last three fiscal years?"
-  expected_answer: null
+  question: "According to NVIDIA's fiscal 2026 10-K, by what percentage was Data Center revenue up from a year ago?"
+  expected_answer: "NVIDIA Data Center revenue was up 68% from a year ago."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: data_center_yoy_change, value_numeric: 68, unit: percent, tolerance_abs: 0.05}
   expected_citations:
-    - {ticker: MSFT, form_type: 10-K}
-  tags: [trend, segment, 3y]
+    - {ticker: NVDA, form_type: 10-K, page_number: 67, evidence_text: "Data Center revenue for fiscal year 2026 was up 68%"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 67, evidence_text: "Data Center revenue for fiscal year 2026 was up 68%"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, yoy, ai, segment]
 
-- case_key: nvda_data_center_growth
+- case_key: amzn_aws_sales_yoy_percent
   category: trend
   difficulty: medium
-  question: "By how much did NVIDIA's Data Center revenue grow from the prior fiscal year to the most recent fiscal year?"
-  expected_answer: null
+  question: "According to Amazon's 2025 net sales table, what was AWS year-over-year sales growth in 2025?"
+  expected_answer: "AWS sales increased 20% year over year in 2025."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: aws_sales_yoy_growth, value_numeric: 20, unit: percent, tolerance_abs: 0.05}
   expected_citations:
-    - {ticker: NVDA, form_type: 10-K}
-  tags: [trend, segment, growth]
+    - {ticker: AMZN, form_type: 10-K, page_number: 43, evidence_text: "AWS"}
+  expected_evidence:
+    - {ticker: AMZN, form_type: 10-K, filing_date: 2026-02-06, report_period: 2025-12-31, page_number: 43, evidence_text: "AWS"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, yoy, aws]
 
-- case_key: amzn_aws_margin_trend
-  category: trend
-  difficulty: hard
-  question: "How has AWS's operating margin trended over the most recent three fiscal years per Amazon's 10-K?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: AMZN, form_type: 10-K}
-  tags: [trend, segment, margin]
-
-- case_key: meta_capex_yoy
-  category: trend
-  difficulty: medium
-  question: "How did Meta's capital expenditures change from the prior fiscal year to the most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: META, form_type: 10-K}
-  tags: [trend, capex]
-
-- case_key: tsla_automotive_gross_margin_trend
-  category: trend
-  difficulty: hard
-  question: "How has Tesla's automotive gross margin trended over the past three fiscal years?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: TSLA, form_type: 10-K}
-  tags: [trend, margin]
-
-- case_key: jpm_net_interest_income_trend
+- case_key: meta_advertising_revenue_yoy_percent
   category: trend
   difficulty: medium
-  question: "How has JPMorgan's net interest income changed over the past three fiscal years?"
-  expected_answer: null
+  question: "According to Meta's 2025 revenue table, what was advertising revenue growth compared to 2024?"
+  expected_answer: "Meta advertising revenue increased 22% compared to 2024."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: advertising_revenue_growth, value_numeric: 22, unit: percent, tolerance_abs: 0.05}
   expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-  tags: [trend, nii]
+    - {ticker: META, form_type: 10-K, page_number: 127, evidence_text: "Advertising"}
+  expected_evidence:
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 127, evidence_text: "Advertising"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, yoy, advertising]
 
-- case_key: pep_organic_revenue_growth_trend
+- case_key: tsla_total_revenue_decrease_percent
   category: trend
-  difficulty: hard
-  question: "What was PepsiCo's organic revenue growth rate in the most recent three fiscal years?"
-  expected_answer: null
+  difficulty: medium
+  question: "According to Tesla's 2025 revenue table, what was the percentage decrease in total revenues versus 2024?"
+  expected_answer: "Tesla total revenues decreased by 3% versus 2024."
+  expected_answer_spec:
+    answer_type: numeric
+    expected_values:
+      - {label: total_revenue_decrease, value_numeric: 3, unit: percent, tolerance_abs: 0.05}
   expected_citations:
-    - {ticker: PEP, form_type: 10-K}
-  tags: [trend, organic_growth]
+    - {ticker: TSLA, form_type: 10-K, page_number: 66, evidence_text: "Total revenues"}
+  expected_evidence:
+    - {ticker: TSLA, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 66, evidence_text: "Total revenues"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [trend, yoy, revenue]
 
-# ============================================================
-# Category 4: cross_company_comparison (8 cases)
-# ============================================================
-- case_key: aapl_vs_msft_revenue_2025
+- case_key: aapl_vs_msft_2025_total_revenue
   category: cross_company_comparison
   difficulty: medium
-  question: "How does Apple's most recent fiscal year revenue compare to Microsoft's?"
-  expected_answer: null
+  question: "Compare Apple and Microsoft total revenue in their latest 10-Ks. Which company reported more, and what were both values in millions of dollars?"
+  expected_answer: "Apple reported more: Apple total net sales were $416,161 million and Microsoft total revenue was $281,724 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: apple_total_net_sales, value_numeric: 416161, unit: million, tolerance_abs: 0.5}
+      - {label: microsoft_total_revenue, value_numeric: 281724, unit: million, tolerance_abs: 0.5}
+      - {label: higher_company, value_text: Apple}
   expected_citations:
-    - {ticker: AAPL, form_type: 10-K}
-    - {ticker: MSFT, form_type: 10-K}
-  tags: [comparison, revenue]
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Total net sales"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Total revenue"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Total net sales"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Total revenue"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, revenue, cross_company]
 
-- case_key: nvda_vs_amd_data_center_2025
+- case_key: nvda_vs_meta_2025_total_revenue
   category: cross_company_comparison
   difficulty: medium
-  question: "Compare NVIDIA's Data Center revenue to AMD's Data Center segment revenue in the most recent fiscal year."
-  expected_answer: null
+  question: "Compare NVIDIA fiscal 2026 total revenue with Meta 2025 total revenue. Which company reported more, and what were both values in millions of dollars?"
+  expected_answer: "NVIDIA reported more: NVIDIA total revenue was $215,938 million and Meta total revenue was $200,966 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: nvidia_total_revenue, value_numeric: 215938, unit: million, tolerance_abs: 0.5}
+      - {label: meta_total_revenue, value_numeric: 200966, unit: million, tolerance_abs: 0.5}
+      - {label: higher_company, value_text: NVIDIA}
   expected_citations:
-    - {ticker: NVDA, form_type: 10-K}
-    - {ticker: AMD, form_type: 10-K}
-  tags: [comparison, segment, semiconductors]
+    - {ticker: NVDA, form_type: 10-K, page_number: 67, evidence_text: "Revenue"}
+    - {ticker: META, form_type: 10-K, page_number: 127, evidence_text: "Total revenue"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 67, evidence_text: "Revenue"}
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 127, evidence_text: "Total revenue"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, revenue, cross_company]
 
-- case_key: jpm_vs_bac_net_interest_margin
-  category: cross_company_comparison
-  difficulty: hard
-  question: "Compare JPMorgan's and Bank of America's net interest margin in the most recent fiscal year."
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-    - {ticker: BAC, form_type: 10-K}
-  tags: [comparison, banking, nim]
-
-- case_key: v_vs_ma_payment_volume_2025
-  category: cross_company_comparison
-  difficulty: medium
-  question: "Compare Visa's and Mastercard's payment volume in the most recent fiscal year."
-  expected_answer: null
-  expected_citations:
-    - {ticker: V, form_type: 10-K}
-    - {ticker: MA, form_type: 10-K}
-  tags: [comparison, payments, volume]
-
-- case_key: ko_vs_pep_revenue_2025
-  category: cross_company_comparison
-  difficulty: easy
-  question: "Compare Coca-Cola's and PepsiCo's net revenue in the most recent fiscal year."
-  expected_answer: null
-  expected_citations:
-    - {ticker: KO, form_type: 10-K}
-    - {ticker: PEP, form_type: 10-K}
-  tags: [comparison, revenue, beverages]
-
-- case_key: xom_vs_cvx_capex_2025
+- case_key: amzn_vs_tsla_2025_total_revenue
   category: cross_company_comparison
   difficulty: medium
-  question: "Compare ExxonMobil's and Chevron's capital expenditures in the most recent fiscal year."
-  expected_answer: null
+  question: "Compare Amazon and Tesla 2025 total revenues. Which company reported more, and what were both values in millions of dollars?"
+  expected_answer: "Amazon reported more: Amazon net sales were $716,924 million and Tesla total revenues were $94,827 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: amazon_net_sales, value_numeric: 716924, unit: million, tolerance_abs: 0.5}
+      - {label: tesla_total_revenues, value_numeric: 94827, unit: million, tolerance_abs: 0.5}
+      - {label: higher_company, value_text: Amazon}
   expected_citations:
-    - {ticker: XOM, form_type: 10-K}
-    - {ticker: CVX, form_type: 10-K}
-  tags: [comparison, capex, energy]
+    - {ticker: AMZN, form_type: 10-K, page_number: 43, evidence_text: "Consolidated"}
+    - {ticker: TSLA, form_type: 10-K, page_number: 66, evidence_text: "Total revenues"}
+  expected_evidence:
+    - {ticker: AMZN, form_type: 10-K, filing_date: 2026-02-06, report_period: 2025-12-31, page_number: 43, evidence_text: "Consolidated"}
+    - {ticker: TSLA, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 66, evidence_text: "Total revenues"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [comparison, revenue, cross_company]
 
-- case_key: unh_vs_jnj_segment_mix_2025
-  category: cross_company_comparison
-  difficulty: hard
-  question: "Compare the segment revenue mix of UnitedHealth and Johnson & Johnson in the most recent fiscal year."
-  expected_answer: null
-  expected_citations:
-    - {ticker: UNH, form_type: 10-K}
-    - {ticker: JNJ, form_type: 10-K}
-  tags: [comparison, segment, healthcare]
-
-- case_key: wmt_vs_cost_revenue_2025
-  category: cross_company_comparison
-  difficulty: easy
-  question: "Compare Walmart's and Costco's total revenue in the most recent fiscal year."
-  expected_answer: null
-  expected_citations:
-    - {ticker: WMT, form_type: 10-K}
-    - {ticker: COST, form_type: 10-K}
-  tags: [comparison, revenue, retail]
-
-# ============================================================
-# Category 5: sector_synthesis (6 cases)
-# ============================================================
-- case_key: semis_ai_capex_2025
-  category: sector_synthesis
-  difficulty: hard
-  question: "Across the semiconductor companies in the corpus (NVDA, AMD, INTC, AVGO, MU, AMAT, LRCX, TXN), what were the most recently reported capital expenditure figures, and which companies are spending most aggressively on AI-related capacity?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: NVDA, form_type: 10-K}
-    - {ticker: AMD, form_type: 10-K}
-    - {ticker: INTC, form_type: 10-K}
-    - {ticker: AVGO, form_type: 10-K}
-  tags: [sector, ai, capex, semiconductors]
-
-- case_key: big_tech_rd_intensity_2025
-  category: sector_synthesis
-  difficulty: hard
-  question: "Among the large-cap tech companies in the corpus (AAPL, MSFT, GOOG, AMZN, META, NVDA, ORCL), which has the highest R&D-to-revenue ratio in the most recent fiscal year?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: AAPL, form_type: 10-K}
-    - {ticker: MSFT, form_type: 10-K}
-    - {ticker: GOOG, form_type: 10-K}
-    - {ticker: META, form_type: 10-K}
-  tags: [sector, rd, tech]
-
-- case_key: banks_credit_loss_provisions_2025
-  category: sector_synthesis
-  difficulty: hard
-  question: "What did the major banks in the corpus (JPM, BAC, WFC, GS, MS) report for provision for credit losses in their most recent 10-K filings?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-    - {ticker: BAC, form_type: 10-K}
-    - {ticker: WFC, form_type: 10-K}
-  tags: [sector, banking, credit_losses]
-
-- case_key: pharma_top_products_2025
-  category: sector_synthesis
-  difficulty: hard
-  question: "What are the top-selling products reported by the pharmaceutical companies in the corpus (LLY, JNJ, MRK, ABBV) in their most recent 10-K?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: LLY, form_type: 10-K}
-    - {ticker: MRK, form_type: 10-K}
-    - {ticker: ABBV, form_type: 10-K}
-  tags: [sector, pharma, products]
-
-- case_key: energy_oil_gas_production_2025
-  category: sector_synthesis
-  difficulty: hard
-  question: "What was the most recently reported oil and gas production for XOM and CVX, and how do they describe their reserve replacement strategy?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: XOM, form_type: 10-K}
-    - {ticker: CVX, form_type: 10-K}
-  tags: [sector, energy, production]
-
-- case_key: telecom_wireless_subscribers_2025
-  category: sector_synthesis
-  difficulty: hard
-  question: "How many wireless subscribers did the telecom companies in the corpus (T, VZ, TMUS) each report in their most recent 10-K?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: T, form_type: 10-K}
-    - {ticker: VZ, form_type: 10-K}
-    - {ticker: TMUS, form_type: 10-K}
-  tags: [sector, telecom, subscribers]
-
-# ============================================================
-# Category 6: multi_part (6 cases)
-# ============================================================
-- case_key: aapl_multi_revenue_margin_buyback
+- case_key: aapl_2025_iphone_and_services_sales
   category: multi_part
   difficulty: medium
-  question: "For Apple's most recent fiscal year: (a) what was total revenue, (b) what was gross margin percentage, and (c) how much did the company spend on share repurchases?"
-  expected_answer: null
+  question: "From Apple's 2025 product revenue table, what were iPhone and Services net sales in fiscal 2025, in millions of dollars?"
+  expected_answer: "Apple reported iPhone net sales of $209,586 million and Services net sales of $109,158 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: iphone_net_sales, value_numeric: 209586, unit: million, tolerance_abs: 0.5}
+      - {label: services_net_sales, value_numeric: 109158, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: AAPL, form_type: 10-K}
-  tags: [multipart, revenue, margin, buyback]
+    - {ticker: AAPL, form_type: 10-K, page_number: 35, evidence_text: "Services"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 35, evidence_text: "Services", table_key: aapl_product_net_sales}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [multi_part, table, product_revenue]
 
-- case_key: msft_multi_segment_rd_dividends
+- case_key: amzn_2025_segment_sales
   category: multi_part
   difficulty: medium
-  question: "For Microsoft's most recent fiscal year: (a) what was Intelligent Cloud segment revenue, (b) what was R&D expense, and (c) how much was paid in dividends?"
-  expected_answer: null
+  question: "From Amazon's 2025 net sales table, what were North America, International, and AWS net sales, in millions of dollars?"
+  expected_answer: "Amazon reported 2025 net sales of $426,305 million for North America, $161,894 million for International, and $128,725 million for AWS."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: north_america_net_sales, value_numeric: 426305, unit: million, tolerance_abs: 0.5}
+      - {label: international_net_sales, value_numeric: 161894, unit: million, tolerance_abs: 0.5}
+      - {label: aws_net_sales, value_numeric: 128725, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: MSFT, form_type: 10-K}
-  tags: [multipart, segment, dividends]
+    - {ticker: AMZN, form_type: 10-K, page_number: 43, evidence_text: "Net Sales"}
+  expected_evidence:
+    - {ticker: AMZN, form_type: 10-K, filing_date: 2026-02-06, report_period: 2025-12-31, page_number: 43, evidence_text: "Net Sales", table_key: amzn_segment_net_sales}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [multi_part, table, segment]
 
-- case_key: nvda_multi_dc_capex_gross_margin
-  category: multi_part
-  difficulty: hard
-  question: "For NVIDIA's most recent fiscal year: (a) what was Data Center revenue, (b) what was capital expenditure, and (c) what was non-GAAP gross margin?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: NVDA, form_type: 10-K}
-  tags: [multipart, segment, capex, margin]
-
-- case_key: tsla_multi_deliveries_margin_capex
-  category: multi_part
-  difficulty: hard
-  question: "For Tesla's most recent fiscal year: (a) total vehicle deliveries, (b) automotive gross margin (excluding regulatory credits), and (c) capital expenditures?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: TSLA, form_type: 10-K}
-  tags: [multipart, deliveries, margin, capex]
-
-- case_key: jpm_multi_nii_provisions_cet1
-  category: multi_part
-  difficulty: hard
-  question: "For JPMorgan's most recent fiscal year: (a) net interest income, (b) provision for credit losses, and (c) CET1 capital ratio at year end?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-  tags: [multipart, banking]
-
-- case_key: amzn_multi_aws_segments_capex
+- case_key: meta_2025_segment_revenue
   category: multi_part
   difficulty: medium
-  question: "For Amazon's most recent fiscal year: (a) AWS segment revenue, (b) North America segment operating income, and (c) total capital expenditures?"
-  expected_answer: null
+  question: "From Meta's 2025 revenue table, what were Family of Apps and Reality Labs revenues, in millions of dollars?"
+  expected_answer: "Meta reported Family of Apps revenue of $198,759 million and Reality Labs revenue of $2,207 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: family_of_apps_revenue, value_numeric: 198759, unit: million, tolerance_abs: 0.5}
+      - {label: reality_labs_revenue, value_numeric: 2207, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: AMZN, form_type: 10-K}
-  tags: [multipart, segment, capex]
+    - {ticker: META, form_type: 10-K, page_number: 127, evidence_text: "Reality Labs"}
+  expected_evidence:
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 127, evidence_text: "Reality Labs", table_key: meta_revenue_by_segment}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [multi_part, table, segment]
 
-# ============================================================
-# Category 7: latest_filing (6 cases)
-# ============================================================
-- case_key: aapl_latest_10q
+- case_key: latest_aapl_10k_filing_date_and_sales
   category: latest_filing
   difficulty: medium
-  question: "What was the revenue Apple reported in its latest quarterly filing?"
-  expected_answer: null
+  question: "Using the latest Apple 10-K in this dataset, give the filing date in YYYY-MM-DD and fiscal 2025 total net sales in millions of dollars."
+  expected_answer: "The latest Apple 10-K in the dataset was filed 2025-10-31, and fiscal 2025 total net sales were $416,161 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: filing_date, value_text: "2025-10-31"}
+      - {label: total_net_sales, value_numeric: 416161, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: AAPL, form_type: 10-Q}
-  tags: [latest, quarterly, semantics]
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Total net sales"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Total net sales"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [latest_filing, metadata, revenue]
 
-- case_key: msft_latest_8k
+- case_key: latest_nvda_10k_filing_date_and_data_center
   category: latest_filing
+  difficulty: medium
+  question: "Using the latest NVIDIA 10-K in this dataset, give the filing date in YYYY-MM-DD and fiscal 2026 Data Center revenue in millions of dollars."
+  expected_answer: "The latest NVIDIA 10-K in the dataset was filed 2026-02-25, and fiscal 2026 Data Center revenue was $193,737 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: filing_date, value_text: "2026-02-25"}
+      - {label: data_center_revenue, value_numeric: 193737, unit: million, tolerance_abs: 0.5}
+  expected_citations:
+    - {ticker: NVDA, form_type: 10-K, page_number: 125, evidence_text: "Data Center"}
+  expected_evidence:
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 125, evidence_text: "Data Center"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [latest_filing, metadata, segment]
+
+- case_key: highest_revenue_large_tech_subset
+  category: sector_synthesis
   difficulty: hard
-  question: "What was the most recent material event Microsoft disclosed via 8-K?"
-  expected_answer: null
+  question: "Among Apple, Microsoft, NVIDIA, Amazon, Meta, and Tesla, which company reported the highest latest annual revenue in this dataset, and what was that value in millions of dollars?"
+  expected_answer: "Amazon reported the highest annual revenue among the listed companies, with 2025 net sales of $716,924 million."
+  expected_answer_spec:
+    answer_type: multi_part
+    expected_values:
+      - {label: highest_company, value_text: Amazon}
+      - {label: highest_revenue, value_numeric: 716924, unit: million, tolerance_abs: 0.5}
   expected_citations:
-    - {ticker: MSFT, form_type: 8-K}
-  tags: [latest, 8k, semantics]
+    - {ticker: AAPL, form_type: 10-K, page_number: 34, evidence_text: "Total net sales"}
+    - {ticker: MSFT, form_type: 10-K, page_number: 80, evidence_text: "Total revenue"}
+    - {ticker: NVDA, form_type: 10-K, page_number: 67, evidence_text: "Revenue"}
+    - {ticker: AMZN, form_type: 10-K, page_number: 43, evidence_text: "Consolidated"}
+    - {ticker: META, form_type: 10-K, page_number: 127, evidence_text: "Total revenue"}
+    - {ticker: TSLA, form_type: 10-K, page_number: 66, evidence_text: "Total revenues"}
+  expected_evidence:
+    - {ticker: AAPL, form_type: 10-K, filing_date: 2025-10-31, report_period: 2025-09-27, page_number: 34, evidence_text: "Total net sales"}
+    - {ticker: MSFT, form_type: 10-K, filing_date: 2025-07-30, report_period: 2025-06-30, page_number: 80, evidence_text: "Total revenue"}
+    - {ticker: NVDA, form_type: 10-K, filing_date: 2026-02-25, report_period: 2026-01-25, page_number: 67, evidence_text: "Revenue"}
+    - {ticker: AMZN, form_type: 10-K, filing_date: 2026-02-06, report_period: 2025-12-31, page_number: 43, evidence_text: "Consolidated"}
+    - {ticker: META, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 127, evidence_text: "Total revenue"}
+    - {ticker: TSLA, form_type: 10-K, filing_date: 2026-01-29, report_period: 2025-12-31, page_number: 66, evidence_text: "Total revenues"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [sector_synthesis, revenue, comparison]
 
-- case_key: nvda_latest_quarterly_dc_revenue
-  category: latest_filing
-  difficulty: medium
-  question: "What was NVIDIA's Data Center segment revenue in its latest 10-Q?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: NVDA, form_type: 10-Q}
-  tags: [latest, quarterly, segment]
-
-- case_key: tsla_latest_quarterly_deliveries
-  category: latest_filing
-  difficulty: medium
-  question: "How many vehicles did Tesla deliver in the quarter covered by its most recent 10-Q?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: TSLA, form_type: 10-Q}
-  tags: [latest, quarterly, deliveries]
-
-- case_key: jpm_latest_quarterly_nii
-  category: latest_filing
-  difficulty: medium
-  question: "What net interest income did JPMorgan report in its latest quarterly filing?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-Q}
-  tags: [latest, quarterly, nii]
-
-- case_key: meta_latest_8k_event
-  category: latest_filing
-  difficulty: hard
-  question: "What was the subject of Meta's most recent 8-K filing?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: META, form_type: 8-K}
-  tags: [latest, 8k]
-
-# ============================================================
-# Category 8: ambiguous (6 cases) — system should clarify or interpret reasonably
-# ============================================================
-- case_key: ambiguous_apple_growth
-  category: ambiguous
-  difficulty: medium
-  question: "How is Apple doing?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: AAPL, form_type: 10-K}
-  tags: [ambiguous, interpretation]
-
-- case_key: ambiguous_best_cloud_company
-  category: ambiguous
-  difficulty: hard
-  question: "Which cloud company is winning?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: MSFT, form_type: 10-K}
-    - {ticker: AMZN, form_type: 10-K}
-    - {ticker: GOOG, form_type: 10-K}
-  tags: [ambiguous, subjective]
-
-- case_key: ambiguous_meta_outlook
-  category: ambiguous
-  difficulty: medium
-  question: "What does Meta think about the future?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: META, form_type: 10-K}
-  tags: [ambiguous, forward_looking]
-
-- case_key: ambiguous_intel_problems
-  category: ambiguous
-  difficulty: hard
-  question: "What's wrong with Intel?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: INTC, form_type: 10-K}
-  tags: [ambiguous, risk_factors]
-
-- case_key: ambiguous_amazon_size
-  category: ambiguous
-  difficulty: easy
-  question: "How big is Amazon?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: AMZN, form_type: 10-K}
-  tags: [ambiguous, scale]
-
-- case_key: ambiguous_bank_safety
-  category: ambiguous
-  difficulty: hard
-  question: "Which bank is safest?"
-  expected_answer: null
-  expected_citations:
-    - {ticker: JPM, form_type: 10-K}
-    - {ticker: BAC, form_type: 10-K}
-    - {ticker: WFC, form_type: 10-K}
-  tags: [ambiguous, subjective, banking]
-
-# ============================================================
-# Category 9: insufficient_evidence (8 cases) — system should state insufficiency
-# ============================================================
-- case_key: insufficient_aapl_2030_revenue
+- case_key: aapl_2027_total_net_sales_insufficient
   category: insufficient_evidence
   difficulty: easy
-  question: "What was Apple's revenue in fiscal year 2030?"
-  expected_answer: "Insufficient evidence: fiscal year 2030 has not occurred; the corpus contains filings through early 2026 only."
+  question: "What were Apple's total net sales in fiscal 2027? Answer only from the ingested corpus."
+  expected_answer: "Insufficient evidence: the ingested corpus does not contain Apple's fiscal 2027 total net sales."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
   expected_citations: []
-  tags: [insufficient, future]
+  expected_evidence: []
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, future_period]
 
-- case_key: insufficient_apple_ceo_email
+- case_key: msft_2028_azure_revenue_insufficient
   category: insufficient_evidence
   difficulty: easy
-  question: "What is Apple's CEO's email address?"
-  expected_answer: "Insufficient evidence: SEC filings do not disclose executive email addresses."
+  question: "What was Microsoft's Azure revenue in fiscal 2028? Answer only from the ingested corpus."
+  expected_answer: "Insufficient evidence: the ingested corpus does not contain Microsoft's fiscal 2028 Azure revenue."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
   expected_citations: []
-  tags: [insufficient, non_disclosed]
+  expected_evidence: []
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, future_period, cloud]
 
-- case_key: insufficient_msft_employee_count_by_country
+- case_key: jpm_apple_card_purchase_price_insufficient
   category: insufficient_evidence
   difficulty: medium
-  question: "How many employees does Microsoft have in Germany?"
-  expected_answer: "Insufficient evidence: 10-K typically reports total headcount, not country-level breakdowns at this granularity."
-  expected_citations: []
-  tags: [insufficient, granularity]
-
-- case_key: insufficient_nvda_chip_yield
-  category: insufficient_evidence
-  difficulty: medium
-  question: "What was NVIDIA's wafer yield rate on the latest GPU generation?"
-  expected_answer: "Insufficient evidence: yield rates are not typically disclosed in SEC filings."
-  expected_citations: []
-  tags: [insufficient, proprietary]
-
-- case_key: insufficient_tsla_battery_cost
-  category: insufficient_evidence
-  difficulty: medium
-  question: "What is Tesla's per-kWh battery cell cost?"
-  expected_answer: "Insufficient evidence: per-kWh cell cost is not typically disclosed in SEC filings."
-  expected_citations: []
-  tags: [insufficient, proprietary]
-
-- case_key: insufficient_competitor_outside_corpus
-  category: insufficient_evidence
-  difficulty: medium
-  question: "How does TSMC's revenue compare to Intel's?"
-  expected_answer: "Insufficient evidence: TSMC is not in the ingested corpus."
+  question: "What purchase price did JPMorganChase disclose for the Apple Card portfolio transaction?"
+  expected_answer: "Insufficient evidence: the filing discloses the Apple Card transaction but does not disclose a purchase price."
+  expected_answer_spec:
+    answer_type: insufficient
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
   expected_citations:
-    - {ticker: INTC, form_type: 10-K}
-  tags: [insufficient, out_of_corpus]
+    - {ticker: JPM, form_type: 10-K, page_number: 113, evidence_text: "Apple Card transaction"}
+  expected_evidence:
+    - {ticker: JPM, form_type: 10-K, filing_date: 2026-02-13, report_period: 2025-12-31, page_number: 113, evidence_text: "Apple Card transaction"}
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [insufficient_evidence, partial_evidence, banking]
 
-- case_key: insufficient_personal_advice
-  category: insufficient_evidence
-  difficulty: easy
-  question: "Should I buy Apple stock?"
-  expected_answer: "Refusal: the system does not provide personalized investment advice."
-  expected_citations: []
-  tags: [insufficient, refusal, advice]
-
-- case_key: insufficient_aapl_org_chart
-  category: insufficient_evidence
+- case_key: nvda_buy_stock_refusal
+  category: refusal
   difficulty: medium
-  question: "Who reports to Apple's Senior VP of Hardware Engineering?"
-  expected_answer: "Insufficient evidence: org charts below the executive officer list are not disclosed in SEC filings."
+  question: "Based on the filings in this dataset, should I buy NVIDIA stock today?"
+  expected_answer: "Refusal: do not provide personalized investment advice; give evidence-based context and limitations instead."
+  expected_answer_spec:
+    answer_type: refusal
+    expected_values: []
+    required_claims: []
+    required_reason_keywords: []
   expected_citations: []
-  tags: [insufficient, org_chart]
+  expected_evidence: []
+  verification_status: verified
+  verified_by: codex-local-pdf-inspection
+  verified_at: 2026-05-15T00:00:00Z
+  gold_version: sec-filings-pdf-v1
+  tags: [refusal, investment_advice]

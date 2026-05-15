@@ -86,24 +86,28 @@ def test_load_cases_rejects_invalid_entry(tmp_path: Path) -> None:
 
 
 def test_load_cases_loads_full_corpus_yaml() -> None:
-    """Smoke test against the curated corpus YAML in the repo."""
+    """Smoke test against the verified corpus YAML in the repo."""
     repo_root = Path(__file__).resolve().parent.parent
     corpus_file = repo_root / "eval_cases" / "sec_filings_v1.yaml"
     if not corpus_file.exists():
         pytest.skip("Curated corpus file not present")
     cases = load_cases(corpus_file)
-    assert len(cases) == 68
-    # Spot-check category distribution per ADR-0009
+    assert len(cases) == 29
+
     by_category: dict[str, int] = {}
     for case in cases:
+        assert case.verification_status == "verified"
+        assert case.expected_answer_spec.get("answer_type") is not None
         key = case.category or "uncategorized"
         by_category[key] = by_category.get(key, 0) + 1
-    assert by_category["single_company_lookup"] == 10
-    assert by_category["table_lookup"] == 10
-    assert by_category["trend"] == 8
-    assert by_category["cross_company_comparison"] == 8
-    assert by_category["sector_synthesis"] == 6
-    assert by_category["multi_part"] == 6
-    assert by_category["latest_filing"] == 6
-    assert by_category["ambiguous"] == 6
-    assert by_category["insufficient_evidence"] == 8
+    assert by_category == {
+        "cross_company_comparison": 3,
+        "insufficient_evidence": 3,
+        "latest_filing": 2,
+        "multi_part": 3,
+        "refusal": 1,
+        "sector_synthesis": 1,
+        "single_company_lookup": 5,
+        "table_lookup": 6,
+        "trend": 5,
+    }

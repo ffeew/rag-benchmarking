@@ -10,12 +10,10 @@ Cases are upserted by (dataset_id, case_key). Re-running is idempotent: existing
 with the same case_key are updated in place; rows without a case_key are left alone.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys
-from datetime import datetime  # noqa: TC003 - Pydantic needs the runtime type for YAML validation.
+from datetime import date, datetime  # noqa: TC003 - Pydantic needs the runtime types for YAML validation.
 from pathlib import Path
 from typing import Any
 
@@ -38,8 +36,8 @@ class SeedExpectedCitation(BaseModel):
 
 
 class SeedExpectedEvidence(SeedExpectedCitation):
-    filing_date: str | None = None
-    report_period: str | None = None
+    filing_date: date | None = None
+    report_period: date | None = None
     evidence_hash: str | None = None
     table_key: str | None = None
 
@@ -123,9 +121,9 @@ def _to_orm(dataset_id: str, case: SeedEvalCase) -> models.EvalCase:
         difficulty=case.difficulty,
         question=case.question,
         expected_answer=case.expected_answer,
-        expected_citations=[citation.model_dump() for citation in case.expected_citations],
+        expected_citations=[citation.model_dump(mode="json") for citation in case.expected_citations],
         expected_answer_spec=_expected_answer_spec(case),
-        expected_evidence=[evidence.model_dump() for evidence in case.expected_evidence],
+        expected_evidence=[evidence.model_dump(mode="json") for evidence in case.expected_evidence],
         verification_status=case.verification_status,
         verified_by=case.verified_by,
         verified_at=case.verified_at,
@@ -139,9 +137,9 @@ def _apply_update(existing: models.EvalCase, case: SeedEvalCase) -> None:
     existing.difficulty = case.difficulty
     existing.question = case.question
     existing.expected_answer = case.expected_answer
-    existing.expected_citations = [citation.model_dump() for citation in case.expected_citations]
+    existing.expected_citations = [citation.model_dump(mode="json") for citation in case.expected_citations]
     existing.expected_answer_spec = _expected_answer_spec(case)
-    existing.expected_evidence = [evidence.model_dump() for evidence in case.expected_evidence]
+    existing.expected_evidence = [evidence.model_dump(mode="json") for evidence in case.expected_evidence]
     existing.verification_status = case.verification_status
     existing.verified_by = case.verified_by
     existing.verified_at = case.verified_at
