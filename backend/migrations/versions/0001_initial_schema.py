@@ -1,8 +1,8 @@
-"""initial schema
+"""initial schema (squashed baseline)
 
 Revision ID: 0001_initial_schema
 Revises:
-Create Date: 2026-05-14 00:00:00.000000
+Create Date: 2026-05-16 00:00:00.000000
 """
 
 import pgvector.sqlalchemy
@@ -45,6 +45,8 @@ def upgrade() -> None:
         sa.Column("metadata", postgresql.JSONB(), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("retry_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("last_heartbeat_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -76,9 +78,18 @@ def upgrade() -> None:
         "eval_cases",
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("dataset_id", sa.String(length=36), nullable=False),
+        sa.Column("case_key", sa.String(length=64), nullable=True),
+        sa.Column("category", sa.String(length=64), nullable=True),
+        sa.Column("difficulty", sa.String(length=16), nullable=True),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column("expected_answer", sa.Text(), nullable=True),
         sa.Column("expected_citations", postgresql.JSONB(), nullable=False),
+        sa.Column("expected_answer_spec", postgresql.JSONB(), nullable=False),
+        sa.Column("expected_evidence", postgresql.JSONB(), nullable=False),
+        sa.Column("verification_status", sa.String(length=16), nullable=False),
+        sa.Column("verified_by", sa.String(length=128), nullable=True),
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("gold_version", sa.String(length=32), nullable=False),
         sa.Column("tags", postgresql.JSONB(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -189,6 +200,8 @@ def upgrade() -> None:
         sa.Column("model_metadata", postgresql.JSONB(), nullable=False),
         sa.Column("final_answer_metadata", postgresql.JSONB(), nullable=False),
         sa.Column("timings", postgresql.JSONB(), nullable=False),
+        sa.Column("usage_summary", postgresql.JSONB(), nullable=True),
+        sa.Column("cost_estimate_usd", sa.Numeric(precision=10, scale=6), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["dataset_id"], ["datasets.id"], ondelete="CASCADE"),
@@ -219,10 +232,14 @@ def upgrade() -> None:
         sa.Column("eval_run_id", sa.String(length=36), nullable=False),
         sa.Column("eval_case_id", sa.String(length=36), nullable=True),
         sa.Column("retrieval_mode", sa.String(length=32), nullable=False),
+        sa.Column("variant_name", sa.String(length=64), nullable=True),
         sa.Column("answer", sa.Text(), nullable=True),
         sa.Column("trace_id", sa.String(length=36), nullable=True),
         sa.Column("metrics", postgresql.JSONB(), nullable=False),
         sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("usage", postgresql.JSONB(), nullable=True),
+        sa.Column("cost_estimate", postgresql.JSONB(), nullable=True),
+        sa.Column("latency_ms", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["eval_case_id"], ["eval_cases.id"], ondelete="SET NULL"),
@@ -243,17 +260,27 @@ def upgrade() -> None:
         ],
         "jobs": ["job_type", "status", "celery_task_id", "dataset_id", "document_id", "eval_run_id"],
         "ingestion_runs": ["dataset_id", "document_id", "job_id", "status"],
-        "parsed_pages": ["ingestion_run_id", "document_id", "page_number"],
+        "parsed_pages": ["ingestion_run_id", "document_id", "page_number", "parser"],
         "chunks": ["ingestion_run_id", "document_id", "page_start", "page_end", "contains_table", "is_active"],
         "embeddings": ["chunk_id", "model"],
         "query_traces": ["dataset_id"],
         "citations": ["trace_id", "chunk_id", "document_id"],
-        "eval_cases": ["dataset_id"],
+        "eval_cases": ["dataset_id", "category", "difficulty", "verification_status"],
         "eval_runs": ["dataset_id", "job_id", "status"],
-        "eval_results": ["eval_run_id", "retrieval_mode"],
+        "eval_results": ["eval_run_id", "retrieval_mode", "variant_name"],
     }.items():
         for column_name in column_names:
             op.create_index(f"ix_{table_name}_{column_name}", table_name, [column_name])
+
+    op.create_index("ix_jobs_status_created_at", "jobs", ["status", "created_at"])
+    op.create_index("ix_jobs_status_last_heartbeat_at", "jobs", ["status", "last_heartbeat_at"])
+    op.create_index(
+        "uq_eval_cases_dataset_case_key",
+        "eval_cases",
+        ["dataset_id", "case_key"],
+        unique=True,
+        postgresql_where=sa.text("case_key IS NOT NULL"),
+    )
 
     op.execute(
         "CREATE INDEX ix_chunks_normalized_text_fts ON chunks USING gin (to_tsvector('english', normalized_text))"
