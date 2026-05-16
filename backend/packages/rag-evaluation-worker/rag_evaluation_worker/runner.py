@@ -837,64 +837,67 @@ def run_evaluation(
         for spec in specs:
             overrides_dump = spec.overrides.model_dump(exclude_none=True)
             effective = apply_overrides(resolved, spec.overrides)
+            result_row: models.EvalResult | None = None
+            response: QueryResponse | None = None
+            # Each case/variant runs inside a SAVEPOINT so a single failure can be
+            # rolled back without poisoning the outer transaction. Postgres accepts
+            # ROLLBACK TO SAVEPOINT even after InFailedSqlTransaction, which is the
+            # only safe way to keep the surrounding loop going.
             try:
-                start = time.perf_counter()
-                response = run_query(
-                    session,
-                    request=QueryRequest(
-                        dataset_id=eval_run.dataset_id,
-                        question=case.question,
-                        filters=QueryFilters(),
-                        top_k=max(effective.evidence_top_k, 10),
-                        include_trace=True,
+                with session.begin_nested():
+                    start = time.perf_counter()
+                    response = run_query(
+                        session,
+                        request=QueryRequest(
+                            dataset_id=eval_run.dataset_id,
+                            question=case.question,
+                            filters=QueryFilters(),
+                            top_k=max(effective.evidence_top_k, 10),
+                            include_trace=True,
+                            retrieval_mode=spec.retrieval_mode,
+                            include_full_retrieval=True,
+                        ),
+                        settings=effective,
+                    )
+                    latency_ms = int((time.perf_counter() - start) * 1000)
+                    metrics = _compute_case_metrics(
+                        session=session,
+                        response=response,
+                        case=case,
+                        latency_ms=latency_ms,
+                    )
+                    metrics["variant_name"] = spec.name
+                    metrics["retrieval_mode"] = spec.retrieval_mode
+                    metrics["overrides_applied"] = overrides_dump
+                    usage_dump = (
+                        response.usage_summary.model_dump()
+                        if response.usage_summary is not None
+                        else (_empty_role_usage_dict())
+                    )
+                    cost_breakdown: dict[str, float] = {}
+                    if response.usage_summary is not None:
+                        role_usage = response.usage_summary
+                        cost_breakdown = {
+                            role.value: pricing.estimate(
+                                getattr(role_usage, role.value).model,
+                                getattr(role_usage, role.value),
+                                role,
+                            )
+                            for role in PipelineRole
+                        }
+                    result_row = models.EvalResult(
+                        eval_run_id=eval_run.id,
+                        eval_case_id=case.id,
                         retrieval_mode=spec.retrieval_mode,
-                        include_full_retrieval=True,
-                    ),
-                    settings=effective,
-                )
-                latency_ms = int((time.perf_counter() - start) * 1000)
-                metrics = _compute_case_metrics(
-                    session=session,
-                    response=response,
-                    case=case,
-                    latency_ms=latency_ms,
-                )
-                metrics["variant_name"] = spec.name
-                metrics["retrieval_mode"] = spec.retrieval_mode
-                metrics["overrides_applied"] = overrides_dump
-                usage_dump = (
-                    response.usage_summary.model_dump()
-                    if response.usage_summary is not None
-                    else (_empty_role_usage_dict())
-                )
-                cost_breakdown: dict[str, float] = {}
-                if response.usage_summary is not None:
-                    role_usage = response.usage_summary
-                    cost_breakdown = {
-                        role.value: pricing.estimate(
-                            getattr(role_usage, role.value).model,
-                            getattr(role_usage, role.value),
-                            role,
-                        )
-                        for role in PipelineRole
-                    }
-                result_row = models.EvalResult(
-                    eval_run_id=eval_run.id,
-                    eval_case_id=case.id,
-                    retrieval_mode=spec.retrieval_mode,
-                    variant_name=spec.name,
-                    answer=response.answer,
-                    trace_id=response.trace_id,
-                    metrics=metrics,
-                    usage=usage_dump,
-                    cost_estimate=cost_breakdown or None,
-                    latency_ms=latency_ms,
-                )
-                session.add(result_row)
-                session.flush()
-                case_ids_per_variant[spec.name].add(case.id)
-                contexts = [evidence.snippet for evidence in response.evidence if evidence.snippet]
-                pending_ragas.append((result_row, _ragas_sample(case, response.answer, contexts)))
+                        variant_name=spec.name,
+                        answer=response.answer,
+                        trace_id=response.trace_id,
+                        metrics=metrics,
+                        usage=usage_dump,
+                        cost_estimate=cost_breakdown or None,
+                        latency_ms=latency_ms,
+                    )
+                    session.add(result_row)
             except Exception as exc:  # noqa: BLE001 - per-case isolation: each case is independent; one failure must not abort the run
                 errors.append(
                     {
@@ -905,20 +908,34 @@ def run_evaluation(
                     }
                 )
                 logger.exception("eval_case_failed case=%s variant=%s", case.id, spec.name)
-                session.add(
-                    models.EvalResult(
-                        eval_run_id=eval_run.id,
-                        eval_case_id=case.id,
-                        retrieval_mode=spec.retrieval_mode,
-                        variant_name=spec.name,
-                        error=str(exc),
-                        metrics={
-                            "variant_name": spec.name,
-                            "retrieval_mode": spec.retrieval_mode,
-                            "overrides_applied": overrides_dump,
-                        },
+                try:
+                    with session.begin_nested():
+                        session.add(
+                            models.EvalResult(
+                                eval_run_id=eval_run.id,
+                                eval_case_id=case.id,
+                                retrieval_mode=spec.retrieval_mode,
+                                variant_name=spec.name,
+                                error=str(exc),
+                                metrics={
+                                    "variant_name": spec.name,
+                                    "retrieval_mode": spec.retrieval_mode,
+                                    "overrides_applied": overrides_dump,
+                                },
+                            )
+                        )
+                except SQLAlchemyError:
+                    logger.exception(
+                        "eval_case_error_row_persist_failed case=%s variant=%s",
+                        case.id,
+                        spec.name,
                     )
-                )
+            else:
+                # Only record success bookkeeping when the savepoint released cleanly.
+                case_ids_per_variant[spec.name].add(case.id)
+                if response is not None and result_row is not None:
+                    contexts = [evidence.snippet for evidence in response.evidence if evidence.snippet]
+                    pending_ragas.append((result_row, _ragas_sample(case, response.answer, contexts)))
             completed += 1
             commit_job_progress(
                 job_id,
@@ -926,7 +943,6 @@ def run_evaluation(
                 progress=int((completed / total) * 90),
                 current_step=f"evaluated {completed}/{total}",
             )
-            session.flush()
 
     pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
 

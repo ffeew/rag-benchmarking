@@ -252,6 +252,60 @@ function EvalDetail() {
         </section>
       )}
 
+      {run.errors.length > 0 && (
+        <Card>
+          <CardHeader
+            title={
+              <span>
+                ERRORS{' '}
+                <span className="font-mono numeric text-[var(--ink-muted)]">
+                  {run.errors.length}
+                </span>
+              </span>
+            }
+          />
+          <CardBody padded={false}>
+            <Table>
+              <THead>
+                <tr>
+                  <TH>CASE</TH>
+                  <TH>VARIANT</TH>
+                  <TH>CLASS</TH>
+                  <TH>MESSAGE</TH>
+                </tr>
+              </THead>
+              <TBody>
+                {run.errors.map((err, idx) => {
+                  const caseId =
+                    typeof err.case_id === 'string' ? err.case_id : null
+                  const variant =
+                    typeof err.variant === 'string' ? err.variant : null
+                  const errorClass =
+                    typeof err.error_class === 'string' ? err.error_class : null
+                  const message = typeof err.error === 'string' ? err.error : ''
+                  return (
+                    <TR key={idx}>
+                      <TD className="font-mono text-[11px] text-[var(--ink-dim)]">
+                        {caseId ? truncateId(caseId) : '—'}
+                      </TD>
+                      <TD className="font-mono text-[11px] text-[var(--ink-dim)]">
+                        {variant ?? '—'}
+                      </TD>
+                      <TD className="font-mono text-[11px] text-[var(--bad)]">
+                        {errorClass ?? '—'}
+                      </TD>
+                      <TD className="font-mono text-[11px] text-[var(--bad)] whitespace-pre-wrap break-words">
+                        {message}
+                      </TD>
+                    </TR>
+                  )
+                })}
+              </TBody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
+
       <Card>
         <CardHeader
           title={
