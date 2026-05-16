@@ -101,7 +101,7 @@ The implementation should model these entities:
 
 | Entity | Key Fields |
 | --- | --- |
-| Dataset | id, name, description, created_at, default query settings. |
+| Dataset | id, name, description, created_at, default query settings, domain_label, entity_label, valid_forms, metric_terms, hyde_style_hint, citation_label_template. The last six are nullable overrides for the agent prompts and the deterministic-planner fallback; nulls resolve to SEC defaults in `rag_retrieval.dataset_config`, so the SEC corpus is one instance rather than the hard-coded identity. |
 | Document | id, dataset_id, ticker, company_name, form_type, filing_date, report_period, fiscal_year, fiscal_quarter, checksum, MinIO source reference. |
 | Ingestion run | id, dataset_id, document_id, parser config, chunking config, embedding model, status, timings, error summary. |
 | Parsed page | document_id, page_number, parser, artifact key, text stats, table count, quality flags. |
@@ -191,6 +191,13 @@ the planner, retrieval, and verifier responsibilities. The agent exposes exactly
 tool, `retrieve_evidence`, and decides when, how many times, and with what filters to
 call it. The bounded budget is enforced via `UsageLimits(request_limit=N+1)` with
 `N = retrieval_agent_tool_call_budget` (default 4).
+
+The agent's static identity is corpus-neutral ("filings RAG system"). At every run,
+`@agent.instructions` injects a per-dataset block containing `CORPUS: <domain_label>`,
+`KNOWN_FORMS: <valid_forms>`, and `KNOWN_TICKERS: <…>` resolved from the `DatasetConfig`
+loaded once in `run_query`. The same pattern is used by the planner, HyDE, verifier,
+and generator agents so the SEC corpus and any registered custom dataset share one
+prompt surface.
 
 The agent's final structured output combines planner-style metadata (target tickers,
 forms, metrics, query_type, latest, subquestions, reasoning) with verifier-style

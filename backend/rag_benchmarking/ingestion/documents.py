@@ -3,10 +3,19 @@ from pathlib import Path
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
 from rag_common.storage.minio import ObjectStore
+from rag_retrieval.dataset_config import (
+    DEFAULT_CITATION_LABEL_TEMPLATE,
+    DEFAULT_ENTITY_LABEL,
+    DEFAULT_METRIC_TERMS,
+    DEFAULT_VALID_FORMS,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rag_benchmarking.ingestion.metadata import parse_filing_filename, raw_object_key, sha256_file
+
+SEC_DATASET_NAME = "sec-filings"
+SEC_DOMAIN_LABEL = "SEC filings of US public companies"
 
 
 def get_or_create_dataset(
@@ -15,6 +24,12 @@ def get_or_create_dataset(
     name: str,
     description: str | None,
     default_query_settings: dict[str, object] | None = None,
+    domain_label: str | None = None,
+    entity_label: str | None = None,
+    valid_forms: list[str] | None = None,
+    metric_terms: list[str] | None = None,
+    hyde_style_hint: str | None = None,
+    citation_label_template: str | None = None,
 ) -> models.Dataset:
     dataset = session.scalar(select(models.Dataset).where(models.Dataset.name == name))
     if dataset:
@@ -23,6 +38,12 @@ def get_or_create_dataset(
         name=name,
         description=description,
         default_query_settings=default_query_settings or {},
+        domain_label=domain_label,
+        entity_label=entity_label,
+        valid_forms=valid_forms,
+        metric_terms=metric_terms,
+        hyde_style_hint=hyde_style_hint,
+        citation_label_template=citation_label_template,
     )
     session.add(dataset)
     session.flush()
@@ -87,10 +108,40 @@ def register_local_corpus(
     description: str | None,
     path: Path | None = None,
     settings: Settings | None = None,
+    domain_label: str | None = None,
+    entity_label: str | None = None,
+    valid_forms: list[str] | None = None,
+    metric_terms: list[str] | None = None,
+    hyde_style_hint: str | None = None,
+    citation_label_template: str | None = None,
 ) -> tuple[models.Dataset, list[models.Document], int, int]:
     resolved = settings or get_settings()
     corpus_path = path or resolved.local_corpus_path
-    dataset = get_or_create_dataset(session, name=dataset_name, description=description)
+    # Eagerly populate SEC defaults when the caller registers the canonical SEC corpus
+    # without supplying explicit overrides. Non-default dataset names stay null and
+    # rely on the runtime fallback in rag_retrieval.dataset_config.load_dataset_config.
+    if dataset_name == SEC_DATASET_NAME:
+        if domain_label is None:
+            domain_label = SEC_DOMAIN_LABEL
+        if entity_label is None:
+            entity_label = DEFAULT_ENTITY_LABEL
+        if valid_forms is None:
+            valid_forms = list(DEFAULT_VALID_FORMS)
+        if metric_terms is None:
+            metric_terms = list(DEFAULT_METRIC_TERMS)
+        if citation_label_template is None:
+            citation_label_template = DEFAULT_CITATION_LABEL_TEMPLATE
+    dataset = get_or_create_dataset(
+        session,
+        name=dataset_name,
+        description=description,
+        domain_label=domain_label,
+        entity_label=entity_label,
+        valid_forms=valid_forms,
+        metric_terms=metric_terms,
+        hyde_style_hint=hyde_style_hint,
+        citation_label_template=citation_label_template,
+    )
     documents: list[models.Document] = []
     created = 0
     reused = 0

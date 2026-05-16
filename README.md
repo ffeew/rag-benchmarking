@@ -53,6 +53,39 @@ my_filings/
 
 Then set `LOCAL_CORPUS_PATH` in `backend/.env` or mount the path into the API/worker containers and call the same registration endpoint.
 
+### Domain-Adaptive Retrieval Config
+
+The prompts used by the planner, HyDE, retrieval-agent, verifier, and generator are
+not hard-coded to SEC filings; they read corpus-level overrides from the dataset row.
+Existing SEC behavior is preserved because every override falls back to a SEC default
+when the column is null. Override columns on `datasets`:
+
+| Column | Purpose |
+| --- | --- |
+| `domain_label` | Short corpus identity injected as `CORPUS: …` in every agent prompt (default: "SEC filings of US public companies"). |
+| `entity_label` | Human-readable name for the primary entity (default: "ticker"). |
+| `valid_forms` | JSON array of allowed form types; restricts planner output and `retrieve_evidence` filters (default: `["10-K","10-Q","8-K"]`). |
+| `metric_terms` | JSON array of metric keywords used by the heuristic-planner fallback (default: revenue, R&D, …). |
+| `hyde_style_hint` | Optional dataset-specific style cue appended to the HyDE prompt as `STYLE_HINT: …`. |
+| `citation_label_template` | `str.format` template with `{entity}`, `{filing_date}`, `{form_type}`, `{page}` placeholders for citation rendering (default: `[{entity} {filing_date} {form_type}, p. {page}]`). |
+
+Pass any of these as optional fields on `POST /v1/datasets`, `POST /v1/datasets/register-local-corpus`, or via direct DB update. Example:
+
+```bash
+curl -sS -X POST http://localhost:8000/v1/datasets \
+  -H "Authorization: Bearer $API_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "compliance-memos",
+    "description": "Internal compliance memos and incident reports.",
+    "domain_label": "Internal compliance memos",
+    "entity_label": "subject",
+    "valid_forms": ["MEMO", "INCIDENT"],
+    "metric_terms": ["incident", "escalation", "control"],
+    "hyde_style_hint": "Compliance memo register: incident, remediation, control mapping."
+  }'
+```
+
 ## Reproduce Reported Metrics
 
 The implementation report (`docs/implementation-report.md`) cites aggregate

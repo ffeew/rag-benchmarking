@@ -7,6 +7,12 @@ export const datasetSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   default_query_settings: z.record(z.string(), z.unknown()),
+  domain_label: z.string().nullable().optional(),
+  entity_label: z.string().nullable().optional(),
+  valid_forms: z.array(z.string()).nullable().optional(),
+  metric_terms: z.array(z.string()).nullable().optional(),
+  hyde_style_hint: z.string().nullable().optional(),
+  citation_label_template: z.string().nullable().optional(),
   created_at: z.string(),
   document_count: z.number(),
   active_chunk_count: z.number(),
@@ -435,8 +441,14 @@ export const api = {
     id: string,
     body: {
       name?: string
-      description?: string
+      description?: string | null
       default_query_settings?: Record<string, unknown>
+      domain_label?: string | null
+      entity_label?: string | null
+      valid_forms?: string[] | null
+      metric_terms?: string[] | null
+      hyde_style_hint?: string | null
+      citation_label_template?: string | null
     },
   ) {
     return datasetSchema.parse(

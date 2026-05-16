@@ -22,7 +22,28 @@ def _mock_settings() -> Settings:
 
 
 def _stub_session(tickers: list[str]) -> object:
-    return SimpleNamespace(scalars=lambda _stmt: iter(tickers))
+    """Stub session that returns a bare Dataset row + tickers from scalars().
+
+    ``load_dataset_config`` reads the Dataset row via ``session.get(Dataset, id)``;
+    the row has none of the override columns set so the resolver falls back to SEC
+    defaults. ``scalars`` yields the dataset's tickers when called for ``DISTINCT
+    documents.ticker`` lookups.
+    """
+    dataset_row = SimpleNamespace(
+        id="d1",
+        name="sec-filings",
+        description=None,
+        domain_label=None,
+        entity_label=None,
+        valid_forms=None,
+        metric_terms=None,
+        hyde_style_hint=None,
+        citation_label_template=None,
+    )
+    return SimpleNamespace(
+        get=lambda _model, _id: dataset_row,
+        scalars=lambda _stmt: iter(tickers),
+    )
 
 
 def test_plan_query_falls_back_to_heuristic_in_mock_mode() -> None:

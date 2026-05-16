@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { Activity, ArrowRight, Database } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { EditDatasetConfigDialog } from '#/components/datasets/EditDatasetConfigDialog'
 import { Badge, toneForStatus } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardBody, CardHeader } from '#/components/ui/card'
@@ -19,9 +20,24 @@ export const Route = createFileRoute('/datasets/$datasetId/')({
   component: DatasetSummary,
 })
 
+function configValue(value: string | null | undefined): string {
+  return value && value.trim() ? value : '(SEC default)'
+}
+
+function configList(value: string[] | null | undefined): string {
+  if (!value || value.length === 0) return '(SEC default)'
+  return value.join(', ')
+}
+
 function DatasetSummary() {
   const { datasetId } = Route.useParams()
   const { token, isAuthed } = useToken()
+  const datasetQuery = useQuery({
+    queryKey: qk.datasets.detail(datasetId),
+    queryFn: () => api.dataset(token, datasetId),
+    enabled: isAuthed,
+  })
+  const dataset = datasetQuery.data
 
   // Overview cards need broad coverage but not full pagination — pull a
   // capped page (200) for ticker/form breakdowns; click-through shows everything.
@@ -150,6 +166,55 @@ function DatasetSummary() {
               )}
             </CardBody>
           </Card>
+
+          {dataset && (
+            <Card>
+              <CardHeader
+                title="DATASET CONFIG"
+                actions={<EditDatasetConfigDialog dataset={dataset} />}
+              />
+              <CardBody>
+                <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                  <div>
+                    <dt className="mono-label mb-1">DOMAIN LABEL</dt>
+                    <dd className="text-[12.5px] text-[var(--ink)]">
+                      {configValue(dataset.domain_label)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="mono-label mb-1">ENTITY LABEL</dt>
+                    <dd className="font-mono text-[12px] text-[var(--ink)]">
+                      {configValue(dataset.entity_label)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="mono-label mb-1">VALID FORMS</dt>
+                    <dd className="font-mono text-[12px] text-[var(--ink)]">
+                      {configList(dataset.valid_forms)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="mono-label mb-1">METRIC TERMS</dt>
+                    <dd className="font-mono text-[11.5px] text-[var(--ink)] truncate">
+                      {configList(dataset.metric_terms)}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="mono-label mb-1">HYDE STYLE HINT</dt>
+                    <dd className="text-[12.5px] text-[var(--ink)]">
+                      {configValue(dataset.hyde_style_hint)}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="mono-label mb-1">CITATION LABEL TEMPLATE</dt>
+                    <dd className="font-mono text-[11.5px] text-[var(--ink)]">
+                      {configValue(dataset.citation_label_template)}
+                    </dd>
+                  </div>
+                </dl>
+              </CardBody>
+            </Card>
+          )}
 
           <Card>
             <CardHeader

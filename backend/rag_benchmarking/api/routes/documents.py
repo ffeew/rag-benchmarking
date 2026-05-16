@@ -44,6 +44,12 @@ def register_local_corpus_endpoint(
         description=payload.description,
         path=Path(payload.path) if payload.path else None,
         settings=settings,
+        domain_label=payload.domain_label,
+        entity_label=payload.entity_label,
+        valid_forms=payload.valid_forms,
+        metric_terms=payload.metric_terms,
+        hyde_style_hint=payload.hyde_style_hint,
+        citation_label_template=payload.citation_label_template,
     )
     queue_result = queue_ingestion_jobs(
         session,

@@ -63,7 +63,7 @@ def test_hyde_returns_passage_on_success(monkeypatch: pytest.MonkeyPatch) -> Non
     )
 
     fake_agent = SimpleNamespace(
-        run_sync=lambda _prompt: SimpleNamespace(output=hypothetical_text),
+        run_sync=lambda _prompt, deps=None: SimpleNamespace(output=hypothetical_text),  # noqa: ARG005
     )
     monkeypatch.setattr(hyde, "_build_hyde_agent_for", lambda _model: fake_agent)
 
@@ -82,7 +82,7 @@ def test_hyde_handles_empty_output(monkeypatch: pytest.MonkeyPatch) -> None:
         chat_model="anthropic/claude-3.5-sonnet",
     )
 
-    fake_agent = SimpleNamespace(run_sync=lambda _prompt: SimpleNamespace(output="   "))
+    fake_agent = SimpleNamespace(run_sync=lambda _prompt, deps=None: SimpleNamespace(output="   "))  # noqa: ARG005
     monkeypatch.setattr(hyde, "_build_hyde_agent_for", lambda _model: fake_agent)
 
     passage, metadata, usage = generate_hyde_passage("Q?", settings)
@@ -100,7 +100,7 @@ def test_hyde_falls_back_on_agent_exception(monkeypatch: pytest.MonkeyPatch) -> 
         chat_model="anthropic/claude-3.5-sonnet",
     )
 
-    def _boom(_prompt: str) -> SimpleNamespace:
+    def _boom(_prompt: str, deps: object | None = None) -> SimpleNamespace:  # noqa: ARG001
         raise ModelHTTPError(status_code=503, model_name="anthropic/claude-3.5-sonnet", body="upstream 503")
 
     fake_agent = SimpleNamespace(run_sync=_boom)

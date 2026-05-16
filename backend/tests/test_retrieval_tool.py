@@ -193,7 +193,12 @@ def test_tool_uses_hyde_passage_for_semantic_query(monkeypatch: pytest.MonkeyPat
 
     hypothetical = "For the fiscal year ended September 28, 2024, total net sales were $383.3B."
 
-    def fake_hyde(query: str, _settings: object) -> tuple[str, dict[str, object], TokenUsage]:
+    def fake_hyde(
+        query: str,
+        _settings: object,
+        *,
+        dataset_config: object | None = None,  # noqa: ARG001
+    ) -> tuple[str, dict[str, object], TokenUsage]:
         assert query == "Apple revenue FY24"
         return (
             hypothetical,

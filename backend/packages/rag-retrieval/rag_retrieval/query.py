@@ -16,6 +16,7 @@ from rag_common.usage import RoleUsage, TokenUsage, merge, total
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from rag_retrieval.dataset_config import DatasetConfig, load_dataset_config
 from rag_retrieval.generation import (
     citation_label,
     generate_answer,
@@ -41,7 +42,7 @@ def to_evidence_read(item: RetrievedChunk) -> EvidenceRead:
     )
 
 
-def to_citation_read(item: RetrievedChunk) -> CitationRead:
+def to_citation_read(item: RetrievedChunk, template: str | None = None) -> CitationRead:
     return CitationRead(
         document_id=item.document.id,
         ticker=item.document.ticker,
@@ -54,7 +55,7 @@ def to_citation_read(item: RetrievedChunk) -> CitationRead:
         minio_key=item.document.minio_key,
         minio_version_id=item.document.minio_version_id,
         snippet=snippet(item.chunk.text),
-        label=citation_label(item),
+        label=citation_label(item, template),
     )
 
 
@@ -71,6 +72,7 @@ def persist_trace(
     citations: list[RetrievedChunk],
     usage_summary: dict[str, Any] | None = None,
     cost_estimate_usd: float | None = None,
+    citation_template: str | None = None,
 ) -> models.QueryTrace:
     trace = models.QueryTrace(
         dataset_id=request.dataset_id,
@@ -95,7 +97,7 @@ def persist_trace(
                 document_id=item.document.id,
                 page_number=item.chunk.page_start,
                 evidence_text=snippet(item.chunk.text),
-                citation_label=citation_label(item),
+                citation_label=citation_label(item, citation_template),
                 minio_bucket=item.document.minio_bucket,
                 minio_key=item.document.minio_key,
                 minio_version_id=item.document.minio_version_id,
@@ -148,21 +150,12 @@ def _empty_meta(resolved: Settings) -> dict[str, Any]:
     return {"agent_used": False, "model": resolved.zai_chat_model, "error": None}
 
 
-def _known_tickers_for(session: Session, dataset_id: str) -> set[str]:
-    return {
-        ticker
-        for ticker in session.scalars(
-            select(models.Document.ticker).where(models.Document.dataset_id == dataset_id).distinct()
-        )
-        if ticker is not None
-    }
-
-
 def _heuristic_plan(
     session: Session,
     *,
     request: QueryRequest,
     resolved: Settings,
+    dataset_config: DatasetConfig,
 ) -> tuple[RetrievalPlan, dict[str, Any], TokenUsage]:
     return plan_query(
         session,
@@ -171,6 +164,7 @@ def _heuristic_plan(
         filters=request.filters,
         settings=resolved,
         force_heuristic=True,
+        dataset_config=dataset_config,
     )
 
 
@@ -185,6 +179,7 @@ def run_query(
     dataset = session.get(models.Dataset, request.dataset_id)
     if dataset is None:
         raise ValueError(f"Dataset {request.dataset_id} was not found")
+    dataset_config = load_dataset_config(session, request.dataset_id)
     top_k = request.top_k or resolved.evidence_top_k
 
     plan: RetrievalPlan
@@ -202,7 +197,7 @@ def run_query(
     contradictions: list[str] = []
 
     if request.retrieval_mode == "full_agentic":
-        known_tickers = _known_tickers_for(session, request.dataset_id)
+        known_tickers = set(dataset_config.known_tickers)
         agent_result, retrieval_agent_meta, agent_chat_usage = run_retrieval_agent(
             session,
             dataset_id=request.dataset_id,
@@ -210,6 +205,7 @@ def run_query(
             filters=request.filters,
             known_tickers=known_tickers,
             settings=resolved,
+            dataset_config=dataset_config,
         )
         retrieved = list(agent_result.chunks)
         full_retrieval = list(agent_result.chunks)
@@ -259,7 +255,9 @@ def run_query(
         missing_subclaims = list(agent_result.output.missing_subclaims)
         contradictions = list(agent_result.output.contradictions)
     elif request.retrieval_mode == "single_pass":
-        plan, planner_meta, planner_usage = _heuristic_plan(session, request=request, resolved=resolved)
+        plan, planner_meta, planner_usage = _heuristic_plan(
+            session, request=request, resolved=resolved, dataset_config=dataset_config
+        )
         retrieved, retrieval_trace, embedding_usage, rerank_usage = hybrid_retrieve(
             session,
             dataset_id=request.dataset_id,
@@ -274,7 +272,9 @@ def run_query(
         rerank_usage_total = rerank_usage
         retrieval_calls.append({"query": request.question, **retrieval_trace})
     else:  # llm_only
-        plan, planner_meta, planner_usage = _heuristic_plan(session, request=request, resolved=resolved)
+        plan, planner_meta, planner_usage = _heuristic_plan(
+            session, request=request, resolved=resolved, dataset_config=dataset_config
+        )
 
     verified_evidence = retrieved[:top_k]
     answer, generator_usage = generate_answer(
@@ -285,6 +285,7 @@ def run_query(
         settings=resolved,
         missing_subclaims=missing_subclaims,
         contradictions=contradictions,
+        dataset_config=dataset_config,
     )
     timings = {"total_seconds": round(time.perf_counter() - start, 3)}
     generator_metadata = answer.metadata or {}
@@ -312,6 +313,8 @@ def run_query(
         "agent_generator_used": generator_metadata.get("generator") == "pydantic-ai-agent",
         "citation_validation": generator_metadata.get("citation_validation"),
         "citation_repair_used": generator_metadata.get("repair_used", False),
+        "citation_label_template": dataset_config.citation_label_template,
+        "dataset_domain_label": dataset_config.domain_label,
         "chunker": "chonkie",
         "planner_error": planner_meta.get("error"),
         "verifier_error": verifier_meta.get("error"),
@@ -334,9 +337,10 @@ def run_query(
         citations=verified_evidence,
         usage_summary=usage_summary_dict,
         cost_estimate_usd=cost_total,
+        citation_template=dataset_config.citation_label_template,
     )
     raw_supported_ids = verifier_result.get("supported_chunk_ids") or []
-    citations = [to_citation_read(item) for item in verified_evidence]
+    citations = [to_citation_read(item, dataset_config.citation_label_template) for item in verified_evidence]
     if request.retrieval_mode == "llm_only":
         citations = []
 

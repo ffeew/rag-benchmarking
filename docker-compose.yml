@@ -174,15 +174,26 @@ services:
       dockerfile: Dockerfile
     user: "${UID:-1000}:${GID:-1000}"
     env_file: ./backend/.env
+    # Beat's schedule file (a SQLite DBM) lives on a per-container tmpfs at
+    # /var/celery, not in the bind-mounted source tree. This avoids
+    # container-vs-host UID mismatches that make /app/celerybeat-schedule
+    # unwritable, and keeps the workspace free of run-time artefacts. The mount
+    # is created with `mode=1777` so the container user (whatever UID the
+    # ${UID:-1000} substitution resolves to) can write to it. Losing the
+    # schedule file on container restart is acceptable: our only beat entries
+    # (sweep-stuck-jobs, purge-old-traces) are idempotent interval tasks.
     command:
       [
         "celery",
         "-A", "rag_benchmarking.workers.celery_app:celery_app",
         "beat",
         "--loglevel=INFO",
+        "--schedule=/var/celery/celerybeat-schedule",
       ]
     volumes:
       - ./backend:/app
+    tmpfs:
+      - /var/celery:mode=1777
     depends_on:
       migrate:
         condition: service_completed_successfully

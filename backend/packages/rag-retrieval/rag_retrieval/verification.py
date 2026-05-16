@@ -16,6 +16,7 @@ from rag_retrieval.agents import (
     build_agent,
     run_with_fallback,
 )
+from rag_retrieval.dataset_config import DatasetConfig
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -101,14 +102,14 @@ STOPWORDS = frozenset(
 
 
 _VERIFIER_INSTRUCTIONS = """\
-You are the evidence verifier for an SEC filings RAG system.
+You are the evidence verifier for a filings RAG system.
 
 You will receive a user question and a numbered list of retrieved chunks (each with a
-chunk_id, a human-readable label including ticker/form/page, and a snippet).
+chunk_id, a human-readable label, and a snippet).
 
 Your job:
 1. Decide which chunk_ids genuinely contain evidence that answers (part of) the question.
-   Be conservative: a chunk that merely mentions the company or topic without addressing
+   Be conservative: a chunk that merely mentions the topic or entity without addressing
    the question should NOT be in `supported_chunk_ids`.
 2. List any missing subclaims - things the question asks for that the retrieved chunks
    do not cover.
@@ -155,9 +156,16 @@ def _snippet(text: str, limit: int = 600) -> str:
     return clean[: limit - 1].rstrip() + "..."
 
 
-def _evidence_label(item: RetrievedChunk) -> str:
-    filing = item.document.filing_date.isoformat() if item.document.filing_date else "undated"
-    return f"[{item.document.ticker} {filing} {item.document.form_type}, p. {item.chunk.page_start}]"
+def _evidence_label(item: RetrievedChunk, template: str | None = None) -> str:
+    from rag_retrieval.dataset_config import DEFAULT_CITATION_LABEL_TEMPLATE, format_citation
+
+    return format_citation(
+        entity=item.document.ticker,
+        filing_date=item.document.filing_date,
+        form_type=item.document.form_type,
+        page=item.chunk.page_start,
+        template=template or DEFAULT_CITATION_LABEL_TEMPLATE,
+    )
 
 
 def _build_verifier_prompt(question: str, retrieved: list[RetrievedChunk]) -> str:
@@ -179,10 +187,12 @@ class VerifierDeps:
     ``valid_chunk_ids`` enables an ``@agent.output_validator`` to reject (and trigger
     a single ModelRetry on) any ``supported_chunk_ids`` entry that was not in the
     provided evidence list - the docs flag this exact pattern as the canonical
-    alternative to silent post-run filtering.
+    alternative to silent post-run filtering. ``dataset_config`` lets dynamic
+    instructions name the corpus the verifier is judging against.
     """
 
     valid_chunk_ids: frozenset[str]
+    dataset_config: DatasetConfig
 
 
 @lru_cache(maxsize=2)
@@ -191,9 +201,13 @@ def _build_verifier_agent_for(model_id: str) -> Agent[VerifierDeps, VerifierOutp
         deps_type=VerifierDeps,
         output_type=VerifierOutput,
         instructions=_VERIFIER_INSTRUCTIONS,
-        name="sec-rag-verifier",
+        name="rag-verifier",
         output_retries=1,
     )
+
+    @agent.instructions
+    def verifier_context(ctx: RunContext[VerifierDeps]) -> str:
+        return f"CORPUS: {ctx.deps.dataset_config.domain_label}"
 
     @agent.output_validator
     def validate_supported_ids(
@@ -239,8 +253,11 @@ def verify_evidence(
     question: str,
     retrieved: list[RetrievedChunk],
     settings: Settings | None = None,
+    *,
+    dataset_config: DatasetConfig | None = None,
 ) -> tuple[VerificationResult, dict[str, Any], TokenUsage]:
     resolved = settings or get_settings()
+    config = dataset_config or DatasetConfig.default_sec()
     metadata: dict[str, Any] = {"agent_used": False, "model": None, "error": None}
 
     if not agent_available(resolved) or not retrieved:
@@ -249,7 +266,10 @@ def verify_evidence(
         metadata["fallback_reason"] = "no_retrieved_evidence" if not retrieved else "agent_unavailable"
         return result, metadata, TokenUsage()
 
-    deps = VerifierDeps(valid_chunk_ids=frozenset(item.chunk.id for item in retrieved))
+    deps = VerifierDeps(
+        valid_chunk_ids=frozenset(item.chunk.id for item in retrieved),
+        dataset_config=config,
+    )
 
     def run_agent() -> tuple[VerificationResult, TokenUsage]:
         agent = _verifier_agent(resolved)

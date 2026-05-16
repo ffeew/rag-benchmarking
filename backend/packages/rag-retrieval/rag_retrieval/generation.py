@@ -18,6 +18,11 @@ from rag_retrieval.agents import (
     agent_available,
     build_agent,
 )
+from rag_retrieval.dataset_config import (
+    DEFAULT_CITATION_LABEL_TEMPLATE,
+    DatasetConfig,
+    format_citation,
+)
 from rag_retrieval.verification import VerificationResult, keyword_verify_evidence
 
 if TYPE_CHECKING:
@@ -76,21 +81,21 @@ class GeneratorOutput(BaseModel):
 
 
 _GENERATOR_INSTRUCTIONS = """\
-You are the answer writer for an SEC filings RAG system.
+You are the answer writer for a filings RAG system.
 
 Strict rules:
-- Answer ONLY from the provided evidence chunks. Do not use live market data.
+- Answer ONLY from the provided evidence chunks. Do not use live or external data.
 - Cite every material claim using the ##eN tags exactly as supplied (e.g. ##e1, ##e2).
-  A claim is "material" if it states a number, fact, or assertion from the filing.
+  A claim is "material" if it states a number, fact, or assertion from the corpus.
 - Each ##eN tag corresponds to one evidence chunk. NEVER invent a tag that was not in
   the evidence list. Re-use a tag multiple times if appropriate.
 - If the evidence is insufficient, say so directly, set `insufficiency_reason`, and
   cite whatever partial evidence (if any) is relevant.
-- For investment-recommendation questions, give an evidence-based comparison and call
-  out limitations. Never give individualized advice.
+- For questions seeking advice or recommendations, give an evidence-based comparison
+  and call out limitations. Never give individualized advice.
 - For "latest" or "current" questions, ground the answer in the most recent evidence
   filing date present and name that date.
-- Keep the answer concise and operational - investor-style.
+- Keep the answer concise and operational.
 
 Output structure:
 - `answer`: the prose answer with inline ##eN citations.
@@ -102,9 +107,19 @@ Output structure:
 _CITATION_TAG_RE = re.compile(r"##e(\d+)")
 
 
-def citation_label(item: RetrievedChunk) -> str:
-    filing = item.document.filing_date.isoformat() if item.document.filing_date else "undated"
-    return f"[{item.document.ticker} {filing} {item.document.form_type}, p. {item.chunk.page_start}]"
+def citation_label(item: RetrievedChunk, template: str | None = None) -> str:
+    """Render a citation label for a retrieved chunk.
+
+    ``template`` is the dataset's ``citation_label_template`` (``DatasetConfig``); when
+    None, falls back to the SEC-shaped default ``[TICKER YYYY-MM-DD FORM, p. N]``.
+    """
+    return format_citation(
+        entity=item.document.ticker,
+        filing_date=item.document.filing_date,
+        form_type=item.document.form_type,
+        page=item.chunk.page_start,
+        template=template or DEFAULT_CITATION_LABEL_TEMPLATE,
+    )
 
 
 def snippet(text: str, limit: int = 550) -> str:
@@ -120,6 +135,7 @@ def local_grounded_answer(
     *,
     insufficiency_reason: str | None = None,
     generator: str = "local-extractive",
+    citation_template: str | None = None,
 ) -> AnswerDraft:
     if not evidence:
         return AnswerDraft(
@@ -128,9 +144,9 @@ def local_grounded_answer(
             insufficiency_reason=insufficiency_reason or "No relevant evidence chunks were retrieved.",
             metadata={"generator": generator},
         )
-    lines = ["Based on the ingested filings, the strongest retrieved evidence is:"]
+    lines = ["Based on the ingested corpus, the strongest retrieved evidence is:"]
     for item in evidence[:5]:
-        lines.append(f"{citation_label(item)} {snippet(item.chunk.text, 320)}")
+        lines.append(f"{citation_label(item, citation_template)} {snippet(item.chunk.text, 320)}")
     return AnswerDraft(
         answer="\n".join(lines),
         confidence=min(0.9, 0.35 + len(evidence) * 0.08),
@@ -151,9 +167,12 @@ class GeneratorDeps:
     ``valid_tags`` enables an ``@agent.output_validator`` to raise ``ModelRetry`` when
     the model fabricates a citation tag - the documented pydantic-ai replacement for
     the hand-rolled "build a repair prompt and call the agent a second time" pattern.
+    ``dataset_config`` lets dynamic instructions name the corpus the answer is being
+    written against.
     """
 
     valid_tags: frozenset[str]
+    dataset_config: DatasetConfig
 
 
 @lru_cache(maxsize=2)
@@ -162,9 +181,13 @@ def _build_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorO
         deps_type=GeneratorDeps,
         output_type=GeneratorOutput,
         instructions=_GENERATOR_INSTRUCTIONS,
-        name="sec-rag-generator",
+        name="rag-generator",
         output_retries=1,
     )
+
+    @agent.instructions
+    def generator_context(ctx: RunContext[GeneratorDeps]) -> str:
+        return f"CORPUS: {ctx.deps.dataset_config.domain_label}"
 
     @agent.output_validator
     def validate_citations(
@@ -190,13 +213,16 @@ def _generator_agent(settings: Settings) -> Agent[GeneratorDeps, GeneratorOutput
     return _build_generator_agent_for(settings.zai_chat_model or "")
 
 
-def _build_evidence_context(evidence: list[RetrievedChunk]) -> tuple[str, dict[str, RetrievedChunk]]:
+def _build_evidence_context(
+    evidence: list[RetrievedChunk],
+    citation_template: str | None = None,
+) -> tuple[str, dict[str, RetrievedChunk]]:
     blocks: list[str] = []
     tag_to_item: dict[str, RetrievedChunk] = {}
     for index, item in enumerate(evidence, start=1):
         tag = f"##e{index}"
         tag_to_item[tag] = item
-        label = citation_label(item)
+        label = citation_label(item, citation_template)
         blocks.append(f"{tag} {label} contains_table={item.chunk.contains_table}\n{item.chunk.text}")
     return "\n\n---\n\n".join(blocks), tag_to_item
 
@@ -212,13 +238,17 @@ def _extract_referenced_tags(answer: str, citations_used: list[str]) -> set[str]
     return tags
 
 
-def _replace_tags_with_labels(answer: str, tag_to_item: dict[str, RetrievedChunk]) -> str:
+def _replace_tags_with_labels(
+    answer: str,
+    tag_to_item: dict[str, RetrievedChunk],
+    citation_template: str | None = None,
+) -> str:
     def replace(match: re.Match[str]) -> str:
         tag = f"##e{match.group(1)}"
         item = tag_to_item.get(tag)
         if item is None:
             return tag
-        return citation_label(item)
+        return citation_label(item, citation_template)
 
     return _CITATION_TAG_RE.sub(replace, answer)
 
@@ -284,13 +314,16 @@ def generate_answer_with_agent(
     settings: Settings,
     missing_subclaims: list[str] | None = None,
     contradictions: list[str] | None = None,
+    dataset_config: DatasetConfig | None = None,
 ) -> tuple[AnswerDraft, TokenUsage]:
+    config = dataset_config or DatasetConfig.default_sec()
+    template = config.citation_label_template
     if not evidence:
-        return local_grounded_answer(question, []), TokenUsage()
+        return local_grounded_answer(question, [], citation_template=template), TokenUsage()
 
-    evidence_text, tag_to_item = _build_evidence_context(evidence)
+    evidence_text, tag_to_item = _build_evidence_context(evidence, template)
     valid_tags = list(tag_to_item.keys())
-    deps = GeneratorDeps(valid_tags=frozenset(valid_tags))
+    deps = GeneratorDeps(valid_tags=frozenset(valid_tags), dataset_config=config)
     agent = _generator_agent(settings)
 
     prompt = _build_generator_prompt(
@@ -316,6 +349,7 @@ def generate_answer_with_agent(
                 evidence,
                 insufficiency_reason="Generator agent failed or could not produce valid citations.",
                 generator="local-extractive-after-agent-error",
+                citation_template=template,
             ),
             TokenUsage(),
         )
@@ -324,7 +358,7 @@ def generate_answer_with_agent(
     repair_used = _request_count(result) > 1
     final_output: GeneratorOutput = result.output
 
-    rendered = _replace_tags_with_labels(final_output.answer, tag_to_item)
+    rendered = _replace_tags_with_labels(final_output.answer, tag_to_item, template)
     base_confidence = min(0.95, 0.45 + len(evidence) * 0.06)
     confidence = _confidence_from_output(final_output, base_confidence)
     metadata: dict[str, Any] = {
@@ -334,6 +368,7 @@ def generate_answer_with_agent(
         "repair_used": repair_used,
         "citations_used": final_output.citations_used,
         "evidence_tag_count": len(valid_tags),
+        "citation_label_template": template,
     }
     return (
         AnswerDraft(
@@ -398,13 +433,16 @@ def generate_answer(
     settings: Settings | None = None,
     missing_subclaims: list[str] | None = None,
     contradictions: list[str] | None = None,
+    dataset_config: DatasetConfig | None = None,
 ) -> tuple[AnswerDraft, TokenUsage]:
     resolved = settings or get_settings()
+    config = dataset_config or DatasetConfig.default_sec()
+    template = config.citation_label_template
     if retrieval_mode == "llm_only":
         return _llm_only_answer(question, resolved)
 
     if not evidence:
-        return local_grounded_answer(question, []), TokenUsage()
+        return local_grounded_answer(question, [], citation_template=template), TokenUsage()
 
     if not agent_available(resolved):
         return (
@@ -412,6 +450,7 @@ def generate_answer(
                 question,
                 evidence,
                 generator="local-extractive-mock-provider",
+                citation_template=template,
             ),
             TokenUsage(),
         )
@@ -424,6 +463,7 @@ def generate_answer(
             settings=resolved,
             missing_subclaims=missing_subclaims,
             contradictions=contradictions,
+            dataset_config=config,
         )
     except AGENT_RETRYABLE_ERRORS as exc:
         logger.warning("generator_unexpected_error", extra={"error": str(exc)})
@@ -433,6 +473,7 @@ def generate_answer(
                 evidence,
                 insufficiency_reason="Generator agent raised an unexpected error.",
                 generator="local-extractive-after-unexpected-error",
+                citation_template=template,
             ),
             TokenUsage(),
         )

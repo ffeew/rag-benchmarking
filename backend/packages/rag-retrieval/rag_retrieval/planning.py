@@ -5,19 +5,23 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
-from rag_common.db import models
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
-from sqlalchemy import select
 
 from rag_retrieval.agents import (
     agent_available,
     build_agent,
     run_with_fallback,
+)
+from rag_retrieval.dataset_config import (
+    DEFAULT_METRIC_TERMS,
+    DEFAULT_VALID_FORMS,
+    DatasetConfig,
+    load_dataset_config,
 )
 
 if TYPE_CHECKING:
@@ -38,7 +42,18 @@ VALID_QUERY_TYPES = (
     "latest_filing",
     "insufficient_evidence",
 )
-VALID_FORMS = ("10-K", "10-Q", "8-K")
+QueryType = Literal[
+    "fact_lookup",
+    "table_lookup",
+    "comparison",
+    "trend",
+    "thematic_synthesis",
+    "latest_filing",
+    "insufficient_evidence",
+]
+# Back-compat re-exports; downstream code should prefer ``DatasetConfig.valid_forms`` /
+# ``metric_terms``. Kept here so existing imports do not break.
+VALID_FORMS = DEFAULT_VALID_FORMS
 
 
 @dataclass(frozen=True)
@@ -94,7 +109,7 @@ class PlannerOutput(BaseModel):
         default_factory=list,
         description="Decomposition into independently-answerable subquestions.",
     )
-    query_type: str = Field(
+    query_type: QueryType = Field(
         default="fact_lookup",
         description=(
             "One of: fact_lookup, table_lookup, comparison, trend, "
@@ -115,41 +130,28 @@ class PlannerOutput(BaseModel):
     )
 
 
-METRIC_TERMS = (
-    "revenue",
-    "debt",
-    "cash",
-    "gross margin",
-    "research and development",
-    "r&d",
-    "segment",
-    "risk",
-    "ai",
-    "artificial intelligence",
-    "demand",
-    "margin",
-    "income",
-    "expense",
-)
+# Back-compat alias; downstream callers should prefer ``DatasetConfig.metric_terms``.
+METRIC_TERMS = DEFAULT_METRIC_TERMS
 
 
 _PLANNER_INSTRUCTIONS = """\
-You are the query planner for an SEC filings RAG system.
+You are the query planner for a filings RAG system.
 
 Your job: turn a user question into a structured RetrievalPlan that downstream hybrid
 retrieval can filter and search with. You DO NOT answer the question.
 
 Rules:
 - Only pick tickers from the provided KNOWN_TICKERS list. Never invent a ticker.
-- forms must be a subset of [10-K, 10-Q, 8-K]. Leave empty if the user did not constrain.
+- forms must be a subset of the dataset's KNOWN_FORMS (provided below). Leave empty if
+  the user did not constrain.
 - "Latest" / "most recent" / "current" filings should set latest=true. Latest is interpreted
-  against the ingested dataset, NOT live SEC data.
+  against the ingested dataset, NOT live external data.
 - For multi-part or comparison questions, decompose into 2-5 concrete subquestions.
 - query_type must be exactly one of:
   fact_lookup, table_lookup, comparison, trend, thematic_synthesis, latest_filing,
   insufficient_evidence.
-- If the question is unanswerable from SEC filings, set query_type=insufficient_evidence
-  and explain in `ambiguity`.
+- If the question is unanswerable from the ingested corpus, set
+  query_type=insufficient_evidence and explain in `ambiguity`.
 - Keep `reasoning` short - one or two sentences explaining why you picked this plan.
 """
 
@@ -158,14 +160,19 @@ Rules:
 class PlannerDeps:
     """Per-run context the planner agent consults via dynamic instructions.
 
-    Carries the dataset's known tickers, the user's pre-supplied filters, and TODAY so
-    the agent can resolve "latest" / "this year" against the ingested data rather than
-    against the model's training cutoff.
+    Carries the resolved dataset config (corpus identity, valid forms, metric hints,
+    known tickers), the user's pre-supplied filters, and TODAY so the agent can resolve
+    "latest" / "this year" against the ingested data rather than the model's training
+    cutoff.
     """
 
     today: date
-    known_tickers: frozenset[str]
+    dataset_config: DatasetConfig
     user_filters: QueryFilters
+
+    @property
+    def known_tickers(self) -> frozenset[str]:
+        return self.dataset_config.known_tickers
 
 
 @lru_cache(maxsize=2)
@@ -174,14 +181,17 @@ def _build_planner_agent_for(model_id: str) -> Agent[PlannerDeps, PlannerOutput]
         deps_type=PlannerDeps,
         output_type=PlannerOutput,
         instructions=_PLANNER_INSTRUCTIONS,
-        name="sec-rag-planner",
+        name="rag-planner",
         output_retries=1,
     )
 
     @agent.instructions
     def planner_context(ctx: RunContext[PlannerDeps]) -> str:
         deps = ctx.deps
+        config = deps.dataset_config
         known = ", ".join(sorted(deps.known_tickers)) if deps.known_tickers else "(none)"
+        forms = ", ".join(config.valid_forms) if config.valid_forms else "(any)"
+        metric_hint = ", ".join(config.metric_terms) if config.metric_terms else "(unspecified)"
         filter_lines: list[str] = []
         if deps.user_filters.ticker:
             filter_lines.append(f"user_filter_ticker: {', '.join(deps.user_filters.ticker)}")
@@ -194,7 +204,14 @@ def _build_planner_agent_for(model_id: str) -> Agent[PlannerDeps, PlannerOutput]
                 f"{deps.user_filters.filing_date_end or '...'}"
             )
         filters = "\n".join(filter_lines) if filter_lines else "(none supplied)"
-        return f"TODAY: {deps.today.isoformat()}\nKNOWN_TICKERS: {known}\nUSER_FILTERS:\n{filters}"
+        return (
+            f"TODAY: {deps.today.isoformat()}\n"
+            f"CORPUS: {config.domain_label}\n"
+            f"KNOWN_FORMS: {forms}\n"
+            f"METRIC HINTS: {metric_hint}\n"
+            f"KNOWN_TICKERS: {known}\n"
+            f"USER_FILTERS:\n{filters}"
+        )
 
     @agent.output_validator
     def validate_query_type(_ctx: RunContext[PlannerDeps], output: PlannerOutput) -> PlannerOutput:
@@ -225,16 +242,17 @@ def _coerce_date(value: str | None) -> date | None:
 
 def _normalize_planner_output(
     output: PlannerOutput,
-    known_tickers: set[str],
+    dataset_config: DatasetConfig,
     filters: QueryFilters,
 ) -> RetrievalPlan:
-    upper_known = {ticker.upper() for ticker in known_tickers}
+    upper_known = {ticker.upper() for ticker in dataset_config.known_tickers}
     proposed_tickers = {ticker.upper() for ticker in output.target_tickers}
     safe_tickers = sorted(proposed_tickers & upper_known)
     if filters.ticker:
         safe_tickers = sorted({*safe_tickers, *[ticker.upper() for ticker in filters.ticker]})
+    valid_form_set = {form.upper() for form in dataset_config.valid_forms}
     valid_forms = sorted(
-        {form.upper() for form in output.forms if form.upper() in VALID_FORMS}
+        {form.upper() for form in output.forms if form.upper() in valid_form_set}
         | {form.upper() for form in (filters.form_type or [])}
     )
     query_type = output.query_type if output.query_type in VALID_QUERY_TYPES else "fact_lookup"
@@ -256,29 +274,43 @@ def infer_query_plan(
     *,
     question: str,
     filters: QueryFilters,
-    known_tickers: set[str],
+    known_tickers: set[str] | frozenset[str] | None = None,
+    dataset_config: DatasetConfig | None = None,
 ) -> RetrievalPlan:
+    """Deterministic heuristic planner used by the fallback paths.
+
+    Either ``known_tickers`` (back-compat) or ``dataset_config`` may be supplied. When
+    both are provided, ``dataset_config`` wins; the ``known_tickers`` argument is
+    treated as an override only when no config is given. Form types and metric terms
+    are read from the config so non-SEC corpora are not biased to 10-K/10-Q/8-K.
+    """
+    config = dataset_config or DatasetConfig.default_sec(
+        known_tickers=frozenset(known_tickers or ())
+    )
+    upper_known = {ticker.upper() for ticker in config.known_tickers}
     words = {word.upper().replace(".", "-") for word in re.findall(r"[A-Za-z][A-Za-z0-9.-]{0,8}", question)}
-    inferred_tickers = sorted(words & known_tickers)
+    inferred_tickers = sorted(words & upper_known)
     forms: list[str] = []
     upper_question = question.upper()
-    for form in VALID_FORMS:
-        if form in upper_question:
-            forms.append(form)
+    for form in config.valid_forms:
+        if form.upper() in upper_question:
+            forms.append(form.upper())
     if filters.form_type:
         forms = sorted({*forms, *[form.upper() for form in filters.form_type]})
     target_tickers = sorted({*(filters.ticker or []), *inferred_tickers})
-    metrics = [term for term in METRIC_TERMS if term in question.lower()]
-    lowered = question.lower()
-    latest = any(term in lowered for term in ("latest", "last reported", "most recent", "current"))
-    query_type = (
-        "table_lookup" if any(term in lowered for term in ("break down", "table", "segment")) else "fact_lookup"
+    lowered_question = question.lower()
+    metrics = [term for term in config.metric_terms if term in lowered_question]
+    latest = any(term in lowered_question for term in ("latest", "last reported", "most recent", "current"))
+    query_type: QueryType = (
+        "table_lookup"
+        if any(term in lowered_question for term in ("break down", "table", "segment"))
+        else "fact_lookup"
     )
-    if any(term in lowered for term in ("compare", "between", "versus", "vs.")):
+    if any(term in lowered_question for term in ("compare", "between", "versus", "vs.")):
         query_type = "comparison"
-    if any(term in lowered for term in ("trend", "over the past", "three-year", "3 year")):
+    if any(term in lowered_question for term in ("trend", "over the past", "three-year", "3 year")):
         query_type = "trend"
-    if any(term in lowered for term in ("summarize", "overview", "discussing")):
+    if any(term in lowered_question for term in ("summarize", "overview", "discussing")):
         query_type = "thematic_synthesis"
     ambiguity = None
     if not target_tickers and query_type in {"fact_lookup", "table_lookup", "trend"}:
@@ -316,35 +348,26 @@ def plan_query(
     filters: QueryFilters,
     settings: Settings | None = None,
     force_heuristic: bool = False,
+    dataset_config: DatasetConfig | None = None,
 ) -> tuple[RetrievalPlan, dict[str, object], TokenUsage]:
     resolved = settings or get_settings()
-    known_tickers = {
-        ticker
-        for ticker in session.scalars(
-            select(models.Document.ticker).where(models.Document.dataset_id == dataset_id).distinct()
-        )
-        if ticker is not None
-    }
+    config = dataset_config or load_dataset_config(session, dataset_id)
     today = datetime.now(UTC).date()
     metadata: dict[str, object] = {"agent_used": False, "model": None, "error": None}
 
     if force_heuristic:
-        plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
+        plan = infer_query_plan(question=question, filters=filters, dataset_config=config)
         metadata["model"] = resolved.zai_chat_model
         metadata["fallback_reason"] = "forced_heuristic"
         return plan, metadata, TokenUsage()
 
     if not agent_available(resolved):
-        plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
+        plan = infer_query_plan(question=question, filters=filters, dataset_config=config)
         metadata["model"] = resolved.zai_chat_model
         metadata["fallback_reason"] = "agent_unavailable"
         return plan, metadata, TokenUsage()
 
-    deps = PlannerDeps(
-        today=today,
-        known_tickers=frozenset(ticker.upper() for ticker in known_tickers),
-        user_filters=filters,
-    )
+    deps = PlannerDeps(today=today, dataset_config=config, user_filters=filters)
 
     def run_agent() -> tuple[RetrievalPlan, TokenUsage]:
         agent = _planner_agent(resolved)
@@ -354,10 +377,10 @@ def plan_query(
             provider="zai",
             model=resolved.zai_chat_model,
         )
-        return _normalize_planner_output(result.output, known_tickers, filters), usage
+        return _normalize_planner_output(result.output, config, filters), usage
 
     def fallback() -> RetrievalPlan:
-        return infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
+        return infer_query_plan(question=question, filters=filters, dataset_config=config)
 
     plan, used_agent, error, usage = run_with_fallback(run_agent, fallback, label="planner")
     metadata["agent_used"] = used_agent

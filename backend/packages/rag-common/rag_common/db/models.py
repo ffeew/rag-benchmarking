@@ -44,6 +44,14 @@ class Dataset(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     default_query_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Domain-adaptive retrieval config; nulls fall back to SEC defaults in
+    # rag_retrieval.dataset_config so existing datasets keep current behavior.
+    domain_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    valid_forms: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    metric_terms: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    hyde_style_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citation_label_template: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     documents: Mapped[list[Document]] = relationship(back_populates="dataset")
 

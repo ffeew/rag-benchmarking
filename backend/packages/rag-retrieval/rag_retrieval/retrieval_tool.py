@@ -33,10 +33,10 @@ from rag_retrieval.agents import (
     build_chat_model,
     deterministic_model_settings,
 )
+from rag_retrieval.dataset_config import DatasetConfig
 from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve
 from rag_retrieval.hyde import generate_hyde_passage
 from rag_retrieval.planning import (
-    VALID_FORMS,
     VALID_QUERY_TYPES,
     RetrievalPlan,
     infer_query_plan,
@@ -102,11 +102,11 @@ class RetrievalAgentOutput(BaseModel):
     )
     forms: list[str] = Field(
         default_factory=list,
-        description="Subset of ['10-K', '10-Q', '8-K'] you scoped to, if any.",
+        description="Subset of the dataset's known forms you scoped to, if any.",
     )
     metrics: list[str] = Field(
         default_factory=list,
-        description="Specific financial metrics or topics the question asks about (e.g. revenue, R&D).",
+        description="Specific metrics or topics the question asks about (e.g. revenue, R&D).",
     )
     query_type: str = Field(
         default="fact_lookup",
@@ -156,7 +156,9 @@ class RetrievalAgentDeps:
     orchestrator can materialize ``selected_chunk_ids`` back to full ``RetrievedChunk``
     objects and persist a per-call trace. ``usage_records`` collects every TokenUsage
     incurred inside the tool (HyDE, embedding, rerank) so the orchestrator can sum them
-    once after the agent returns.
+    once after the agent returns. ``dataset_config`` carries the corpus identity, valid
+    forms, and entity label so dynamic instructions and ``_normalize_filters`` stay
+    domain-neutral.
     """
 
     session: "Session"
@@ -166,6 +168,7 @@ class RetrievalAgentDeps:
     base_filters: QueryFilters
     base_plan: RetrievalPlan
     known_tickers: frozenset[str]
+    dataset_config: DatasetConfig = field(default_factory=DatasetConfig.default_sec)
     chunk_lookup: dict[str, RetrievedChunk] = field(default_factory=dict)
     tool_calls: list[dict[str, object]] = field(default_factory=list)
     hyde_usage_records: list[TokenUsage] = field(default_factory=list)
@@ -230,10 +233,12 @@ def _normalize_filters(
     tickers: list[str] | None,
     form_types: list[str] | None,
     known_tickers: frozenset[str],
+    valid_forms: tuple[str, ...] | frozenset[str],
 ) -> tuple[list[str], list[str]]:
     proposed_tickers = {ticker.upper() for ticker in (tickers or [])}
     safe_tickers = sorted(proposed_tickers & known_tickers)
-    safe_forms = sorted({form.upper() for form in (form_types or []) if form.upper() in VALID_FORMS})
+    valid_form_set = {form.upper() for form in valid_forms}
+    safe_forms = sorted({form.upper() for form in (form_types or []) if form.upper() in valid_form_set})
     return safe_tickers, safe_forms
 
 
@@ -294,7 +299,7 @@ def _validate_query_type(value: str) -> str:
 
 
 _RETRIEVAL_AGENT_INSTRUCTIONS = """\
-You are the retrieval agent for an SEC filings RAG system.
+You are the retrieval agent for a filings RAG system.
 
 You have ONE tool: `retrieve_evidence`. Call it as many times as you need (subject to a
 small budget) to gather the chunks required to answer the user's question. You do NOT
@@ -302,16 +307,16 @@ write the final answer - a downstream generator does. Your job is to return the
 chunk_ids worth citing plus structured signals about what was missing or contradictory.
 
 Strategy:
-- Single-company factual lookups usually need one call.
-- Comparisons across N companies: call the tool once per company so coverage is
-  balanced rather than dominated by one ticker.
-- Sector / thematic questions: call once per ticker in scope, then optionally one final
-  call with no ticker filter for broader sector wording.
+- Single-entity factual lookups usually need one call.
+- Comparisons across N entities: call the tool once per entity (e.g. ticker) so coverage
+  is balanced rather than dominated by one entity.
+- Thematic / cross-entity questions: call once per entity in scope, then optionally one
+  final call with no entity filter for broader corpus wording.
 - "Latest" or "current" questions: use the filing_date filters or the `latest`-style
   framing in your query; do NOT assume a calendar year.
 - Use HyDE (the default `use_hyde=true`) for qualitative or vague queries. Turn it OFF
   (`use_hyde=false`) when the question hinges on an exact phrase, number, or proper
-  noun that is more likely to appear in the filing verbatim.
+  noun that is more likely to appear in the corpus verbatim.
 
 After your tool calls, emit:
 - `selected_chunk_ids`: the chunk_ids from any tool result that materially support the
@@ -326,8 +331,8 @@ After your tool calls, emit:
   produced relevant evidence.
 - `reasoning`: one or two sentences naming the strategy you used.
 
-NEVER invent a chunk_id you did not receive from a tool call. Only known tickers are
-honored by the filter - unknown tickers are silently dropped.
+NEVER invent a chunk_id you did not receive from a tool call. Only known tickers and
+known forms are honored by the filter - unknown values are silently dropped.
 """
 
 
@@ -352,6 +357,7 @@ def perform_retrieve_evidence(
         tickers=tickers,
         form_types=form_types,
         known_tickers=deps.known_tickers,
+        valid_forms=deps.dataset_config.valid_forms,
     )
     safe_top_k = max(1, min(top_k, 12))
     sub_plan = _sub_plan(
@@ -365,7 +371,9 @@ def perform_retrieve_evidence(
     semantic_query: str | None = None
     hyde_meta: dict[str, object] = {"agent_used": False}
     if use_hyde:
-        passage, hyde_meta, hyde_usage = generate_hyde_passage(query, deps.settings)
+        passage, hyde_meta, hyde_usage = generate_hyde_passage(
+            query, deps.settings, dataset_config=deps.dataset_config
+        )
         if passage and passage != query:
             semantic_query = passage
         deps.hyde_usage_records.append(hyde_usage)
@@ -445,16 +453,23 @@ def build_retrieval_agent(
         deps_type=RetrievalAgentDeps,
         output_type=RetrievalAgentOutput,
         instructions=_RETRIEVAL_AGENT_INSTRUCTIONS,
-        name="sec-rag-retrieval-agent",
+        name="rag-retrieval-agent",
         model_settings=deterministic_model_settings(settings),
         output_retries=1,
     )
 
     @agent.instructions
     def retrieval_context(ctx: RunContext[RetrievalAgentDeps]) -> str:
+        config = ctx.deps.dataset_config
         listed = ", ".join(sorted(ctx.deps.known_tickers)) if ctx.deps.known_tickers else "(none)"
+        forms = ", ".join(config.valid_forms) if config.valid_forms else "(any)"
         today = datetime.now(UTC).date()
-        return f"TODAY: {today.isoformat()}\nKNOWN_TICKERS: {listed}"
+        return (
+            f"TODAY: {today.isoformat()}\n"
+            f"CORPUS: {config.domain_label}\n"
+            f"KNOWN_FORMS: {forms}\n"
+            f"KNOWN_TICKERS: {listed}"
+        )
 
     @agent.output_validator
     def validate_selected_ids(
@@ -484,23 +499,24 @@ def build_retrieval_agent(
         top_k: int = 6,
         use_hyde: bool = True,  # noqa: FBT001,FBT002 - agent tool param; LLM passes all args by keyword via JSON tool input
     ) -> list[ToolRetrievalHit]:
-        """Retrieve evidence chunks from SEC filings via hybrid search + optional HyDE + rerank.
+        """Retrieve evidence chunks via hybrid search + optional HyDE + rerank.
 
         Args:
             query: The information to search for. A question, phrase, topic, or even a
-                financial term. FTS uses this verbatim; HyDE (when enabled) uses an
-                LLM-generated hypothetical SEC-filing passage for the vector probe.
+                domain term. FTS uses this verbatim; HyDE (when enabled) uses an
+                LLM-generated hypothetical passage for the vector probe.
             tickers: Restrict to these tickers (must be in the dataset's known set;
                 unknown tickers are silently dropped). Leave None for no ticker filter.
-            form_types: Restrict to a subset of ['10-K', '10-Q', '8-K']. Leave None for
-                no form filter.
+            form_types: Restrict to a subset of the dataset's known forms (see
+                KNOWN_FORMS in the system context). Invalid forms are silently dropped.
+                Leave None for no form filter.
             filing_date_start: ISO date (YYYY-MM-DD) lower bound on filing_date.
             filing_date_end: ISO date (YYYY-MM-DD) upper bound on filing_date.
             top_k: Maximum chunks to return (clamped to 1-12). Default 6.
-            use_hyde: When True, generate a hypothetical SEC filing excerpt for the
-                vector probe. Default True. Set False for exact-phrase or
-                exact-number lookups where the question itself is likely to appear
-                verbatim in the filing.
+            use_hyde: When True, generate a hypothetical passage in the corpus's
+                disclosure register for the vector probe. Default True. Set False for
+                exact-phrase or exact-number lookups where the question itself is
+                likely to appear verbatim in the corpus.
 
         Returns:
             A list of ToolRetrievalHit. Empty list if nothing matched or the call failed
@@ -534,6 +550,7 @@ def _heuristic_retrieval(
     filters: QueryFilters,
     known_tickers: set[str],
     settings: Settings,
+    dataset_config: DatasetConfig | None = None,
 ) -> AgentRetrievalResult:
     """Deterministic fallback used when the chat agent is unavailable or fails.
 
@@ -541,10 +558,13 @@ def _heuristic_retrieval(
     in the same ``AgentRetrievalResult`` shape so downstream code does not need to know
     which path produced the chunks.
     """
+    config = dataset_config or DatasetConfig.default_sec(
+        known_tickers=frozenset(ticker.upper() for ticker in known_tickers)
+    )
     plan = infer_query_plan(
         question=question,
         filters=filters,
-        known_tickers=known_tickers,
+        dataset_config=config,
     )
     try:
         retrieved, retrieval_trace, embedding_usage, rerank_usage = hybrid_retrieve(
@@ -647,6 +667,7 @@ def run_retrieval_agent(
     filters: QueryFilters,
     known_tickers: set[str],
     settings: Settings | None = None,
+    dataset_config: DatasetConfig | None = None,
 ) -> tuple[AgentRetrievalResult, dict[str, object], TokenUsage]:
     """Run the tool-using retrieval agent.
 
@@ -657,6 +678,9 @@ def run_retrieval_agent(
     ``RoleUsage.planner``. Both are empty when the heuristic fallback is used.
     """
     resolved = settings or get_settings()
+    config = dataset_config or DatasetConfig.default_sec(
+        known_tickers=frozenset(ticker.upper() for ticker in known_tickers)
+    )
     metadata: dict[str, object] = {
         "agent_used": False,
         "model": resolved.zai_chat_model,
@@ -673,6 +697,7 @@ def run_retrieval_agent(
                 filters=filters,
                 known_tickers=known_tickers,
                 settings=resolved,
+                dataset_config=config,
             ),
             metadata,
             TokenUsage(),
@@ -681,7 +706,7 @@ def run_retrieval_agent(
     base_plan = infer_query_plan(
         question=question,
         filters=filters,
-        known_tickers=known_tickers,
+        dataset_config=config,
     )
     deps = RetrievalAgentDeps(
         session=session,
@@ -691,6 +716,7 @@ def run_retrieval_agent(
         base_filters=filters,
         base_plan=base_plan,
         known_tickers=frozenset(ticker.upper() for ticker in known_tickers),
+        dataset_config=config,
     )
 
     try:
@@ -717,6 +743,7 @@ def run_retrieval_agent(
                 filters=filters,
                 known_tickers=known_tickers,
                 settings=resolved,
+                dataset_config=config,
             ),
             metadata,
             TokenUsage(),
@@ -725,11 +752,12 @@ def run_retrieval_agent(
     output = result.output
     # Normalize a couple of fields the LLM might mis-fill; the Pydantic schema already
     # constrains types and range, so we only sanity-check the closed-set strings.
+    valid_form_set = {form.upper() for form in config.valid_forms}
     normalized_output = output.model_copy(
         update={
             "query_type": _validate_query_type(output.query_type),
             "target_tickers": sorted({t.upper() for t in output.target_tickers} & deps.known_tickers),
-            "forms": sorted({f.upper() for f in output.forms if f.upper() in VALID_FORMS}),
+            "forms": sorted({f.upper() for f in output.forms if f.upper() in valid_form_set}),
         }
     )
 

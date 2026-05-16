@@ -17,6 +17,12 @@ class DatasetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = None
     default_query_settings: dict[str, Any] = Field(default_factory=dict)
+    domain_label: str | None = Field(default=None, max_length=512)
+    entity_label: str | None = Field(default=None, max_length=64)
+    valid_forms: list[str] | None = None
+    metric_terms: list[str] | None = None
+    hyde_style_hint: str | None = None
+    citation_label_template: str | None = Field(default=None, max_length=256)
 
 
 class DatasetRead(BaseModel):
@@ -24,10 +30,38 @@ class DatasetRead(BaseModel):
     name: str
     description: str | None
     default_query_settings: dict[str, Any]
+    domain_label: str | None = None
+    entity_label: str | None = None
+    valid_forms: list[str] | None = None
+    metric_terms: list[str] | None = None
+    hyde_style_hint: str | None = None
+    citation_label_template: str | None = None
     created_at: datetime
     document_count: int = 0
     active_chunk_count: int = 0
     completed_ingestion_count: int = 0
+
+
+class DatasetUpdate(BaseModel):
+    """Partial update for an existing dataset.
+
+    All fields are optional; only those supplied by the caller are written. ``None`` is
+    a valid value (e.g. ``hyde_style_hint=None`` clears the override and re-enables the
+    SEC default at resolution time). To distinguish "unset" from "null", we use
+    ``model_dump(exclude_unset=True)`` in the route.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    default_query_settings: dict[str, Any] | None = None
+    domain_label: str | None = Field(default=None, max_length=512)
+    entity_label: str | None = Field(default=None, max_length=64)
+    valid_forms: list[str] | None = None
+    metric_terms: list[str] | None = None
+    hyde_style_hint: str | None = None
+    citation_label_template: str | None = Field(default=None, max_length=256)
 
 
 class DocumentRead(BaseModel):
@@ -79,6 +113,12 @@ class RegisterLocalCorpusRequest(BaseModel):
     dataset_name: str = "sec-filings"
     description: str | None = "SEC filing PDFs registered from the local corpus."
     path: str | None = None
+    domain_label: str | None = None
+    entity_label: str | None = None
+    valid_forms: list[str] | None = None
+    metric_terms: list[str] | None = None
+    hyde_style_hint: str | None = None
+    citation_label_template: str | None = None
 
 
 class RegisterDocumentsResponse(BaseModel):

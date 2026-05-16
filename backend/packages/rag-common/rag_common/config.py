@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     openrouter_embedding_model: str | None = None
     openrouter_rerank_model: str | None = None
     openrouter_site_url: AnyHttpUrl | None = None
-    openrouter_app_name: str = "SEC Filings RAG Benchmark"
+    openrouter_app_name: str = "RAG Benchmark"
     openrouter_timeout_seconds: float = 60.0
 
     zai_api_key: SecretStr | None = None
