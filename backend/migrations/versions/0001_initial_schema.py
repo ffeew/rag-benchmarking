@@ -2,7 +2,8 @@
 
 Final consolidated schema produced by squashing migrations
 0001_initial_schema, 0002_dataset_domain_overrides, 0003_dataset_override_lengths,
-and 0004_consolidate_chunk_embedding into a single baseline:
+0004_consolidate_chunk_embedding, and 0002_query_trace_answer into a single
+baseline:
 
 - Dataset has the domain-adaptive override columns (``domain_label``,
   ``entity_label``, ``valid_forms``, ``metric_terms``, ``hyde_style_hint``,
@@ -11,13 +12,15 @@ and 0004_consolidate_chunk_embedding into a single baseline:
   ``embedding_dimension`` / ``embedding_vector`` directly; the old
   ``embeddings`` table no longer exists, and the HNSW index lives on
   ``chunks.embedding_vector``.
-- Document, IngestionRun, ParsedPage, Job, QueryTrace, Citation, EvalCase,
-  EvalRun, EvalResult are unchanged from the pre-squash baseline.
+- QueryTrace carries ``answer`` directly (previously added by the standalone
+  ``0002_query_trace_answer`` revision, now folded in here).
+- Document, IngestionRun, ParsedPage, Job, Citation, EvalCase, EvalRun,
+  EvalResult are unchanged from the pre-squash baseline.
 
 **Existing databases**: anyone whose ``alembic_version`` is one of
 ``0001_initial_schema`` / ``0002_dataset_domain_overrides`` /
-``0003_dataset_override_lengths`` / ``0004_consolidate_chunk_embedding`` must
-re-stamp once::
+``0003_dataset_override_lengths`` / ``0004_consolidate_chunk_embedding`` /
+``0002_query_trace_answer`` must re-stamp once::
 
     alembic stamp 0001_baseline_2026_05_17 --purge
 
