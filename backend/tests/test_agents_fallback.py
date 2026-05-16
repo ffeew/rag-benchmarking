@@ -13,8 +13,10 @@ def _mock_settings() -> Settings:
         SimpleNamespace(
             allow_mock_providers=True,
             openrouter_api_key=None,
-            openrouter_chat_model=None,
             openrouter_base_url="https://openrouter.ai/api/v1",
+            zai_api_key=None,
+            zai_chat_model=None,
+            zai_base_url="https://api.z.ai/api/paas/v4",
         ),
     )
 

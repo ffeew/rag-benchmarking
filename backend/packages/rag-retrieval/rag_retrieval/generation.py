@@ -7,11 +7,14 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+from pydantic_ai import ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
-from rag_common.providers.openrouter import OpenRouterClient, ProviderError
-from rag_common.usage import TokenUsage, from_openrouter_usage, merge, safe_pydantic_ai_usage
+from rag_common.providers.openrouter import ProviderError
+from rag_common.providers.zai import ZaiClient
+from rag_common.usage import TokenUsage, from_openrouter_usage, safe_pydantic_ai_usage
 
 from rag_retrieval.agents import (
+    AGENT_RETRYABLE_ERRORS,
     agent_available,
     build_agent,
 )
@@ -72,7 +75,7 @@ class GeneratorOutput(BaseModel):
     )
 
 
-_GENERATOR_SYSTEM_PROMPT = """\
+_GENERATOR_INSTRUCTIONS = """\
 You are the answer writer for an SEC filings RAG system.
 
 Strict rules:
@@ -141,17 +144,50 @@ def verify_evidence(question: str, retrieved: list[RetrievedChunk]) -> Verificat
     return keyword_verify_evidence(question, retrieved)
 
 
+@dataclass(frozen=True)
+class GeneratorDeps:
+    """Per-run context for the generator.
+
+    ``valid_tags`` enables an ``@agent.output_validator`` to raise ``ModelRetry`` when
+    the model fabricates a citation tag - the documented pydantic-ai replacement for
+    the hand-rolled "build a repair prompt and call the agent a second time" pattern.
+    """
+
+    valid_tags: frozenset[str]
+
+
 @lru_cache(maxsize=2)
-def _build_generator_agent_for(model_id: str) -> Agent[None, GeneratorOutput]:  # noqa: ARG001
-    return build_agent(
+def _build_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorOutput]:  # noqa: ARG001
+    agent: Agent[GeneratorDeps, GeneratorOutput] = build_agent(
+        deps_type=GeneratorDeps,
         output_type=GeneratorOutput,
-        system_prompt=_GENERATOR_SYSTEM_PROMPT,
+        instructions=_GENERATOR_INSTRUCTIONS,
         name="sec-rag-generator",
+        output_retries=1,
     )
 
+    @agent.output_validator
+    def validate_citations(
+        ctx: RunContext[GeneratorDeps],
+        output: GeneratorOutput,
+    ) -> GeneratorOutput:
+        valid = ctx.deps.valid_tags
+        referenced = _extract_referenced_tags(output.answer, output.citations_used)
+        invalid = referenced - valid
+        if invalid:
+            raise ModelRetry(
+                f"Invalid citation tags: {sorted(invalid)}. "
+                f"Use only: {sorted(valid)}. "
+                "Re-emit the answer using only valid tags; if you cannot ground a claim, "
+                "remove it or set insufficiency_reason."
+            )
+        return output
 
-def _generator_agent(settings: Settings) -> Agent[None, GeneratorOutput]:
-    return _build_generator_agent_for(settings.openrouter_chat_model or "")
+    return agent
+
+
+def _generator_agent(settings: Settings) -> Agent[GeneratorDeps, GeneratorOutput]:
+    return _build_generator_agent_for(settings.zai_chat_model or "")
 
 
 def _build_evidence_context(evidence: list[RetrievedChunk]) -> tuple[str, dict[str, RetrievedChunk]]:
@@ -174,15 +210,6 @@ def _extract_referenced_tags(answer: str, citations_used: list[str]) -> set[str]
         if stripped.startswith("##e"):
             tags.add(stripped)
     return tags
-
-
-def _validate_citations(
-    output: GeneratorOutput,
-    valid_tags: set[str],
-) -> tuple[bool, set[str]]:
-    referenced = _extract_referenced_tags(output.answer, output.citations_used)
-    invalid = referenced - valid_tags
-    return (not invalid), invalid
 
 
 def _replace_tags_with_labels(answer: str, tag_to_item: dict[str, RetrievedChunk]) -> str:
@@ -240,6 +267,15 @@ def _confidence_from_output(output: GeneratorOutput, fallback: float) -> float:
     return max(output.confidence, fallback)
 
 
+def _request_count(result: object) -> int:
+    """Read ``usage.requests`` from a pydantic-ai run result; default to 1 on absence."""
+    usage_attr = getattr(result, "usage", None)
+    if usage_attr is None:
+        return 1
+    usage_value = usage_attr() if callable(usage_attr) else usage_attr
+    return int(getattr(usage_value, "requests", 1) or 1)
+
+
 def generate_answer_with_agent(
     *,
     question: str,
@@ -254,6 +290,7 @@ def generate_answer_with_agent(
 
     evidence_text, tag_to_item = _build_evidence_context(evidence)
     valid_tags = list(tag_to_item.keys())
+    deps = GeneratorDeps(valid_tags=frozenset(valid_tags))
     agent = _generator_agent(settings)
 
     prompt = _build_generator_prompt(
@@ -265,73 +302,35 @@ def generate_answer_with_agent(
         contradictions=contradictions,
     )
 
+    # The citation validator (registered on the agent) raises ModelRetry when the model
+    # invents a tag - pydantic-ai performs one bounded repair turn automatically and only
+    # raises UnexpectedModelBehavior if the retry budget (output_retries=1) is exhausted.
     try:
-        first = agent.run_sync(prompt)
-    except Exception as exc:  # noqa: BLE001 - all failures fall back
-        logger.warning("generator_first_pass_failed", extra={"error": str(exc)})
+        result = agent.run_sync(prompt, deps=deps)
+    except AGENT_RETRYABLE_ERRORS as exc:
+        logger.warning("generator_failed", extra={"error": str(exc)})
+        # An UnexpectedModelBehavior here usually means citation_validator never converged.
         return (
             local_grounded_answer(
                 question,
                 evidence,
-                insufficiency_reason="Generator agent failed; using extractive fallback.",
+                insufficiency_reason="Generator agent failed or could not produce valid citations.",
                 generator="local-extractive-after-agent-error",
             ),
             TokenUsage(),
         )
 
-    accumulated_usage = safe_pydantic_ai_usage(first, provider="openrouter", model=settings.openrouter_chat_model)
-    ok, invalid_tags = _validate_citations(first.output, set(valid_tags))
-    citation_validation = "passed"
-    repair_used = False
-    final_output: GeneratorOutput = first.output
-
-    if not ok:
-        repair_used = True
-        repair_prompt = (
-            "Your previous answer cited tags that are not in the evidence list. "
-            f"Invalid tags: {sorted(invalid_tags)}. "
-            f"You MUST only use these valid tags: {valid_tags}. "
-            "Re-emit the answer using only valid tags. If you cannot ground a claim, "
-            "remove it or mark the response as insufficient.\n\n"
-            "Previous answer (for reference):\n"
-            f"{first.output.answer}\n\n"
-            "Now answer the original question correctly:\n"
-            f"{prompt}"
-        )
-        try:
-            second = agent.run_sync(repair_prompt)
-            accumulated_usage = merge(
-                accumulated_usage,
-                safe_pydantic_ai_usage(second, provider="openrouter", model=settings.openrouter_chat_model),
-            )
-            second_ok, _ = _validate_citations(second.output, set(valid_tags))
-            if second_ok:
-                citation_validation = "repaired"
-                final_output = second.output
-            else:
-                citation_validation = "failed"
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("generator_repair_failed", extra={"error": str(exc)})
-            citation_validation = "failed"
-
-    if citation_validation == "failed":
-        return (
-            local_grounded_answer(
-                question,
-                evidence,
-                insufficiency_reason=("Generator citations could not be verified after one repair attempt."),
-                generator="local-extractive-after-citation-repair-failed",
-            ),
-            accumulated_usage,
-        )
+    accumulated_usage = safe_pydantic_ai_usage(result, provider="zai", model=settings.zai_chat_model)
+    repair_used = _request_count(result) > 1
+    final_output: GeneratorOutput = result.output
 
     rendered = _replace_tags_with_labels(final_output.answer, tag_to_item)
     base_confidence = min(0.95, 0.45 + len(evidence) * 0.06)
     confidence = _confidence_from_output(final_output, base_confidence)
     metadata: dict[str, Any] = {
         "generator": "pydantic-ai-agent",
-        "model": settings.openrouter_chat_model,
-        "citation_validation": citation_validation,
+        "model": settings.zai_chat_model,
+        "citation_validation": "repaired" if repair_used else "passed",
         "repair_used": repair_used,
         "citations_used": final_output.citations_used,
         "evidence_tag_count": len(valid_tags),
@@ -348,7 +347,7 @@ def generate_answer_with_agent(
 
 
 def _llm_only_answer(question: str, settings: Settings) -> tuple[AnswerDraft, TokenUsage]:
-    provider = OpenRouterClient(settings)
+    provider = ZaiClient(settings)
     try:
         result = provider.chat(
             messages=[
@@ -426,7 +425,7 @@ def generate_answer(
             missing_subclaims=missing_subclaims,
             contradictions=contradictions,
         )
-    except Exception as exc:  # noqa: BLE001
+    except AGENT_RETRYABLE_ERRORS as exc:
         logger.warning("generator_unexpected_error", extra={"error": str(exc)})
         return (
             local_grounded_answer(

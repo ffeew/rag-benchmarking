@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from pydantic_ai.exceptions import ModelHTTPError
 from rag_common.config import Settings
 from rag_retrieval import hyde
 from rag_retrieval.hyde import generate_hyde_passage
@@ -20,8 +21,9 @@ def _settings(
         "Settings",
         SimpleNamespace(
             allow_mock_providers=allow_mock,
-            openrouter_api_key=api_key,
-            openrouter_chat_model=chat_model,
+            zai_api_key=api_key,
+            zai_chat_model=chat_model,
+            zai_base_url="https://api.z.ai/api/paas/v4",
             hyde_enabled=hyde_enabled,
         ),
     )
@@ -99,7 +101,7 @@ def test_hyde_falls_back_on_agent_exception(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     def _boom(_prompt: str) -> SimpleNamespace:
-        raise RuntimeError("upstream 503")
+        raise ModelHTTPError(status_code=503, model_name="anthropic/claude-3.5-sonnet", body="upstream 503")
 
     fake_agent = SimpleNamespace(run_sync=_boom)
     monkeypatch.setattr(hyde, "_build_hyde_agent_for", lambda _model: fake_agent)
@@ -108,5 +110,5 @@ def test_hyde_falls_back_on_agent_exception(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert passage == "Q?"
     assert metadata["agent_used"] is False
-    assert "RuntimeError" in str(metadata["error"])
+    assert "ModelHTTPError" in str(metadata["error"])
     assert usage.is_empty()

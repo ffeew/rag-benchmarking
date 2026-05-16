@@ -29,8 +29,10 @@ def _settings(*, hyde_enabled: bool = False, embedding_dim: int = 1024) -> Setti
         SimpleNamespace(
             allow_mock_providers=True,
             openrouter_api_key=None,
-            openrouter_chat_model=None,
             openrouter_embedding_model="mock-embedding",
+            zai_api_key=None,
+            zai_chat_model=None,
+            zai_base_url="https://api.z.ai/api/paas/v4",
             evidence_top_k=8,
             hyde_enabled=hyde_enabled,
             embedding_dimension=embedding_dim,
@@ -164,16 +166,18 @@ def test_tool_populates_lookup_and_usage_records(monkeypatch: pytest.MonkeyPatch
     assert len(deps.hyde_usage_records) == 0  # HyDE disabled
 
 
-def test_tool_records_failure_as_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tool_records_failure_and_raises_model_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic_ai.exceptions import ModelRetry
+
     def boom(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("pgvector exploded")
 
     monkeypatch.setattr(retrieval_tool, "hybrid_retrieve", boom)
     deps = _deps(known_tickers={"AAPL"})
 
-    hits = perform_retrieve_evidence(deps, "q", use_hyde=False)
+    with pytest.raises(ModelRetry):
+        perform_retrieve_evidence(deps, "q", use_hyde=False)
 
-    assert hits == []
     error_value = deps.tool_calls[-1]["error"]
     assert isinstance(error_value, str)
     assert error_value.startswith("RuntimeError")

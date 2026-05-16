@@ -145,7 +145,7 @@ def _empty_verifier_result() -> dict[str, Any]:
 
 
 def _empty_meta(resolved: Settings) -> dict[str, Any]:
-    return {"agent_used": False, "model": resolved.openrouter_chat_model, "error": None}
+    return {"agent_used": False, "model": resolved.zai_chat_model, "error": None}
 
 
 def _known_tickers_for(session: Session, dataset_id: str) -> set[str]:
@@ -303,7 +303,7 @@ def run_query(
     usage_summary_dict = role_usage.model_dump()
 
     model_metadata = {
-        "chat_model": resolved.openrouter_chat_model,
+        "chat_model": resolved.zai_chat_model,
         "embedding_model": resolved.openrouter_embedding_model,
         "rerank_model": resolved.openrouter_rerank_model,
         "allow_mock_providers": resolved.allow_mock_providers,

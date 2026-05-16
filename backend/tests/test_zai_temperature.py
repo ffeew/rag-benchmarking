@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from pydantic import SecretStr
 from rag_common.config import Settings
-from rag_common.providers.openrouter import OpenRouterClient
+from rag_common.providers.zai import ZaiClient
 from rag_retrieval.agents import deterministic_model_settings
 
 if TYPE_CHECKING:
@@ -17,11 +17,12 @@ if TYPE_CHECKING:
 def _real_settings(*, temp_zero: bool = True) -> Settings:
     return Settings(
         api_bearer_token=SecretStr("test-token"),
-        openrouter_api_key=SecretStr("test-key"),
-        openrouter_chat_model="anthropic/claude-test",
-        openrouter_judge_model="anthropic/claude-judge",
+        openrouter_api_key=SecretStr("test-or-key"),
         openrouter_embedding_model="openai/embed",
         openrouter_rerank_model="cohere/rerank",
+        zai_api_key=SecretStr("test-zai-key"),
+        zai_chat_model="glm-4.7",
+        zai_judge_model="glm-4.7",
         eval_temperature_zero=temp_zero,
         allow_mock_providers=False,
     )
@@ -38,15 +39,14 @@ def test_chat_payload_carries_temperature_zero_when_eval_determinism_on(monkeypa
             return {
                 "choices": [{"message": {"content": "ok"}}],
                 "id": "1",
-                "provider": "p",
-                "model": "anthropic/claude-test",
+                "model": "glm-4.7",
             }
 
     def fake_post(url: str, *, headers: dict[str, str], json: dict[str, Any]) -> DummyResponse:  # noqa: ARG001
         captured.update(json)
         return DummyResponse()
 
-    client = OpenRouterClient(settings)
+    client = ZaiClient(settings)
     monkeypatch.setattr(client._client, "post", fake_post)
     client.chat(messages=[{"role": "user", "content": "hi"}])
     assert captured.get("temperature") == 0
@@ -62,14 +62,14 @@ def test_chat_payload_omits_temperature_when_determinism_off(monkeypatch: pytest
         def json(self) -> dict[str, Any]:
             return {
                 "choices": [{"message": {"content": "ok"}}],
-                "model": "anthropic/claude-test",
+                "model": "glm-4.7",
             }
 
     def fake_post(url: str, *, headers: dict[str, str], json: dict[str, Any]) -> DummyResponse:  # noqa: ARG001
         captured.update(json)
         return DummyResponse()
 
-    client = OpenRouterClient(settings)
+    client = ZaiClient(settings)
     monkeypatch.setattr(client._client, "post", fake_post)
     client.chat(messages=[{"role": "user", "content": "hi"}])
     assert "temperature" not in captured

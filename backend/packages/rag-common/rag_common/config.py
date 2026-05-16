@@ -34,13 +34,17 @@ class Settings(BaseSettings):
 
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_chat_model: str | None = None
-    openrouter_judge_model: str | None = None
     openrouter_embedding_model: str | None = None
     openrouter_rerank_model: str | None = None
     openrouter_site_url: AnyHttpUrl | None = None
     openrouter_app_name: str = "SEC Filings RAG Benchmark"
     openrouter_timeout_seconds: float = 60.0
+
+    zai_api_key: SecretStr | None = None
+    zai_base_url: str = "https://api.z.ai/api/paas/v4"
+    zai_chat_model: str | None = None
+    zai_judge_model: str | None = None
+    zai_timeout_seconds: Annotated[float, Field(gt=0)] = 60.0
 
     mistral_api_key: SecretStr | None = None
     mistral_ocr_model: str = "mistral-ocr-latest"
@@ -109,11 +113,13 @@ class Settings(BaseSettings):
         missing: list[str] = []
         if self.openrouter_api_key is None:
             missing.append("OPENROUTER_API_KEY")
+        if self.zai_api_key is None:
+            missing.append("ZAI_API_KEY")
         if self.mistral_api_key is None:
             missing.append("MISTRAL_API_KEY")
         for field_name, env_name in (
-            ("openrouter_chat_model", "OPENROUTER_CHAT_MODEL"),
-            ("openrouter_judge_model", "OPENROUTER_JUDGE_MODEL"),
+            ("zai_chat_model", "ZAI_CHAT_MODEL"),
+            ("zai_judge_model", "ZAI_JUDGE_MODEL"),
             ("openrouter_embedding_model", "OPENROUTER_EMBEDDING_MODEL"),
             ("openrouter_rerank_model", "OPENROUTER_RERANK_MODEL"),
         ):

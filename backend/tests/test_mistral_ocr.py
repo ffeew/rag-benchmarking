@@ -17,10 +17,11 @@ def _settings() -> Settings:
         api_bearer_token=SecretStr("test-token"),
         allow_mock_providers=False,
         openrouter_api_key=SecretStr("openrouter-key"),
-        openrouter_chat_model="openai/test-chat",
-        openrouter_judge_model="openai/test-judge",
         openrouter_embedding_model="openai/test-embedding",
         openrouter_rerank_model="cohere/test-rerank",
+        zai_api_key=SecretStr("zai-key"),
+        zai_chat_model="glm-4.7",
+        zai_judge_model="glm-4.7",
         mistral_api_key=SecretStr("mistral-key"),
         mistral_timeout_seconds=2.0,
     )

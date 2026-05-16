@@ -20,17 +20,19 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
-import httpx
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext, UserError
-from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.usage import UsageLimits
 from rag_common.config import Settings, get_settings
-from rag_common.providers.openrouter import ProviderError
 from rag_common.schemas import QueryFilters
 from rag_common.usage import TokenUsage, merge, safe_pydantic_ai_usage
 
-from rag_retrieval.agents import agent_available, build_chat_model, deterministic_model_settings
+from rag_retrieval.agents import (
+    AGENT_RETRYABLE_ERRORS,
+    agent_available,
+    build_chat_model,
+    deterministic_model_settings,
+)
 from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve
 from rag_retrieval.hyde import generate_hyde_passage
 from rag_retrieval.planning import (
@@ -45,15 +47,6 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
-
-
-_RETRIEVAL_AGENT_RETRYABLE_ERRORS = (
-    UnexpectedModelBehavior,
-    ModelHTTPError,
-    ProviderError,
-    httpx.HTTPError,
-    UserError,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +293,7 @@ def _validate_query_type(value: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-_RETRIEVAL_AGENT_SYSTEM_PROMPT = """\
+_RETRIEVAL_AGENT_INSTRUCTIONS = """\
 You are the retrieval agent for an SEC filings RAG system.
 
 You have ONE tool: `retrieve_evidence`. Call it as many times as you need (subject to a
@@ -401,12 +394,18 @@ def perform_retrieve_evidence(
             top_k=safe_top_k,
             settings=deps.settings,
         )
-    except Exception as exc:  # noqa: BLE001 - tool errors must surface to the LLM as empty results
+    except Exception as exc:  # noqa: BLE001 - tool errors are converted to ModelRetry for the LLM
+        # Surface the failure to the model via ModelRetry so it can retry with different
+        # filters / wording. Empty-but-successful results stay as `[]` below (a legitimate
+        # "nothing matched" signal that the agent should distinguish from "tool failed").
         logger.warning("retrieval_tool_call_failed", extra={"error": str(exc)})
         call_entry["error"] = f"{type(exc).__name__}: {exc}"
         call_entry["returned"] = 0
         deps.tool_calls.append(call_entry)
-        return []
+        raise ModelRetry(
+            f"retrieve_evidence failed for filters tickers={safe_tickers} forms={safe_forms} "
+            f"({type(exc).__name__}: {exc}). Try different filters or rephrased query."
+        ) from exc
 
     deps.embedding_usage_records.append(embedding_usage)
     deps.rerank_usage_records.append(rerank_usage)
@@ -437,18 +436,42 @@ def build_retrieval_agent(
 ) -> Agent[RetrievalAgentDeps, RetrievalAgentOutput]:
     """Construct the tool-using retrieval agent.
 
-    Each call builds a fresh ``Agent`` - the underlying chat model and OpenRouter
-    provider are cached upstream, so this is cheap. We do not ``lru_cache`` the agent
-    itself because the tool closure binds to a fresh ``deps`` for every run.
+    Each call builds a fresh ``Agent`` - the underlying chat model and chat provider
+    are cached upstream, so this is cheap. We do not ``lru_cache`` the agent itself
+    because the tool closure binds to a fresh ``deps`` for every run.
     """
     agent: Agent[RetrievalAgentDeps, RetrievalAgentOutput] = Agent(
         model=build_chat_model(settings),
         deps_type=RetrievalAgentDeps,
         output_type=RetrievalAgentOutput,
-        system_prompt=_RETRIEVAL_AGENT_SYSTEM_PROMPT,
+        instructions=_RETRIEVAL_AGENT_INSTRUCTIONS,
         name="sec-rag-retrieval-agent",
         model_settings=deterministic_model_settings(settings),
+        output_retries=1,
     )
+
+    @agent.instructions
+    def retrieval_context(ctx: RunContext[RetrievalAgentDeps]) -> str:
+        listed = ", ".join(sorted(ctx.deps.known_tickers)) if ctx.deps.known_tickers else "(none)"
+        today = datetime.now(UTC).date()
+        return f"TODAY: {today.isoformat()}\nKNOWN_TICKERS: {listed}"
+
+    @agent.output_validator
+    def validate_selected_ids(
+        ctx: RunContext[RetrievalAgentDeps],
+        output: RetrievalAgentOutput,
+    ) -> RetrievalAgentOutput:
+        # Fabricated chunk_ids are the single most common failure mode for a tool-using
+        # retrieval agent. Surface this back to the model via ModelRetry so it re-emits
+        # using only ids it actually received from `retrieve_evidence`.
+        seen_ids = ctx.deps.chunk_lookup.keys()
+        invalid = [chunk_id for chunk_id in output.selected_chunk_ids if chunk_id not in seen_ids]
+        if invalid:
+            raise ModelRetry(
+                f"selected_chunk_ids contains ids that were never returned by a tool call: "
+                f"{invalid}. Use only chunk_ids from retrieve_evidence results, verbatim."
+            )
+        return output
 
     @agent.tool
     def retrieve_evidence(
@@ -607,10 +630,13 @@ def _heuristic_retrieval(
 # ---------------------------------------------------------------------------
 
 
-def _build_agent_prompt(question: str, known_tickers: set[str]) -> str:
-    listed = ", ".join(sorted(known_tickers)) if known_tickers else "(none)"
-    today = datetime.now(UTC).date()
-    return f"TODAY: {today.isoformat()}\nKNOWN_TICKERS: {listed}\n\nQUESTION:\n{question}"
+def _build_agent_prompt(question: str) -> str:
+    """User message body for the retrieval agent.
+
+    TODAY and KNOWN_TICKERS now live in ``@agent.instructions`` (pulled from
+    ``RetrievalAgentDeps``), so the user message carries only the question.
+    """
+    return f"QUESTION:\n{question}"
 
 
 def run_retrieval_agent(
@@ -633,7 +659,7 @@ def run_retrieval_agent(
     resolved = settings or get_settings()
     metadata: dict[str, object] = {
         "agent_used": False,
-        "model": resolved.openrouter_chat_model,
+        "model": resolved.zai_chat_model,
         "error": None,
     }
 
@@ -671,11 +697,14 @@ def run_retrieval_agent(
         agent = build_retrieval_agent(resolved)
         budget = resolved.retrieval_agent_tool_call_budget
         result = agent.run_sync(
-            _build_agent_prompt(question, known_tickers),
+            _build_agent_prompt(question),
             deps=deps,
-            usage_limits=UsageLimits(request_limit=budget + 1),
+            # `tool_calls_limit` is the documented primitive for bounding tool invocations;
+            # `request_limit` stays as a backstop covering planning turns + the final emit
+            # (+1 for the chunk_id validator retry pass, if it fires).
+            usage_limits=UsageLimits(tool_calls_limit=budget, request_limit=budget + 2),
         )
-    except _RETRIEVAL_AGENT_RETRYABLE_ERRORS as exc:
+    except AGENT_RETRYABLE_ERRORS as exc:
         message = f"{type(exc).__name__}: {exc}"
         logger.warning("retrieval_agent_failed", extra={"error": message})
         metadata["fallback_reason"] = "agent_error"
@@ -707,8 +736,8 @@ def run_retrieval_agent(
     chunks = _materialize_selected(normalized_output, deps.chunk_lookup, resolved.evidence_top_k)
     agent_chat_usage = safe_pydantic_ai_usage(
         result,
-        provider="openrouter",
-        model=resolved.openrouter_chat_model,
+        provider="zai",
+        model=resolved.zai_chat_model,
     )
     metadata["agent_used"] = True
     metadata["tool_call_count"] = len(deps.tool_calls)

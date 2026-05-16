@@ -704,12 +704,12 @@ def _attach_ragas_scores(
         logger.warning("ragas_import_failed", extra={"error": str(exc)})
         return {"error": f"ragas import failed: {exc}"}
 
-    if settings.openrouter_api_key is None:
+    if settings.zai_api_key is None:
         return {"skipped": "no_api_key"}
-    api_key = settings.openrouter_api_key.get_secret_value()
+    zai_api_key = settings.zai_api_key.get_secret_value()
 
-    client = OpenAI(base_url=settings.openrouter_base_url, api_key=api_key)
-    llm = llm_factory(model=settings.openrouter_judge_model or "", client=client)
+    llm_client = OpenAI(base_url=settings.zai_base_url, api_key=zai_api_key)
+    llm = llm_factory(model=settings.zai_judge_model or "", client=llm_client)
     # Best-effort temperature=0 on the RAGAS judge. The wrapper's attribute path
     # varies by RAGAS version, so we try the common ones and fall through silently.
     # Residual judge stochasticity is acknowledged in docs/eval/ablation_v1_plan.md;
@@ -724,8 +724,12 @@ def _attach_ragas_scores(
                     underlying.temperature = 0
                 break
     embeddings = None
-    if settings.openrouter_embedding_model:
-        embeddings = RagasOpenAIEmbeddings(client=client, model=settings.openrouter_embedding_model)
+    if settings.openrouter_embedding_model and settings.openrouter_api_key is not None:
+        embedding_client = OpenAI(
+            base_url=settings.openrouter_base_url,
+            api_key=settings.openrouter_api_key.get_secret_value(),
+        )
+        embeddings = RagasOpenAIEmbeddings(client=embedding_client, model=settings.openrouter_embedding_model)
 
     has_reference = any(sample["reference"] for _, sample in pending)
     metrics_config: list[tuple[str, Any]] = [

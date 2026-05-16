@@ -8,7 +8,7 @@ import httpx
 from pydantic_ai import Agent, UserError
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import ProviderError
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_AGENT_RETRYABLE_ERRORS = (
+AGENT_RETRYABLE_ERRORS: tuple[type[BaseException], ...] = (
     UnexpectedModelBehavior,
     ModelHTTPError,
     ProviderError,
@@ -36,23 +36,23 @@ def agent_available(settings: Settings | None = None) -> bool:
     resolved = settings or get_settings()
     if resolved.allow_mock_providers:
         return False
-    if resolved.openrouter_api_key is None:
+    if resolved.zai_api_key is None:
         return False
-    return bool(resolved.openrouter_chat_model)
+    return bool(resolved.zai_chat_model)
 
 
 def judge_available(settings: Settings | None = None) -> bool:
     resolved = settings or get_settings()
     if resolved.allow_mock_providers:
         return False
-    if resolved.openrouter_api_key is None:
+    if resolved.zai_api_key is None:
         return False
-    return bool(resolved.openrouter_judge_model)
+    return bool(resolved.zai_judge_model)
 
 
 @lru_cache(maxsize=4)
-def _provider_for_key(api_key: str) -> OpenRouterProvider:
-    return OpenRouterProvider(api_key=api_key)
+def _zai_provider(api_key: str, base_url: str) -> OpenAIProvider:
+    return OpenAIProvider(api_key=api_key, base_url=base_url)
 
 
 def deterministic_model_settings(settings: Settings | None = None) -> ModelSettings | None:
@@ -71,22 +71,22 @@ def deterministic_model_settings(settings: Settings | None = None) -> ModelSetti
 
 def build_chat_model(settings: Settings | None = None) -> Model:
     resolved = settings or get_settings()
-    if resolved.openrouter_api_key is None:
-        raise ProviderError("OPENROUTER_API_KEY is not configured")
-    if not resolved.openrouter_chat_model:
-        raise ProviderError("OPENROUTER_CHAT_MODEL is not configured")
-    provider = _provider_for_key(resolved.openrouter_api_key.get_secret_value())
-    return OpenAIChatModel(resolved.openrouter_chat_model, provider=provider)
+    if resolved.zai_api_key is None:
+        raise ProviderError("ZAI_API_KEY is not configured")
+    if not resolved.zai_chat_model:
+        raise ProviderError("ZAI_CHAT_MODEL is not configured")
+    provider = _zai_provider(resolved.zai_api_key.get_secret_value(), resolved.zai_base_url)
+    return OpenAIChatModel(resolved.zai_chat_model, provider=provider)
 
 
 def build_judge_model(settings: Settings | None = None) -> Model:
     resolved = settings or get_settings()
-    if resolved.openrouter_api_key is None:
-        raise ProviderError("OPENROUTER_API_KEY is not configured")
-    if not resolved.openrouter_judge_model:
-        raise ProviderError("OPENROUTER_JUDGE_MODEL is not configured")
-    provider = _provider_for_key(resolved.openrouter_api_key.get_secret_value())
-    return OpenAIChatModel(resolved.openrouter_judge_model, provider=provider)
+    if resolved.zai_api_key is None:
+        raise ProviderError("ZAI_API_KEY is not configured")
+    if not resolved.zai_judge_model:
+        raise ProviderError("ZAI_JUDGE_MODEL is not configured")
+    provider = _zai_provider(resolved.zai_api_key.get_secret_value(), resolved.zai_base_url)
+    return OpenAIChatModel(resolved.zai_judge_model, provider=provider)
 
 
 def run_with_fallback[T](
@@ -108,24 +108,36 @@ def run_with_fallback[T](
     try:
         result, usage = agent_call()
         return result, True, None, usage
-    except _AGENT_RETRYABLE_ERRORS as exc:
+    except AGENT_RETRYABLE_ERRORS as exc:
         message = f"{type(exc).__name__}: {exc}"
         logger.warning("agent_fallback", extra={"label": label, "error": message})
         return fallback(), False, message, TokenUsage()
 
 
-def build_agent[T](
+def build_agent[D, T](
     *,
     output_type: type[T],
-    system_prompt: str,
+    instructions: str,
+    deps_type: type[D] = type(None),  # type: ignore[assignment]
     settings: Settings | None = None,
     name: str | None = None,
-) -> Agent[None, T]:
-    """Construct a Pydantic AI agent bound to the configured OpenRouter chat model."""
+    output_retries: int | None = None,
+) -> Agent[D, T]:
+    """Construct a Pydantic AI agent bound to the configured chat model.
+
+    ``instructions`` is the pydantic-ai successor to ``system_prompt`` for agents
+    that do not need their prompt preserved across ``message_history``. Pass
+    ``deps_type`` whenever the agent has tools, dynamic ``@agent.instructions``,
+    or ``@agent.output_validator`` callbacks that need ``ctx.deps``; defaults to
+    ``None`` for context-free agents. ``output_retries`` opts the agent into
+    ``ModelRetry``-driven repair from validators (pydantic-ai defaults to 1).
+    """
     return Agent(
         model=build_chat_model(settings),
         output_type=output_type,
-        system_prompt=system_prompt,
+        instructions=instructions,
+        deps_type=deps_type,
         name=name,
         model_settings=deterministic_model_settings(settings),
+        output_retries=output_retries,
     )

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from rag_common.config import Settings, get_settings
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
-from rag_retrieval.agents import agent_available, build_agent
+from rag_retrieval.agents import AGENT_RETRYABLE_ERRORS, agent_available, build_agent
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_HYDE_SYSTEM_PROMPT = """\
+_HYDE_INSTRUCTIONS = """\
 You generate hypothetical SEC filing excerpts for retrieval-only purposes.
 
 Given a question about a public company's 10-K, 10-Q, or 8-K filing, write a short
@@ -42,7 +42,7 @@ Output the passage text only - no header, no label, no quotation marks.
 def _build_hyde_agent_for(model_id: str) -> "Agent[None, str]":  # noqa: ARG001 - model_id keys the cache
     return build_agent(
         output_type=str,
-        system_prompt=_HYDE_SYSTEM_PROMPT,
+        instructions=_HYDE_INSTRUCTIONS,
         name="sec-rag-hyde",
     )
 
@@ -66,7 +66,7 @@ def generate_hyde_passage(
     resolved = settings or get_settings()
     metadata: dict[str, object] = {
         "agent_used": False,
-        "model": resolved.openrouter_chat_model,
+        "model": resolved.zai_chat_model,
     }
 
     if not resolved.hyde_enabled:
@@ -77,16 +77,16 @@ def generate_hyde_passage(
         return query, metadata, TokenUsage()
 
     try:
-        agent = _build_hyde_agent_for(resolved.openrouter_chat_model or "")
+        agent = _build_hyde_agent_for(resolved.zai_chat_model or "")
         result = agent.run_sync(f"QUESTION:\n{query}")
-        usage = safe_pydantic_ai_usage(result, provider="openrouter", model=resolved.openrouter_chat_model)
+        usage = safe_pydantic_ai_usage(result, provider="zai", model=resolved.zai_chat_model)
         passage = (result.output or "").strip()
         if not passage:
             metadata["fallback_reason"] = "empty_passage"
             return query, metadata, usage
         metadata["agent_used"] = True
         return passage, metadata, usage
-    except Exception as exc:  # noqa: BLE001 - HyDE failure must never block retrieval
+    except AGENT_RETRYABLE_ERRORS as exc:
         logger.warning("hyde_failed", extra={"error": str(exc)})
         metadata["error"] = f"{type(exc).__name__}: {exc}"
         return query, metadata, TokenUsage()

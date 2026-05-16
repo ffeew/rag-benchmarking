@@ -66,11 +66,7 @@ class OpenRouterClient:
 
     @property
     def enabled(self) -> bool:
-        return bool(
-            self.settings.openrouter_api_key
-            and not self.settings.allow_mock_providers
-            and self.settings.openrouter_chat_model
-        )
+        return bool(self.settings.openrouter_api_key and not self.settings.allow_mock_providers)
 
     def _headers(self) -> dict[str, str]:
         api_key = self.settings.openrouter_api_key
@@ -84,39 +80,6 @@ class OpenRouterClient:
         if self.settings.openrouter_site_url is not None:
             headers["HTTP-Referer"] = str(self.settings.openrouter_site_url)
         return headers
-
-    @retry(wait=wait_exponential(multiplier=1, min=1, max=8), stop=stop_after_attempt(3))
-    def chat(self, *, messages: list[dict[str, str]], model: str | None = None) -> ChatResult:
-        selected_model = model or self.settings.openrouter_chat_model
-        if not selected_model:
-            raise ProviderError("OPENROUTER_CHAT_MODEL is not configured")
-        if not self.enabled:
-            content = "Mock provider mode is enabled; no upstream chat model was called."
-            return ChatResult(
-                content=content,
-                metadata=ProviderMetadata(provider="mock-openrouter", model=selected_model),
-            )
-        payload: dict[str, Any] = {
-            "model": selected_model,
-            "messages": messages,
-            "provider": {"allow_fallbacks": True, "data_collection": "deny"},
-        }
-        if self.settings.eval_temperature_zero:
-            payload["temperature"] = 0
-        response = self._client.post("/chat/completions", headers=self._headers(), json=payload)
-        if response.status_code >= 400:
-            raise ProviderError(f"OpenRouter chat failed: {response.status_code} {response.text[:500]}")
-        data = response.json()
-        content = data["choices"][0]["message"]["content"]
-        return ChatResult(
-            content=content,
-            metadata=ProviderMetadata(
-                provider="openrouter",
-                model=data.get("model", selected_model),
-                raw={"id": data.get("id"), "provider": data.get("provider")},
-                usage=data.get("usage") or {},
-            ),
-        )
 
     @retry(wait=wait_exponential(multiplier=1, min=1, max=8), stop=stop_after_attempt(3))
     def embeddings(

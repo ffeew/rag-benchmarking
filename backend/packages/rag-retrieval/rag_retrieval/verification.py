@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+from pydantic_ai import ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
@@ -99,7 +100,7 @@ STOPWORDS = frozenset(
 )
 
 
-_VERIFIER_SYSTEM_PROMPT = """\
+_VERIFIER_INSTRUCTIONS = """\
 You are the evidence verifier for an SEC filings RAG system.
 
 You will receive a user question and a numbered list of retrieved chunks (each with a
@@ -171,17 +172,48 @@ def _build_verifier_prompt(question: str, retrieved: list[RetrievedChunk]) -> st
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class VerifierDeps:
+    """Per-run context for the verifier.
+
+    ``valid_chunk_ids`` enables an ``@agent.output_validator`` to reject (and trigger
+    a single ModelRetry on) any ``supported_chunk_ids`` entry that was not in the
+    provided evidence list - the docs flag this exact pattern as the canonical
+    alternative to silent post-run filtering.
+    """
+
+    valid_chunk_ids: frozenset[str]
+
+
 @lru_cache(maxsize=2)
-def _build_verifier_agent_for(model_id: str) -> Agent[None, VerifierOutput]:  # noqa: ARG001
-    return build_agent(
+def _build_verifier_agent_for(model_id: str) -> Agent[VerifierDeps, VerifierOutput]:  # noqa: ARG001
+    agent: Agent[VerifierDeps, VerifierOutput] = build_agent(
+        deps_type=VerifierDeps,
         output_type=VerifierOutput,
-        system_prompt=_VERIFIER_SYSTEM_PROMPT,
+        instructions=_VERIFIER_INSTRUCTIONS,
         name="sec-rag-verifier",
+        output_retries=1,
     )
 
+    @agent.output_validator
+    def validate_supported_ids(
+        ctx: RunContext[VerifierDeps],
+        output: VerifierOutput,
+    ) -> VerifierOutput:
+        valid = ctx.deps.valid_chunk_ids
+        invalid = [chunk_id for chunk_id in output.supported_chunk_ids if chunk_id not in valid]
+        if invalid:
+            raise ModelRetry(
+                f"supported_chunk_ids contains ids not present in the evidence list: {invalid}. "
+                "Cite only chunk_ids that appear in the EVIDENCE block, verbatim."
+            )
+        return output
 
-def _verifier_agent(settings: Settings) -> Agent[None, VerifierOutput]:
-    return _build_verifier_agent_for(settings.openrouter_chat_model or "")
+    return agent
+
+
+def _verifier_agent(settings: Settings) -> Agent[VerifierDeps, VerifierOutput]:
+    return _build_verifier_agent_for(settings.zai_chat_model or "")
 
 
 def _normalize_verifier_output(
@@ -213,17 +245,19 @@ def verify_evidence(
 
     if not agent_available(resolved) or not retrieved:
         result = keyword_verify_evidence(question, retrieved)
-        metadata["model"] = resolved.openrouter_chat_model
+        metadata["model"] = resolved.zai_chat_model
         metadata["fallback_reason"] = "no_retrieved_evidence" if not retrieved else "agent_unavailable"
         return result, metadata, TokenUsage()
 
+    deps = VerifierDeps(valid_chunk_ids=frozenset(item.chunk.id for item in retrieved))
+
     def run_agent() -> tuple[VerificationResult, TokenUsage]:
         agent = _verifier_agent(resolved)
-        result = agent.run_sync(_build_verifier_prompt(question, retrieved))
+        result = agent.run_sync(_build_verifier_prompt(question, retrieved), deps=deps)
         usage = safe_pydantic_ai_usage(
             result,
-            provider="openrouter",
-            model=resolved.openrouter_chat_model,
+            provider="zai",
+            model=resolved.zai_chat_model,
         )
         return _normalize_verifier_output(result.output, retrieved), usage
 
@@ -232,6 +266,6 @@ def verify_evidence(
 
     result, used_agent, error, usage = run_with_fallback(run_agent, fallback, label="verifier")
     metadata["agent_used"] = used_agent
-    metadata["model"] = resolved.openrouter_chat_model
+    metadata["model"] = resolved.zai_chat_model
     metadata["error"] = error
     return result, metadata, usage

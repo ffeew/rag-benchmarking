@@ -102,8 +102,8 @@ def create_evaluation(
         },
         system_variant=",".join(spec.name for spec in variants_payload),
         model_metadata={
-            "chat_model": settings.openrouter_chat_model,
-            "judge_model": settings.openrouter_judge_model,
+            "chat_model": settings.zai_chat_model,
+            "judge_model": settings.zai_judge_model,
             "embedding_model": settings.openrouter_embedding_model,
             "rerank_model": settings.openrouter_rerank_model,
         },

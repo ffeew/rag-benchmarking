@@ -37,7 +37,8 @@ def ready(settings: SettingsDep) -> ReadinessResponse:
         redis_ok = False
     providers = {
         "allow_mock_providers": settings.allow_mock_providers,
-        "openrouter_chat_model": settings.openrouter_chat_model,
+        "zai_chat_model": settings.zai_chat_model,
+        "zai_judge_model": settings.zai_judge_model,
         "openrouter_embedding_model": settings.openrouter_embedding_model,
         "openrouter_rerank_model": settings.openrouter_rerank_model,
         "mistral_ocr_model": settings.mistral_ocr_model,

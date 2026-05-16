@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+from pydantic_ai import ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
@@ -132,7 +133,7 @@ METRIC_TERMS = (
 )
 
 
-_PLANNER_SYSTEM_PROMPT = """\
+_PLANNER_INSTRUCTIONS = """\
 You are the query planner for an SEC filings RAG system.
 
 Your job: turn a user question into a structured RetrievalPlan that downstream hybrid
@@ -153,17 +154,61 @@ Rules:
 """
 
 
+@dataclass(frozen=True)
+class PlannerDeps:
+    """Per-run context the planner agent consults via dynamic instructions.
+
+    Carries the dataset's known tickers, the user's pre-supplied filters, and TODAY so
+    the agent can resolve "latest" / "this year" against the ingested data rather than
+    against the model's training cutoff.
+    """
+
+    today: date
+    known_tickers: frozenset[str]
+    user_filters: QueryFilters
+
+
 @lru_cache(maxsize=2)
-def _build_planner_agent_for(model_id: str) -> Agent[None, PlannerOutput]:  # noqa: ARG001
-    return build_agent(
+def _build_planner_agent_for(model_id: str) -> Agent[PlannerDeps, PlannerOutput]:  # noqa: ARG001
+    agent: Agent[PlannerDeps, PlannerOutput] = build_agent(
+        deps_type=PlannerDeps,
         output_type=PlannerOutput,
-        system_prompt=_PLANNER_SYSTEM_PROMPT,
+        instructions=_PLANNER_INSTRUCTIONS,
         name="sec-rag-planner",
+        output_retries=1,
     )
 
+    @agent.instructions
+    def planner_context(ctx: RunContext[PlannerDeps]) -> str:
+        deps = ctx.deps
+        known = ", ".join(sorted(deps.known_tickers)) if deps.known_tickers else "(none)"
+        filter_lines: list[str] = []
+        if deps.user_filters.ticker:
+            filter_lines.append(f"user_filter_ticker: {', '.join(deps.user_filters.ticker)}")
+        if deps.user_filters.form_type:
+            filter_lines.append(f"user_filter_form_type: {', '.join(deps.user_filters.form_type)}")
+        if deps.user_filters.filing_date_start or deps.user_filters.filing_date_end:
+            filter_lines.append(
+                "user_filter_filing_date: "
+                f"{deps.user_filters.filing_date_start or '...'} to "
+                f"{deps.user_filters.filing_date_end or '...'}"
+            )
+        filters = "\n".join(filter_lines) if filter_lines else "(none supplied)"
+        return f"TODAY: {deps.today.isoformat()}\nKNOWN_TICKERS: {known}\nUSER_FILTERS:\n{filters}"
 
-def _planner_agent(settings: Settings) -> Agent[None, PlannerOutput]:
-    return _build_planner_agent_for(settings.openrouter_chat_model or "")
+    @agent.output_validator
+    def validate_query_type(_ctx: RunContext[PlannerDeps], output: PlannerOutput) -> PlannerOutput:
+        if output.query_type not in VALID_QUERY_TYPES:
+            raise ModelRetry(
+                f"query_type must be one of {list(VALID_QUERY_TYPES)}; got {output.query_type!r}."
+            )
+        return output
+
+    return agent
+
+
+def _planner_agent(settings: Settings) -> Agent[PlannerDeps, PlannerOutput]:
+    return _build_planner_agent_for(settings.zai_chat_model or "")
 
 
 def _coerce_date(value: str | None) -> date | None:
@@ -252,30 +297,15 @@ def infer_query_plan(
     )
 
 
-def _build_planner_prompt(
-    *,
-    question: str,
-    known_tickers: set[str],
-    filters: QueryFilters,
-    today: date,
-) -> str:
-    known_list = ", ".join(sorted(known_tickers)) if known_tickers else "(none)"
-    filter_lines = []
-    if filters.ticker:
-        filter_lines.append(f"user_filter_ticker: {', '.join(filters.ticker)}")
-    if filters.form_type:
-        filter_lines.append(f"user_filter_form_type: {', '.join(filters.form_type)}")
-    if filters.filing_date_start or filters.filing_date_end:
-        filter_lines.append(
-            f"user_filter_filing_date: {filters.filing_date_start or '...'} to {filters.filing_date_end or '...'}"
-        )
-    user_filters = "\n".join(filter_lines) if filter_lines else "(none supplied)"
-    return (
-        f"TODAY: {today.isoformat()}\n"
-        f"KNOWN_TICKERS: {known_list}\n"
-        f"USER_FILTERS:\n{user_filters}\n\n"
-        f"QUESTION:\n{question}"
-    )
+def _build_planner_prompt(question: str) -> str:
+    """User message body for the planner.
+
+    TODAY, KNOWN_TICKERS, and USER_FILTERS now live in ``@agent.instructions`` via
+    ``PlannerDeps``, so the user message carries only the question itself - this lets
+    the static instructions block stay cacheable by providers that support prompt
+    caching (Anthropic, Bedrock).
+    """
+    return f"QUESTION:\n{question}"
 
 
 def plan_query(
@@ -300,29 +330,29 @@ def plan_query(
 
     if force_heuristic:
         plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
-        metadata["model"] = resolved.openrouter_chat_model
+        metadata["model"] = resolved.zai_chat_model
         metadata["fallback_reason"] = "forced_heuristic"
         return plan, metadata, TokenUsage()
 
     if not agent_available(resolved):
         plan = infer_query_plan(question=question, filters=filters, known_tickers=known_tickers)
-        metadata["model"] = resolved.openrouter_chat_model
+        metadata["model"] = resolved.zai_chat_model
         metadata["fallback_reason"] = "agent_unavailable"
         return plan, metadata, TokenUsage()
 
+    deps = PlannerDeps(
+        today=today,
+        known_tickers=frozenset(ticker.upper() for ticker in known_tickers),
+        user_filters=filters,
+    )
+
     def run_agent() -> tuple[RetrievalPlan, TokenUsage]:
         agent = _planner_agent(resolved)
-        prompt = _build_planner_prompt(
-            question=question,
-            known_tickers=known_tickers,
-            filters=filters,
-            today=today,
-        )
-        result = agent.run_sync(prompt)
+        result = agent.run_sync(_build_planner_prompt(question), deps=deps)
         usage = safe_pydantic_ai_usage(
             result,
-            provider="openrouter",
-            model=resolved.openrouter_chat_model,
+            provider="zai",
+            model=resolved.zai_chat_model,
         )
         return _normalize_planner_output(result.output, known_tickers, filters), usage
 
@@ -331,6 +361,6 @@ def plan_query(
 
     plan, used_agent, error, usage = run_with_fallback(run_agent, fallback, label="planner")
     metadata["agent_used"] = used_agent
-    metadata["model"] = resolved.openrouter_chat_model
+    metadata["model"] = resolved.zai_chat_model
     metadata["error"] = error
     return plan, metadata, usage
