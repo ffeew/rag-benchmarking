@@ -20,8 +20,16 @@ export function VerifierVerdict({
 }: {
   verdict: Record<string, unknown>
 }) {
-  const supported = asList(verdict['supported'] ?? verdict['satisfied'])
-  const missing = asList(verdict['missing'] ?? verdict['unmet'])
+  // Backend persists ``supported_chunk_ids`` / ``missing_subclaims`` (per
+  // ``rag_retrieval.verification.VerificationResult.as_dict`` and the agent path in
+  // ``query.py``). The ``supported`` / ``missing`` keys are accepted as fallbacks for
+  // older traces and any future verifier shape that ships those names directly.
+  const supported = asList(
+    verdict['supported_chunk_ids'] ?? verdict['supported'] ?? verdict['satisfied'],
+  )
+  const missing = asList(
+    verdict['missing_subclaims'] ?? verdict['missing'] ?? verdict['unmet'],
+  )
   const contradictions = asList(
     verdict['contradictions'] ?? verdict['contradictory'],
   )

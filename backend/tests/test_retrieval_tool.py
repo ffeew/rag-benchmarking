@@ -193,6 +193,16 @@ def test_tool_silently_drops_when_all_filters_unknown(monkeypatch: pytest.Monkey
     assert last["returned_chunk_ids"] == ["c1"]
     assert last["returned_tickers"] == ["AAPL"]
     assert last["returned_forms"] == ["10-K"]
+    # ``candidates`` carries the per-rank detail the trace UI renders.
+    assert len(last["candidates"]) == 1
+    cand = last["candidates"][0]
+    assert cand["rank"] == 1
+    assert cand["chunk_id"] == "c1"
+    assert cand["ticker"] == "AAPL"
+    assert cand["form_type"] == "10-K"
+    assert cand["page_start"] == 10
+    assert isinstance(cand["score"], float)
+    assert cand["snippet"]  # non-empty
 
 
 def test_tool_clamps_top_k(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -497,6 +497,23 @@ def perform_retrieve_evidence(
     call_entry["returned_chunk_ids"] = [item.chunk.id for item in retrieved]
     call_entry["returned_tickers"] = sorted({item.document.ticker for item in retrieved})
     call_entry["returned_forms"] = sorted({item.document.form_type for item in retrieved})
+    # ``candidates`` is the field the trace UI reads to render the per-call result list.
+    # Keep snippets short — the trace JSON balloons fast otherwise, and the UI truncates
+    # to ~90 chars on display anyway.
+    call_entry["candidates"] = [
+        {
+            "rank": rank,
+            "chunk_id": item.chunk.id,
+            "ticker": item.document.ticker,
+            "form_type": item.document.form_type,
+            "filing_date": item.document.filing_date.isoformat() if item.document.filing_date else None,
+            "page_start": item.chunk.page_start,
+            "score": float(item.score),
+            "rerank_score": float(item.rerank_score) if item.rerank_score is not None else None,
+            "snippet": _short_snippet(item.chunk.text),
+        }
+        for rank, item in enumerate(retrieved, start=1)
+    ]
     deps.tool_calls.append(call_entry)
 
     return [
@@ -721,6 +738,20 @@ def _heuristic_retrieval(
                 "returned": len(retrieved),
                 "verifier": "keyword",
                 "verifier_confidence": verification.confidence,
+                "candidates": [
+                    {
+                        "rank": rank,
+                        "chunk_id": item.chunk.id,
+                        "ticker": item.document.ticker,
+                        "form_type": item.document.form_type,
+                        "filing_date": item.document.filing_date.isoformat() if item.document.filing_date else None,
+                        "page_start": item.chunk.page_start,
+                        "score": float(item.score),
+                        "rerank_score": float(item.rerank_score) if item.rerank_score is not None else None,
+                        "snippet": _short_snippet(item.chunk.text),
+                    }
+                    for rank, item in enumerate(retrieved, start=1)
+                ],
             }
         ],
         output=RetrievalAgentOutput(
@@ -821,13 +852,18 @@ def run_retrieval_agent(
     try:
         agent = build_retrieval_agent(resolved)
         budget = resolved.retrieval_agent_tool_call_budget
+        # `request_limit` counts every model request, including retry rounds (each
+        # `ModelRetry` causes another chat completion). Worst-case budget: one request
+        # per tool call plus up to `tool_retries=2` retries each, then a final emit
+        # plus up to `output_retries=2` validator retries. `budget * 3 + 3` covers
+        # that envelope without giving runaway loops infinite headroom — the agent
+        # comment block above keeps `tool_calls_limit=budget` as the primary cap on
+        # actual tool invocations.
+        usage_limits=UsageLimits(tool_calls_limit=budget, request_limit=budget * 3 + 3)
         result = agent.run_sync(
             _build_agent_prompt(question),
             deps=deps,
-            # `tool_calls_limit` is the documented primitive for bounding tool invocations;
-            # `request_limit` stays as a backstop covering planning turns + the final emit
-            # (+1 for the chunk_id validator retry pass, if it fires).
-            usage_limits=UsageLimits(tool_calls_limit=budget, request_limit=budget + 2),
+            usage_limits=usage_limits,
         )
     except AGENT_RETRYABLE_ERRORS as exc:
         message = f"{type(exc).__name__}: {exc}"
