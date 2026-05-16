@@ -6,8 +6,6 @@ abstraction it must consult ``DatasetConfig`` for both so non-SEC corpora are no
 mis-classified into 10-K / 10-Q / 8-K shapes.
 """
 
-from __future__ import annotations
-
 from rag_common.schemas import QueryFilters
 from rag_retrieval.dataset_config import DatasetConfig
 from rag_retrieval.planning import infer_query_plan

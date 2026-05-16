@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     minio_endpoint: str = "localhost:9000"
+    # Host used when minting presigned URLs handed to browsers. The default
+    # minio_endpoint above is a docker-internal hostname inside compose, which
+    # the browser can't resolve; set this to the host-reachable address.
+    minio_public_endpoint: str | None = None
     minio_access_key: str = "minioadmin"
     minio_secret_key: SecretStr = SecretStr("minioadmin")
     minio_secure: bool = False

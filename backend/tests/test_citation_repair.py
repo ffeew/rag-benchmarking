@@ -134,9 +134,7 @@ def test_unrecoverable_validator_failure_falls_back_to_extractive(
     evidence = [_retrieved_chunk("c1", "AAPL", "Apple revenue was $394B in 2024.", 10)]
 
     def fake_run_sync(_prompt: str, *, deps: object) -> object:  # noqa: ARG001
-        raise UnexpectedModelBehavior(
-            "output validator rejected response twice (invalid citation tags)"
-        )
+        raise UnexpectedModelBehavior("output validator rejected response twice (invalid citation tags)")
 
     monkeypatch.setattr(
         generation,

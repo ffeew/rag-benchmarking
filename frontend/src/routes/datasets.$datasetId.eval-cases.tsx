@@ -7,7 +7,7 @@ import {
 import { createFileRoute } from '@tanstack/react-router'
 import { ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast, toastApiError } from '#/providers/ToastProvider'
 
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -27,7 +27,8 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TBody, TD, TH, THead, TR } from '#/components/ui/table'
 import { EmptyState } from '#/components/data/EmptyState'
 import { ErrorState } from '#/components/data/ErrorState'
-import { api, type EvalCase } from '#/lib/api'
+import { api } from '#/lib/api'
+import type { EvalCase } from '#/lib/api'
 import { qk } from '#/lib/queryKeys'
 import { useToken } from '#/providers/TokenProvider'
 
@@ -165,7 +166,7 @@ function EvalCasesPage() {
               </THead>
               <TBody>
                 {items.map((c) => (
-                  <CaseRow key={c.id} item={c} datasetId={datasetId} />
+                  <CaseRow key={c.id} item={c} />
                 ))}
               </TBody>
             </Table>
@@ -185,7 +186,7 @@ function EvalCasesPage() {
   )
 }
 
-function CaseRow({ item, datasetId }: { item: EvalCase; datasetId: string }) {
+function CaseRow({ item }: { item: EvalCase }) {
   const { token } = useToken()
   const queryClient = useQueryClient()
   const remove = useMutation({
@@ -196,7 +197,7 @@ function CaseRow({ item, datasetId }: { item: EvalCase; datasetId: string }) {
       })
       toast.success(`Deleted ${item.case_key ?? item.id}`)
     },
-    onError: (error) => toast.error(`Delete failed: ${(error as Error).message}`),
+    onError: (error) => toastApiError(error, 'Delete failed'),
   })
   return (
     <TR>
@@ -227,7 +228,7 @@ function CaseRow({ item, datasetId }: { item: EvalCase; datasetId: string }) {
       <TD>
         <div className="flex flex-wrap gap-1">
           {item.tags.slice(0, 3).map((tag) => (
-            <Badge key={tag} tone="muted" size="sm">
+            <Badge key={tag} tone="neutral" size="sm">
               {tag}
             </Badge>
           ))}
@@ -291,7 +292,7 @@ function NewEvalCaseDialog({ datasetId }: { datasetId: string }) {
       })
       void queryClient.invalidateQueries({ queryKey: qk.evalCases.all() })
     },
-    onError: (error) => toast.error(`Create failed: ${(error as Error).message}`),
+    onError: (error) => toastApiError(error, 'Create failed'),
   })
 
   return (

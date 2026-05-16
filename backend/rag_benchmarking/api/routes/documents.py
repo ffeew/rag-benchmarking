@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Annotated
@@ -5,17 +6,17 @@ from typing import Annotated
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from rag_common.db import models
 from rag_common.schemas import (
-    DocumentExtracted,
     DocumentRead,
     DocumentUpdate,
     DocumentUploadResponse,
     Page,
-    ParsedPageRead,
+    PresignedUrl,
     RegisterDocumentsResponse,
     RegisterLocalCorpusRequest,
 )
 from rag_common.storage.minio import ObjectStore
 from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
 
 from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
 from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
@@ -29,6 +30,22 @@ from rag_benchmarking.ingestion.queueing import queue_ingestion_jobs
 type UploadedPdfFiles = Annotated[list[UploadFile], File(...)]
 
 router = APIRouter(tags=["documents"])
+
+PRESIGNED_URL_TTL_SECONDS = 15 * 60
+
+
+def _resolve_active_run_id(session: Session, document: models.Document) -> str | None:
+    if document.active_ingestion_run_id is not None:
+        return document.active_ingestion_run_id
+    return session.scalar(
+        select(models.IngestionRun.id)
+        .where(
+            models.IngestionRun.document_id == document.id,
+            models.IngestionRun.status == "completed",
+        )
+        .order_by(models.IngestionRun.created_at.desc())
+        .limit(1)
+    )
 
 
 @router.post("/v1/datasets/register-local-corpus")
@@ -182,77 +199,72 @@ def delete_document(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/v1/documents/{document_id}/file")
-def get_document_file(
+@router.get("/v1/documents/{document_id}/file-url")
+def get_document_file_url(
     document_id: str,
     session: DbSession,
     settings: SettingsDep,
     _auth: AuthDep,
-) -> Response:
+) -> PresignedUrl:
     document = session.get(models.Document, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     store = ObjectStore(settings)
-    data = store.get_bytes(
+    url = store.get_presigned_url(
         bucket=document.minio_bucket,
         key=document.minio_key,
         version_id=document.minio_version_id,
+        expires_seconds=PRESIGNED_URL_TTL_SECONDS,
     )
-    filename_parts = [document.ticker, document.form_type]
-    if document.filing_date is not None:
-        filename_parts.append(document.filing_date.isoformat())
-    filename = "-".join(filename_parts) + ".pdf"
-    return Response(
-        content=data,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    return PresignedUrl(
+        url=url,
+        expires_at=datetime.now(UTC) + timedelta(seconds=PRESIGNED_URL_TTL_SECONDS),
     )
 
 
-@router.get("/v1/documents/{document_id}/extracted")
-def get_document_extracted(
+@router.get("/v1/documents/{document_id}/extracted-url")
+def get_document_extracted_url(
     document_id: str,
     session: DbSession,
+    settings: SettingsDep,
     _auth: AuthDep,
-) -> DocumentExtracted:
+) -> PresignedUrl:
     document = session.get(models.Document, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-
-    run_id = document.active_ingestion_run_id
-    if run_id is None:
-        run_id = session.scalar(
-            select(models.IngestionRun.id)
-            .where(
-                models.IngestionRun.document_id == document_id,
-                models.IngestionRun.status == "completed",
-            )
-            .order_by(models.IngestionRun.created_at.desc())
-            .limit(1)
-        )
+    run_id = _resolve_active_run_id(session, document)
     if run_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No parsed pages for this document")
 
-    pages = list(
-        session.scalars(
-            select(models.ParsedPage)
-            .where(models.ParsedPage.ingestion_run_id == run_id)
-            .order_by(models.ParsedPage.page_number)
+    store = ObjectStore(settings)
+    bucket = settings.artifact_bucket
+    key = f"artifacts/{document.dataset_id}/{document.id}/{run_id}/extracted.md"
+
+    if not store.exists(bucket=bucket, key=key):
+        pages = list(
+            session.scalars(
+                select(models.ParsedPage)
+                .where(models.ParsedPage.ingestion_run_id == run_id)
+                .order_by(models.ParsedPage.page_number)
+            )
         )
+        if not pages:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No parsed pages for this document",
+            )
+        # text/plain so browsers render the markdown inline rather than
+        # offering it as a download (text/markdown triggers downloads in
+        # Chrome/Safari).
+        combined = "\n\n".join(f"## Page {p.page_number}\n\n{p.text}" for p in pages)
+        store.put_text(key=key, text=combined, content_type="text/plain; charset=utf-8")
+
+    url = store.get_presigned_url(
+        bucket=bucket,
+        key=key,
+        expires_seconds=PRESIGNED_URL_TTL_SECONDS,
     )
-    if not pages:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No parsed pages for this document")
-
-    return DocumentExtracted(
-        document_id=document_id,
-        ingestion_run_id=run_id,
-        pages=[
-            ParsedPageRead(
-                page_number=page.page_number,
-                text=page.text,
-                text_char_count=page.text_char_count,
-                table_count=page.table_count,
-            )
-            for page in pages
-        ],
+    return PresignedUrl(
+        url=url,
+        expires_at=datetime.now(UTC) + timedelta(seconds=PRESIGNED_URL_TTL_SECONDS),
     )

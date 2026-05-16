@@ -5,8 +5,6 @@ short reference calculation — these tests are the audit surface for
 ``paired_stats.py``.
 """
 
-from __future__ import annotations
-
 import math
 
 import pytest
@@ -118,9 +116,7 @@ def test_benjamini_hochberg_monotonic_and_orders_match_input() -> None:
     raw_p = [0.001, 0.01, 0.03, 0.5, 0.7]
     rejected, q_values = benjamini_hochberg(raw_p, q=0.05)
     # Sorted q values must be monotonic non-decreasing.
-    assert q_values == sorted(q_values) or all(
-        q_values[i] <= q_values[i + 1] + 1e-9 for i in range(len(q_values) - 1)
-    )
+    assert q_values == sorted(q_values) or all(q_values[i] <= q_values[i + 1] + 1e-9 for i in range(len(q_values) - 1))
     # The smallest raw p must remain rejected; the largest must not.
     assert rejected[0] is True
     assert rejected[-1] is False

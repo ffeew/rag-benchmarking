@@ -8,8 +8,6 @@ strings and the dynamic-instructions functions directly so it runs without an LL
 provider.
 """
 
-from __future__ import annotations
-
 from datetime import date
 from types import SimpleNamespace
 from typing import cast

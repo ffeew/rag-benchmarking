@@ -371,9 +371,7 @@ def perform_retrieve_evidence(
     semantic_query: str | None = None
     hyde_meta: dict[str, object] = {"agent_used": False}
     if use_hyde:
-        passage, hyde_meta, hyde_usage = generate_hyde_passage(
-            query, deps.settings, dataset_config=deps.dataset_config
-        )
+        passage, hyde_meta, hyde_usage = generate_hyde_passage(query, deps.settings, dataset_config=deps.dataset_config)
         if passage and passage != query:
             semantic_query = passage
         deps.hyde_usage_records.append(hyde_usage)
@@ -465,10 +463,7 @@ def build_retrieval_agent(
         forms = ", ".join(config.valid_forms) if config.valid_forms else "(any)"
         today = datetime.now(UTC).date()
         return (
-            f"TODAY: {today.isoformat()}\n"
-            f"CORPUS: {config.domain_label}\n"
-            f"KNOWN_FORMS: {forms}\n"
-            f"KNOWN_TICKERS: {listed}"
+            f"TODAY: {today.isoformat()}\nCORPUS: {config.domain_label}\nKNOWN_FORMS: {forms}\nKNOWN_TICKERS: {listed}"
         )
 
     @agent.output_validator

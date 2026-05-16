@@ -1,7 +1,5 @@
 """Unit tests for DatasetConfig resolution."""
 
-from __future__ import annotations
-
 from types import SimpleNamespace
 from typing import cast
 
@@ -124,9 +122,7 @@ def test_load_dataset_config_raises_when_dataset_missing() -> None:
 def test_format_citation_uses_default_template_with_isoformat_dates() -> None:
     from datetime import date
 
-    label = format_citation(
-        entity="AAPL", filing_date=date(2025, 1, 31), form_type="10-K", page=23
-    )
+    label = format_citation(entity="AAPL", filing_date=date(2025, 1, 31), form_type="10-K", page=23)
 
     assert label == "[AAPL 2025-01-31 10-K, p. 23]"
 

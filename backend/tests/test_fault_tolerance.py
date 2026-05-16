@@ -325,6 +325,65 @@ def test_ingest_task_marks_job_running_before_pipeline(monkeypatch: pytest.Monke
     assert worker_session.committed is True
 
 
+def test_ingest_task_records_run_failure_on_pipeline_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the pipeline raises after returning a run object (only possible if
+    the run was created and ``session.commit()`` itself failed), the captured
+    ``run_id`` must reach ``record_ingestion_run_failure``."""
+    failure_calls: list[tuple[str | None, str]] = []
+
+    class _CommitFailsSession(_FakeWorkerSession):
+        def commit(self) -> None:
+            raise RuntimeError("commit blew up")
+
+    worker_session = _CommitFailsSession()
+
+    monkeypatch.setattr(tasks, "commit_job_progress", lambda *_a, **_kw: None)
+    monkeypatch.setattr(tasks, "record_job_failure", lambda *_a, **_kw: None)
+    monkeypatch.setattr(tasks, "get_sessionmaker", lambda: lambda: worker_session)
+    monkeypatch.setattr(
+        tasks,
+        "run_document_ingestion",
+        lambda *_a, **_kw: cast("models.IngestionRun", SimpleNamespace(id="run-xyz")),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "record_ingestion_run_failure",
+        lambda run_id, error: failure_calls.append((run_id, error)),
+    )
+
+    with pytest.raises(RuntimeError, match="commit blew up"):
+        tasks.ingest_document_task.run(document_id="doc-1", job_id="job-1", force=False)
+
+    assert failure_calls == [("run-xyz", "RuntimeError: commit blew up")]
+
+
+def test_ingest_task_passes_none_run_id_when_pipeline_raises_pre_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the pipeline raises *before* returning a run (e.g. document
+    missing), the task-level except hands ``run_id=None`` to the helper —
+    which is a no-op by contract."""
+    failure_calls: list[tuple[str | None, str]] = []
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise RuntimeError("doc missing")
+
+    monkeypatch.setattr(tasks, "commit_job_progress", lambda *_a, **_kw: None)
+    monkeypatch.setattr(tasks, "record_job_failure", lambda *_a, **_kw: None)
+    monkeypatch.setattr(tasks, "get_sessionmaker", lambda: _FakeWorkerSession)
+    monkeypatch.setattr(tasks, "run_document_ingestion", boom)
+    monkeypatch.setattr(
+        tasks,
+        "record_ingestion_run_failure",
+        lambda run_id, error: failure_calls.append((run_id, error)),
+    )
+
+    with pytest.raises(RuntimeError, match="doc missing"):
+        tasks.ingest_document_task.run(document_id="doc-1", job_id="job-1", force=False)
+
+    assert failure_calls == [(None, "RuntimeError: doc missing")]
+
+
 def test_format_error_uses_class_name_for_empty_message() -> None:
     formatted = tasks._format_error(RuntimeError(""))
     assert formatted == "RuntimeError: RuntimeError"

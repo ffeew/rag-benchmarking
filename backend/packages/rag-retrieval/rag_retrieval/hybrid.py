@@ -56,7 +56,10 @@ def apply_filters(
         if tickers:
             latest_subquery = (
                 select(func.max(models.Document.filing_date))
-                .where(models.Document.dataset_id == dataset_id, models.Document.ticker.in_(tickers))
+                .where(
+                    models.Document.dataset_id == dataset_id,
+                    models.Document.ticker.in_([t.upper() for t in tickers]),
+                )
                 .scalar_subquery()
             )
         statement = statement.where(

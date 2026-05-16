@@ -3,6 +3,7 @@ import time
 import structlog
 from rag_common.constants import TASK_INGEST_DOCUMENT
 from rag_common.db.session import get_sessionmaker
+from rag_common.ingestion_run_state import record_ingestion_run_failure
 from rag_common.job_state import (
     commit_job_progress,
     record_job_failure,
@@ -25,6 +26,9 @@ def _format_error(exc: Exception) -> str:
 def ingest_document_task(self: object, *, document_id: str, job_id: str, force: bool = False) -> str:
     log = logger.bind(job_id=job_id, document_id=document_id, force=force)
     log.info("ingest_task_start")
+    # Captured before session.commit() so a commit-time failure can still
+    # mark the (already-bootstrapped) run row failed.
+    run_id: str | None = None
     try:
         log.debug("ingest_task_commit_running_start")
         commit_job_progress(
@@ -44,6 +48,7 @@ def ingest_document_task(self: object, *, document_id: str, job_id: str, force: 
                 job_id=job_id,
                 force=force,
             )
+            run_id = run.id
             log.debug(
                 "ingest_task_pipeline_done",
                 run_id=run.id,
@@ -63,6 +68,14 @@ def ingest_document_task(self: object, *, document_id: str, job_id: str, force: 
         except Exception as record_exc:  # noqa: BLE001 — surface every failure path
             log.exception(
                 "ingest_task_record_failure_failed",
+                exception_type=record_exc.__class__.__name__,
+                exception_message=str(record_exc),
+            )
+        try:
+            record_ingestion_run_failure(run_id, _format_error(exc))
+        except Exception as record_exc:  # noqa: BLE001 — surface every failure path
+            log.exception(
+                "ingest_task_record_run_failure_failed",
                 exception_type=record_exc.__class__.__name__,
                 exception_message=str(record_exc),
             )

@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import ProviderError
 from rag_common.providers.zai import ZaiClient
@@ -23,14 +21,9 @@ from rag_retrieval.dataset_config import (
     DatasetConfig,
     format_citation,
 )
+from rag_retrieval.hybrid import RetrievedChunk
+from rag_retrieval.planning import RetrievalPlan
 from rag_retrieval.verification import VerificationResult, keyword_verify_evidence
-
-if TYPE_CHECKING:
-    from pydantic_ai import Agent
-
-    from rag_retrieval.hybrid import RetrievedChunk
-    from rag_retrieval.planning import RetrievalPlan
-
 
 logger = logging.getLogger(__name__)
 

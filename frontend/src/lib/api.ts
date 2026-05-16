@@ -39,20 +39,12 @@ export const documentSchema = z.object({
   created_at: z.string(),
 })
 
-export const documentExtractedSchema = z.object({
-  document_id: z.string(),
-  ingestion_run_id: z.string(),
-  pages: z.array(
-    z.object({
-      page_number: z.number(),
-      text: z.string(),
-      text_char_count: z.number(),
-      table_count: z.number(),
-    }),
-  ),
+export const presignedUrlSchema = z.object({
+  url: z.string().url(),
+  expires_at: z.string(),
 })
 
-export type DocumentExtracted = z.output<typeof documentExtractedSchema>
+export type PresignedUrl = z.output<typeof presignedUrlSchema>
 
 export const jobSchema = z.object({
   id: z.string(),
@@ -531,28 +523,14 @@ export const api = {
   async deleteDocument(token: string, documentId: string) {
     await apiFetch(`/v1/documents/${documentId}`, { token, method: 'DELETE' })
   },
-  documentFileUrl(documentId: string) {
-    return `${API_BASE_URL}/v1/documents/${documentId}/file`
+  async documentFilePresignedUrl(token: string, documentId: string) {
+    return presignedUrlSchema.parse(
+      await apiFetch(`/v1/documents/${documentId}/file-url`, { token }),
+    )
   },
-  async documentFileBlob(token: string, documentId: string) {
-    const response = await fetch(this.documentFileUrl(documentId), {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!response.ok) {
-      let message = `${response.status} ${response.statusText}`
-      try {
-        const text = await response.text()
-        if (text) message = text
-      } catch {
-        /* ignore */
-      }
-      throw new Error(message)
-    }
-    return response.blob()
-  },
-  async documentExtracted(token: string, documentId: string) {
-    return documentExtractedSchema.parse(
-      await apiFetch(`/v1/documents/${documentId}/extracted`, { token }),
+  async documentExtractedPresignedUrl(token: string, documentId: string) {
+    return presignedUrlSchema.parse(
+      await apiFetch(`/v1/documents/${documentId}/extracted-url`, { token }),
     )
   },
   /* ingestion */

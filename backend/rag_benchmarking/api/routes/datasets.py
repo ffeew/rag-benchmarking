@@ -69,7 +69,16 @@ def update_dataset(
 
     Only fields explicitly supplied in the request body are written; un-supplied fields
     are left untouched. Passing ``null`` for an override field clears it back to the
-    SEC fallback at the next query.
+    resolver's per-field fallback at the next query (SEC defaults for ``valid_forms`` /
+    ``metric_terms`` / ``citation_label_template`` / ``domain_label`` / ``entity_label``;
+    ``None`` for ``hyde_style_hint``).
+
+    Authorization: requires a valid ``API_BEARER_TOKEN``. The token is the deployment's
+    single shared credential — any authenticated caller can mutate any dataset. The
+    ``domain_label``, ``entity_label``, and ``hyde_style_hint`` overrides are injected
+    directly into LLM agent instructions for every subsequent query against the dataset,
+    so this endpoint is effectively a privileged prompt-shaping surface. See
+    ``docs/system-design.md`` § API Design for the full trust model.
     """
     dataset = session.get(models.Dataset, dataset_id)
     if dataset is None:

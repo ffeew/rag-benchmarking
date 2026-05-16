@@ -37,8 +37,6 @@ export const qk = {
   },
   documents: {
     detail: (id: string) => ['documents', id] as const,
-    file: (id: string) => ['documents', id, 'file'] as const,
-    extracted: (id: string) => ['documents', id, 'extracted'] as const,
   },
   jobs: {
     all: () => ['jobs'] as const,

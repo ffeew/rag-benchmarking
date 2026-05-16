@@ -17,8 +17,6 @@ Usage:
 Pre-registration: ``docs/eval/ablation_v1_plan.md``.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging
@@ -43,9 +41,7 @@ def _load_artifact(path: Path) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Paired ablation analysis (Wilcoxon/McNemar + BH FDR + effect sizes)."
-    )
+    parser = argparse.ArgumentParser(description="Paired ablation analysis (Wilcoxon/McNemar + BH FDR + effect sizes).")
     parser.add_argument("--artifact", required=True, type=Path, help="Eval-run JSON artifact")
     parser.add_argument(
         "--baseline",

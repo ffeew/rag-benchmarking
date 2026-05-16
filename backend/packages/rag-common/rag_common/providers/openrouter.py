@@ -68,6 +68,16 @@ class OpenRouterClient:
     def enabled(self) -> bool:
         return bool(self.settings.openrouter_api_key and not self.settings.allow_mock_providers)
 
+    @property
+    def mock_mode(self) -> bool:
+        """True iff mock providers are explicitly enabled.
+
+        Distinguishes the legitimate "operator opted into mocks" path from the
+        "API key forgot to be set in prod" footgun: the latter must raise loudly
+        instead of silently returning SHA-256 fake vectors that pgvector will accept.
+        """
+        return self.settings.allow_mock_providers
+
     def _headers(self) -> dict[str, str]:
         api_key = self.settings.openrouter_api_key
         if api_key is None:
@@ -105,10 +115,15 @@ class OpenRouterClient:
         requested_dimension = dimensions if dimensions is not None else self.settings.embedding_dimension
         if requested_dimension <= 0:
             raise ProviderError(f"Invalid embedding dimensions requested: {requested_dimension}")
-        if not self.enabled:
+        if self.mock_mode:
             return EmbeddingResult(
                 vectors=[deterministic_embedding(text, requested_dimension) for text in texts],
                 metadata=ProviderMetadata(provider="mock-openrouter", model=selected_model),
+            )
+        if self.settings.openrouter_api_key is None:
+            raise ProviderError(
+                "OPENROUTER_API_KEY is not configured; refusing to return deterministic mock embeddings. "
+                "Set OPENROUTER_API_KEY or enable ALLOW_MOCK_PROVIDERS explicitly."
             )
         response = self._client.post(
             "/embeddings",
@@ -144,11 +159,16 @@ class OpenRouterClient:
         selected_model = model or self.settings.openrouter_rerank_model
         if not selected_model:
             raise ProviderError("OPENROUTER_RERANK_MODEL is not configured")
-        if not self.enabled:
+        if self.mock_mode:
             return RerankResult(
                 ranked_indices=list(range(len(documents))),
                 scores=[1.0 / (index + 1) for index in range(len(documents))],
                 metadata=ProviderMetadata(provider="mock-openrouter", model=selected_model),
+            )
+        if self.settings.openrouter_api_key is None:
+            raise ProviderError(
+                "OPENROUTER_API_KEY is not configured; refusing to return mock rerank scores. "
+                "Set OPENROUTER_API_KEY or enable ALLOW_MOCK_PROVIDERS explicitly."
             )
         response = self._client.post(
             "/rerank",

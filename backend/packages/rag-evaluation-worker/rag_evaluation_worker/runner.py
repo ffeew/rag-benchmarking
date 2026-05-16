@@ -1,22 +1,22 @@
-from __future__ import annotations
-
 import logging
 import math
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any
+from collections.abc import Sequence
+from typing import Any
 
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
 from rag_common.eval_variants import apply_overrides
 from rag_common.job_state import commit_job_progress
 from rag_common.pricing import PricingResolver, load_pricing_overrides, merge_pricing
-from rag_common.schemas import QueryFilters, QueryRequest, RetrievalOverrides, RetrievalVariantSpec
+from rag_common.schemas import QueryFilters, QueryRequest, QueryResponse, RetrievalOverrides, RetrievalVariantSpec
 from rag_common.usage import TokenUsage
 from rag_retrieval.agents import judge_available
 from rag_retrieval.query import run_query
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from rag_evaluation_worker.metrics import (
     ChunkSnapshot,
@@ -39,12 +39,6 @@ from rag_evaluation_worker.scoring import (
     score_answer,
     strict_evidence_eligible,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from rag_common.schemas import QueryResponse
-    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -390,14 +384,10 @@ def _resolve_variants(run_config: dict[str, Any]) -> list[RetrievalVariantSpec]:
             raise ValueError("run_config['variants'] must be a list of variant specs")
         return [RetrievalVariantSpec.model_validate(item) for item in raw]
     legacy = run_config.get("system_variants") or _LEGACY_VARIANTS
-    return [
-        RetrievalVariantSpec(name=mode, retrieval_mode=mode, overrides=RetrievalOverrides()) for mode in legacy
-    ]
+    return [RetrievalVariantSpec(name=mode, retrieval_mode=mode, overrides=RetrievalOverrides()) for mode in legacy]
 
 
-def _detect_pairing_skew(
-    case_ids_per_variant: dict[str, set[str]], *, expected_cases: set[str]
-) -> dict[str, Any]:
+def _detect_pairing_skew(case_ids_per_variant: dict[str, set[str]], *, expected_cases: set[str]) -> dict[str, Any]:
     """Detect cases that succeeded for some variants but not others.
 
     Returns a structured summary used by the analyzer to either drop affected

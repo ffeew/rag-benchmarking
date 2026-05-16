@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
@@ -16,13 +14,8 @@ from rag_retrieval.agents import (
     build_agent,
     run_with_fallback,
 )
-from rag_retrieval.dataset_config import DatasetConfig
-
-if TYPE_CHECKING:
-    from pydantic_ai import Agent
-
-    from rag_retrieval.hybrid import RetrievedChunk
-
+from rag_retrieval.dataset_config import DEFAULT_CITATION_LABEL_TEMPLATE, DatasetConfig, format_citation
+from rag_retrieval.hybrid import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
@@ -156,23 +149,25 @@ def _snippet(text: str, limit: int = 600) -> str:
     return clean[: limit - 1].rstrip() + "..."
 
 
-def _evidence_label(item: RetrievedChunk, template: str | None = None) -> str:
-    from rag_retrieval.dataset_config import DEFAULT_CITATION_LABEL_TEMPLATE, format_citation
-
+def _evidence_label(item: RetrievedChunk, template: str = DEFAULT_CITATION_LABEL_TEMPLATE) -> str:
     return format_citation(
         entity=item.document.ticker,
         filing_date=item.document.filing_date,
         form_type=item.document.form_type,
         page=item.chunk.page_start,
-        template=template or DEFAULT_CITATION_LABEL_TEMPLATE,
+        template=template,
     )
 
 
-def _build_verifier_prompt(question: str, retrieved: list[RetrievedChunk]) -> str:
+def _build_verifier_prompt(
+    question: str,
+    retrieved: list[RetrievedChunk],
+    template: str = DEFAULT_CITATION_LABEL_TEMPLATE,
+) -> str:
     lines: list[str] = [f"QUESTION:\n{question}", "", "EVIDENCE:"]
     for index, item in enumerate(retrieved, start=1):
         lines.append(
-            f"{index}. chunk_id={item.chunk.id} {_evidence_label(item)} "
+            f"{index}. chunk_id={item.chunk.id} {_evidence_label(item, template)} "
             f"contains_table={item.chunk.contains_table}\n   {_snippet(item.chunk.text)}"
         )
     if not retrieved:
@@ -273,7 +268,10 @@ def verify_evidence(
 
     def run_agent() -> tuple[VerificationResult, TokenUsage]:
         agent = _verifier_agent(resolved)
-        result = agent.run_sync(_build_verifier_prompt(question, retrieved), deps=deps)
+        result = agent.run_sync(
+            _build_verifier_prompt(question, retrieved, config.citation_label_template),
+            deps=deps,
+        )
         usage = safe_pydantic_ai_usage(
             result,
             provider="zai",

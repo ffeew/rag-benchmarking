@@ -1,16 +1,16 @@
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
+from rag_common.schemas import QueryFilters
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
+from sqlalchemy.orm import Session
 
 from rag_retrieval.agents import (
     agent_available,
@@ -23,12 +23,6 @@ from rag_retrieval.dataset_config import (
     DatasetConfig,
     load_dataset_config,
 )
-
-if TYPE_CHECKING:
-    from pydantic_ai import Agent
-    from rag_common.schemas import QueryFilters
-    from sqlalchemy.orm import Session
-
 
 logger = logging.getLogger(__name__)
 
@@ -216,9 +210,7 @@ def _build_planner_agent_for(model_id: str) -> Agent[PlannerDeps, PlannerOutput]
     @agent.output_validator
     def validate_query_type(_ctx: RunContext[PlannerDeps], output: PlannerOutput) -> PlannerOutput:
         if output.query_type not in VALID_QUERY_TYPES:
-            raise ModelRetry(
-                f"query_type must be one of {list(VALID_QUERY_TYPES)}; got {output.query_type!r}."
-            )
+            raise ModelRetry(f"query_type must be one of {list(VALID_QUERY_TYPES)}; got {output.query_type!r}.")
         return output
 
     return agent
@@ -284,9 +276,7 @@ def infer_query_plan(
     treated as an override only when no config is given. Form types and metric terms
     are read from the config so non-SEC corpora are not biased to 10-K/10-Q/8-K.
     """
-    config = dataset_config or DatasetConfig.default_sec(
-        known_tickers=frozenset(known_tickers or ())
-    )
+    config = dataset_config or DatasetConfig.default_sec(known_tickers=frozenset(known_tickers or ()))
     upper_known = {ticker.upper() for ticker in config.known_tickers}
     words = {word.upper().replace(".", "-") for word in re.findall(r"[A-Za-z][A-Za-z0-9.-]{0,8}", question)}
     inferred_tickers = sorted(words & upper_known)

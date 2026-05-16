@@ -4,6 +4,8 @@ from typing import Any
 import structlog
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
+from rag_common.db.session import get_sessionmaker
+from rag_common.ingestion_run_state import record_ingestion_run_failure
 from rag_common.job_state import commit_job_progress
 from rag_common.providers.openrouter import OpenRouterClient
 from rag_common.storage.minio import ObjectStore
@@ -68,18 +70,30 @@ def get_or_create_ingestion_run(
         )
         if existing:
             return existing, False
-    run = models.IngestionRun(
-        dataset_id=document.dataset_id,
-        document_id=document.id,
-        job_id=job.id if job else None,
-        parser_config=config,
-        chunking_config=chunks,
-        embedding_model=embedding_model,
-        status="queued",
-    )
-    session.add(run)
-    session.flush()
-    return run, True
+
+    # Bootstrap-commit the new row on a SEPARATE transaction. The caller's
+    # session will hold uncommitted ParsedPage/Chunk/Embedding writes for
+    # the rest of the pipeline; committing the run row up-front makes it
+    # visible to the API/UI immediately and lets the task-level except
+    # mark it failed on yet another transaction if the pipeline raises.
+    maker = get_sessionmaker()
+    with maker() as bootstrap:
+        run = models.IngestionRun(
+            dataset_id=document.dataset_id,
+            document_id=document.id,
+            job_id=job.id if job else None,
+            parser_config=config,
+            chunking_config=chunks,
+            embedding_model=embedding_model,
+            status="queued",
+        )
+        bootstrap.add(run)
+        bootstrap.commit()
+        run_id = run.id
+
+    attached = session.get(models.IngestionRun, run_id)
+    assert attached is not None, "row was just committed on the same DB"  # noqa: S101 - sanity check on row we just committed
+    return attached, True
 
 
 def mark_job(
@@ -320,10 +334,13 @@ def run_document_ingestion(
         )
         return run
     except Exception as exc:
-        run.status = "failed"
-        run.error_summary = str(exc)
+        # The main session is about to roll back, so any mutation of `run`
+        # would be discarded. Mark the run and job failed via separate
+        # transactions instead. Both helpers refuse to clobber terminal
+        # statuses, so a follow-up call from the task-level except is a
+        # safe no-op.
+        record_ingestion_run_failure(run.id, str(exc))
         mark_job(session, job, status="failed", progress=100, step="failed", error=str(exc))
-        session.flush()
         log.exception(
             "pipeline_failed",
             exception_type=exc.__class__.__name__,

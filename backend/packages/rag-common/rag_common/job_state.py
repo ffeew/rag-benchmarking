@@ -18,6 +18,9 @@ serializes the read-then-write against any actor stronger than us.
 Shared by every worker that updates Job rows (``rag-ingestion-worker``,
 ``rag-evaluation-worker``, plus the sweeper in ``rag_benchmarking.workers``),
 so it lives in the rag-common shared kernel.
+
+See also ``rag_common.ingestion_run_state`` for the analogous helper that
+protects ``IngestionRun`` rows from the same rollback hazard.
 """
 
 from datetime import UTC, datetime

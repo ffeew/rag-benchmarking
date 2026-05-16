@@ -7,19 +7,15 @@ the equivalent sweeper test so the same invariant is enforced for both
 maintenance helpers.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
+import pytest
 from rag_common.db import models
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from rag_benchmarking.workers import retention
-
-if TYPE_CHECKING:
-    import pytest
-    from sqlalchemy.orm import Session
 
 
 def _make_trace(
@@ -77,9 +73,7 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def test_run_trace_retention_deletes_old_orphan_traces(
-    db_session: Session, seed_dataset: models.Dataset
-) -> None:
+def test_run_trace_retention_deletes_old_orphan_traces(db_session: Session, seed_dataset: models.Dataset) -> None:
     now = _now()
     old_orphan = _make_trace(db_session, seed_dataset, created_at=now - timedelta(days=45), question="old-orphan")
 
@@ -91,9 +85,7 @@ def test_run_trace_retention_deletes_old_orphan_traces(
     assert old_orphan.id not in remaining
 
 
-def test_run_trace_retention_preserves_referenced_traces(
-    db_session: Session, seed_dataset: models.Dataset
-) -> None:
+def test_run_trace_retention_preserves_referenced_traces(db_session: Session, seed_dataset: models.Dataset) -> None:
     now = _now()
     referenced = _make_trace(db_session, seed_dataset, created_at=now - timedelta(days=45), question="referenced")
     eval_run = _make_eval_run(db_session, seed_dataset)
@@ -107,9 +99,7 @@ def test_run_trace_retention_preserves_referenced_traces(
     assert referenced.id in remaining
 
 
-def test_run_trace_retention_preserves_fresh_traces(
-    db_session: Session, seed_dataset: models.Dataset
-) -> None:
+def test_run_trace_retention_preserves_fresh_traces(db_session: Session, seed_dataset: models.Dataset) -> None:
     now = _now()
     fresh = _make_trace(db_session, seed_dataset, created_at=now - timedelta(days=5), question="fresh")
 
@@ -121,9 +111,7 @@ def test_run_trace_retention_preserves_fresh_traces(
     assert fresh.id in remaining
 
 
-def test_run_trace_retention_honors_batch_limit(
-    db_session: Session, seed_dataset: models.Dataset
-) -> None:
+def test_run_trace_retention_honors_batch_limit(db_session: Session, seed_dataset: models.Dataset) -> None:
     now = _now()
     for index in range(5):
         _make_trace(db_session, seed_dataset, created_at=now - timedelta(days=45), question=f"orphan-{index}")
@@ -138,9 +126,7 @@ def test_run_trace_retention_honors_batch_limit(
     assert db_session.scalar(select(models.QueryTrace.id)) is None
 
 
-def test_run_trace_retention_reports_cutoff_iso(
-    db_session: Session, seed_dataset: models.Dataset
-) -> None:
+def test_run_trace_retention_reports_cutoff_iso(db_session: Session, seed_dataset: models.Dataset) -> None:
     fixed_now = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
 
     report = retention.run_trace_retention(db_session, now=fixed_now, retention_days=30)

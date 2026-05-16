@@ -5,18 +5,14 @@ Verifies that variant specs are materialized correctly, overrides reach
 ``overrides_applied`` land on every persisted ``EvalResult``.
 """
 
-from __future__ import annotations
+from typing import Any
 
-from typing import TYPE_CHECKING, Any
-
+import pytest
+from rag_common.config import Settings
 from rag_common.db import models
 from rag_common.schemas import QueryResponse
 from rag_evaluation_worker.runner import _detect_pairing_skew, _resolve_variants
-
-if TYPE_CHECKING:
-    import pytest
-    from rag_common.config import Settings
-    from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session
 
 
 def test_resolve_variants_reads_new_shape() -> None:
@@ -142,9 +138,7 @@ def test_runner_passes_overridden_settings_to_run_query(
     # Skip RAGAS in this test.
     monkeypatch.setattr(runner_module, "_attach_ragas_scores", lambda *a, **k: {})
     # Skip the parser/chunk diagnostics, which require ingestion artifacts.
-    monkeypatch.setattr(
-        runner_module, "_ingestion_diagnostics", lambda session, dataset_id: {}
-    )
+    monkeypatch.setattr(runner_module, "_ingestion_diagnostics", lambda session, dataset_id: {})
     # Also bypass commit_job_progress (talks to Redis).
     monkeypatch.setattr(runner_module, "commit_job_progress", lambda *a, **k: None)
 

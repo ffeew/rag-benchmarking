@@ -173,7 +173,7 @@ class MistralOcrClient:
         return OcrResult(
             pages=_parse_pages(data),
             raw=data,
-            provider="mistral",
+            provider="mistral-ocr",
             model=model,
         )
 

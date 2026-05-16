@@ -5,16 +5,12 @@ the evaluation runner's saved data — never SQLAlchemy ORM objects directly —
 be unit-tested without a database.
 """
 
-from __future__ import annotations
-
 import re
+from collections.abc import Sequence
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import Self
 
 from pydantic import BaseModel, Field
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 class ExpectedCitation(BaseModel):
@@ -67,7 +63,7 @@ class PlanFilters(BaseModel):
     filing_date_end: date | None = None
 
     @classmethod
-    def from_plan_dict(cls, plan: dict[str, object]) -> PlanFilters:
+    def from_plan_dict(cls, plan: dict[str, object]) -> Self:
         target_tickers = _coerce_str_list(plan.get("target_tickers"))
         forms = _coerce_str_list(plan.get("forms"))
         return cls(

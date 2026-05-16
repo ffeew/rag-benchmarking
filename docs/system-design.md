@@ -291,6 +291,8 @@ Citation format in API responses is structured. Human-readable rendering can use
 
 All non-health endpoints require Bearer token authentication. The React web app consumes these endpoints; the API remains the stable integration contract for tests, evals, and direct HTTP usage.
 
+**Single-tenant trust model.** `API_BEARER_TOKEN` is a single shared credential with full read/write/delete authority over every dataset, document, ingestion job, and evaluation run in the deployment. There is no per-user / per-dataset ownership. In particular, any holder of the token can mutate any dataset's `domain_label`, `entity_label`, `hyde_style_hint`, and other prompt-shaping overrides via `PATCH /v1/datasets/{id}`; those overrides are then injected into every LLM agent call against that dataset and affect *all* subsequent queries from any caller. Treat the token as a high-privilege secret — do not share it across users who should not be able to influence each other's query results.
+
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /v1/datasets` | Create dataset namespace. |

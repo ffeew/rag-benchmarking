@@ -90,7 +90,7 @@ curl -sS -X POST http://localhost:8000/v1/datasets \
 
 The implementation report (`docs/implementation-report.md`) cites aggregate
 retrieval, generation, and ablation metrics computed against the verified
-eval set in `backend/eval_cases/sec_filings_v1.yaml` (63 cases across 9
+eval set in `backend/eval_cases/sec_filings_v1.yaml` (99 cases across 9
 categories, all grounded in PDFs under `sec_filings_pdf/`). To reproduce:
 
 ```bash

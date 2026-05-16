@@ -8,14 +8,13 @@ Benjamini-Hochberg FDR-adjusted q-values across the primary endpoint family.
 Pre-registration lives at ``docs/eval/ablation_v1_plan.md``.
 """
 
-from __future__ import annotations
-
 import csv
 import io
 import math
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from rag_evaluation_worker.paired_stats import (
     benjamini_hochberg,
@@ -25,9 +24,6 @@ from rag_evaluation_worker.paired_stats import (
     paired_cohens_d,
     wilcoxon_signed_rank,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
 
 # --- Endpoint catalogue ----------------------------------------------------
 
@@ -197,9 +193,7 @@ def build_paired_matrix(
         return [], {variant: [] for variant in variants}
     shared = set.intersection(*case_sets) if all(case_sets) else set()
     ordered_cases = sorted(shared)
-    matrix = {
-        variant: [per_variant[variant][case_id] for case_id in ordered_cases] for variant in variants
-    }
+    matrix = {variant: [per_variant[variant][case_id] for case_id in ordered_cases] for variant in variants}
     return ordered_cases, matrix
 
 
@@ -255,9 +249,7 @@ def _run_pair(
     if metric in LOG_ENDPOINTS:
         a_log = [_safe_log(v) for v in baseline_values]
         b_log = [_safe_log(v) for v in treatment_values]
-        diff_log, ci_lo_log, ci_hi_log = paired_bootstrap_diff_ci(
-            a_log, b_log, seed=seed, samples=bootstrap_samples
-        )
+        diff_log, ci_lo_log, ci_hi_log = paired_bootstrap_diff_ci(a_log, b_log, seed=seed, samples=bootstrap_samples)
         w, p = wilcoxon_signed_rank(a_log, b_log, alternative=alternative)
         return PairResult(
             metric=metric,
@@ -354,14 +346,7 @@ def run_ablation_analysis(
 
     rows = _per_case_rows(artifact)
     metrics_aggregate = artifact.get("metrics") or {}
-    variants = sorted(
-        {
-            _variant_of(row) or ""
-            for row in rows
-            if _variant_of(row) is not None
-        }
-        - {""}
-    )
+    variants = sorted({_variant_of(row) or "" for row in rows if _variant_of(row) is not None} - {""})
     if baseline not in variants:
         raise ValueError(f"baseline {baseline!r} not in artifact variants {variants!r}")
     treatments = [v for v in variants if v != baseline]
@@ -375,15 +360,13 @@ def run_ablation_analysis(
             baseline_values = matrix.get(baseline, [])
             treatment_values = matrix.get(treatment, [])
             key = f"{endpoint}:{baseline}->{treatment}"
-            excluded[key] = len([row for row in rows if _variant_of(row) in {baseline, treatment}]) // 2 - len(
-                case_ids
-            )
+            excluded[key] = len([row for row in rows if _variant_of(row) in {baseline, treatment}]) // 2 - len(case_ids)
             if not baseline_values:
                 continue
             # Pre-registered hypothesis is `baseline > treatment`. In the
             # ``(a=baseline, b=treatment)`` framing this means testing whether
             # ``(b - a) < 0``, i.e. ``alternative="less"`` for primaries.
-            alternative = "less" if (primary and one_sided) else "two-sided"
+            alternative: Literal["two-sided", "greater", "less"] = "less" if (primary and one_sided) else "two-sided"
             all_pairs.append(
                 _run_pair(
                     baseline_values,
@@ -442,7 +425,11 @@ def run_ablation_analysis(
         case_count=len({row.get("eval_case_id") for row in rows if row.get("eval_case_id")}),
         excluded_cases=excluded,
         methodology_notes=notes,
-        pairing_skew=metrics_aggregate.get("pairing_skew") if isinstance(metrics_aggregate, dict) else {},
+        pairing_skew=(
+            metrics_aggregate.get("pairing_skew", {})
+            if isinstance(metrics_aggregate, dict) and isinstance(metrics_aggregate.get("pairing_skew"), dict)
+            else {}
+        ),
     )
 
 
@@ -553,13 +540,9 @@ def render_markdown(report: AblationReport) -> str:
     lines: list[str] = []
     lines.append("# Ablation v1 — full_agentic component knockouts")
     lines.append("")
+    lines.append(f"**Run ID**: `{report.run_id}`   **Cases**: {report.case_count}   **Baseline**: `{report.baseline}`")
     lines.append(
-        f"**Run ID**: `{report.run_id}`   **Cases**: {report.case_count}   "
-        f"**Baseline**: `{report.baseline}`"
-    )
-    lines.append(
-        f"**Pre-registration**: docs/eval/ablation_v1_plan.md   **Seed**: 1729   "
-        f"**Variants**: {len(report.variants)}"
+        f"**Pre-registration**: docs/eval/ablation_v1_plan.md   **Seed**: 1729   **Variants**: {len(report.variants)}"
     )
     if report.pairing_skew and not report.pairing_skew.get("balanced", True):
         lines.append("")
@@ -655,8 +638,10 @@ def render_markdown(report: AblationReport) -> str:
             entries = report.subgroup_results[subgroup_key]
             if not entries:
                 continue
-            lines.append(f"### {subgroup_key} (n_paired ∈ [{min(e.n_paired for e in entries)}, "
-                         f"{max(e.n_paired for e in entries)}])")
+            lines.append(
+                f"### {subgroup_key} (n_paired ∈ [{min(e.n_paired for e in entries)}, "
+                f"{max(e.n_paired for e in entries)}])"
+            )
             lines.append("")
             lines.append("| Metric | Contrast | Δ | 95% CI | Cliff's δ |")
             lines.append("| --- | --- | --- | --- | --- |")
@@ -745,9 +730,7 @@ def render_csv(report: AblationReport) -> str:
             "geometric_mean_ratio",
         ]
     )
-    all_results = list(report.pair_results) + [
-        pr for entries in report.subgroup_results.values() for pr in entries
-    ]
+    all_results = list(report.pair_results) + [pr for entries in report.subgroup_results.values() for pr in entries]
     for pr in all_results:
         writer.writerow(
             [

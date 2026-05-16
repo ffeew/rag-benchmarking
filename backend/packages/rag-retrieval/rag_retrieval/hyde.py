@@ -7,22 +7,19 @@ default SEC corpus the resulting passages still match filing tone via the runtim
 ``CORPUS:`` and ``STYLE_HINT:`` lines.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
-from pydantic_ai import RunContext  # noqa: TC002 - resolved at runtime by @agent.instructions via get_type_hints
+from pydantic_ai import (
+    Agent,
+    RunContext,  # noqa: TC002 - resolved at runtime by @agent.instructions via get_type_hints
+)
 from rag_common.config import Settings, get_settings
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
 from rag_retrieval.agents import AGENT_RETRYABLE_ERRORS, agent_available, build_agent
 from rag_retrieval.dataset_config import DatasetConfig
-
-if TYPE_CHECKING:
-    from pydantic_ai import Agent
 
 logger = logging.getLogger(__name__)
 

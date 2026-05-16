@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQueries } from '@tanstack/react-query'
 import { createFileRoute, Link, useSearch } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useMemo } from 'react'
@@ -36,13 +36,13 @@ function EvalCompare() {
   const search = useSearch({ from: '/datasets/$datasetId/evaluations/compare' })
   const ids = (search.runs ?? '').split(',').filter(Boolean)
 
-  const queries = ids.map((id) =>
-    useQuery({
+  const queries = useQueries({
+    queries: ids.map((id) => ({
       queryKey: qk.evaluations.detail(id),
       queryFn: () => api.evaluation(token, id),
       enabled: isAuthed && Boolean(id),
-    }),
-  )
+    })),
+  })
 
   const loaded = queries.every((q) => q.data) && queries.length > 0
   const error = queries.find((q) => q.error)?.error

@@ -1,9 +1,48 @@
+import re
 from datetime import date, datetime
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from rag_common.usage import RoleUsage
+
+_CITATION_TEMPLATE_PLACEHOLDERS = {"entity", "filing_date", "form_type", "page"}
+_CITATION_TEMPLATE_SUBSTITUTION = re.compile(r"\{([^{}]*)\}")
+_CITATION_TEMPLATE_MAX_RENDERED = 1024
+
+
+def _validate_citation_label_template(value: str | None) -> str | None:
+    """Reject templates that crash ``str.format`` at query time or escape into attribute traversal.
+
+    Returns the value unchanged on success. Raises ``ValueError`` (surfaced as 422 by FastAPI) on:
+    - placeholders containing ``.`` or ``[`` (block attribute walk and indexing)
+    - unknown placeholder names (only entity, filing_date, form_type, page are supplied)
+    - missing-key / unbalanced-brace errors from a dry-run format
+    - rendered output exceeding ``_CITATION_TEMPLATE_MAX_RENDERED`` chars (width-spec DoS)
+    """
+    if value is None:
+        return value
+    for match in _CITATION_TEMPLATE_SUBSTITUTION.finditer(value):
+        spec = match.group(1)
+        name = spec.split(":", 1)[0]
+        if "." in name or "[" in name:
+            raise ValueError(
+                "citation_label_template substitutions may not use attribute access ('.') or indexing ('[')"
+            )
+        if name and name not in _CITATION_TEMPLATE_PLACEHOLDERS:
+            raise ValueError(
+                f"citation_label_template references unknown placeholder {name!r}; "
+                f"allowed: {sorted(_CITATION_TEMPLATE_PLACEHOLDERS)}"
+            )
+    try:
+        rendered = value.format(entity="X", filing_date="2025-01-01", form_type="X", page=1)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ValueError(f"citation_label_template is not a valid format string: {exc}") from exc
+    if len(rendered) > _CITATION_TEMPLATE_MAX_RENDERED:
+        raise ValueError(
+            f"citation_label_template renders to {len(rendered)} chars; max is {_CITATION_TEMPLATE_MAX_RENDERED}"
+        )
+    return value
 
 
 class Page[T](BaseModel):
@@ -14,15 +53,19 @@ class Page[T](BaseModel):
 
 
 class DatasetCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=2048)
     default_query_settings: dict[str, Any] = Field(default_factory=dict)
     domain_label: str | None = Field(default=None, max_length=512)
     entity_label: str | None = Field(default=None, max_length=64)
-    valid_forms: list[str] | None = None
-    metric_terms: list[str] | None = None
-    hyde_style_hint: str | None = None
+    valid_forms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
+    metric_terms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
+    hyde_style_hint: str | None = Field(default=None, max_length=2048)
     citation_label_template: str | None = Field(default=None, max_length=256)
+
+    _validate_citation_template = field_validator("citation_label_template")(_validate_citation_label_template)
 
 
 class DatasetRead(BaseModel):
@@ -54,14 +97,16 @@ class DatasetUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=2048)
     default_query_settings: dict[str, Any] | None = None
     domain_label: str | None = Field(default=None, max_length=512)
     entity_label: str | None = Field(default=None, max_length=64)
-    valid_forms: list[str] | None = None
-    metric_terms: list[str] | None = None
-    hyde_style_hint: str | None = None
+    valid_forms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
+    metric_terms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
+    hyde_style_hint: str | None = Field(default=None, max_length=2048)
     citation_label_template: str | None = Field(default=None, max_length=256)
+
+    _validate_citation_template = field_validator("citation_label_template")(_validate_citation_label_template)
 
 
 class DocumentRead(BaseModel):
@@ -96,29 +141,25 @@ class DocumentUpdate(BaseModel):
     fiscal_quarter: int | None = None
 
 
-class ParsedPageRead(BaseModel):
-    page_number: int
-    text: str
-    text_char_count: int
-    table_count: int
-
-
-class DocumentExtracted(BaseModel):
-    document_id: str
-    ingestion_run_id: str
-    pages: list[ParsedPageRead]
+class PresignedUrl(BaseModel):
+    url: str
+    expires_at: datetime
 
 
 class RegisterLocalCorpusRequest(BaseModel):
-    dataset_name: str = "sec-filings"
-    description: str | None = "SEC filing PDFs registered from the local corpus."
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_name: str = Field(default="sec-filings", min_length=1, max_length=200)
+    description: str | None = Field(default="SEC filing PDFs registered from the local corpus.", max_length=2048)
     path: str | None = None
-    domain_label: str | None = None
-    entity_label: str | None = None
-    valid_forms: list[str] | None = None
-    metric_terms: list[str] | None = None
-    hyde_style_hint: str | None = None
-    citation_label_template: str | None = None
+    domain_label: str | None = Field(default=None, max_length=512)
+    entity_label: str | None = Field(default=None, max_length=64)
+    valid_forms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
+    metric_terms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
+    hyde_style_hint: str | None = Field(default=None, max_length=2048)
+    citation_label_template: str | None = Field(default=None, max_length=256)
+
+    _validate_citation_template = field_validator("citation_label_template")(_validate_citation_label_template)
 
 
 class RegisterDocumentsResponse(BaseModel):
@@ -434,9 +475,7 @@ class EvaluationCreate(BaseModel):
                 "`variants` supersedes `system_variants` when set; pass only one."
             )
         if not explicit:
-            self.variants = [
-                RetrievalVariantSpec(name=mode, retrieval_mode=mode) for mode in self.system_variants
-            ]
+            self.variants = [RetrievalVariantSpec(name=mode, retrieval_mode=mode) for mode in self.system_variants]
         names = [v.name for v in self.variants or []]
         if len(set(names)) != len(names):
             raise ValueError(f"variant names must be unique; got {names}")

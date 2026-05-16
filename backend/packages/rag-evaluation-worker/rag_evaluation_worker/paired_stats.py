@@ -13,8 +13,6 @@ Conventions:
   same artifact + seed always produces the same numbers.
 """
 
-from __future__ import annotations
-
 import math
 import random
 from itertools import product

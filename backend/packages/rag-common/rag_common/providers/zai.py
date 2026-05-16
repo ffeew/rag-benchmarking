@@ -18,9 +18,7 @@ class ZaiClient:
     @property
     def enabled(self) -> bool:
         return bool(
-            self.settings.zai_api_key
-            and not self.settings.allow_mock_providers
-            and self.settings.zai_chat_model
+            self.settings.zai_api_key and not self.settings.allow_mock_providers and self.settings.zai_chat_model
         )
 
     def _headers(self) -> dict[str, str]:

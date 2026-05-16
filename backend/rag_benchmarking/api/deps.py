@@ -1,3 +1,4 @@
+import secrets
 from collections.abc import Generator
 from typing import Annotated
 
@@ -37,7 +38,7 @@ def require_bearer_token(
             detail="Missing bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if credentials.credentials != expected:
+    if not secrets.compare_digest(credentials.credentials, expected):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid bearer token",

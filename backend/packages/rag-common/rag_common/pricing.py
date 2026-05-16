@@ -1,15 +1,12 @@
 """Provider pricing table and cost estimation."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import yaml
 from pydantic import BaseModel, Field, NonNegativeFloat
 
-if TYPE_CHECKING:
-    from rag_common.usage import Role, TokenUsage
+from rag_common.usage import Role, TokenUsage
 
 
 class ModelPrice(BaseModel):

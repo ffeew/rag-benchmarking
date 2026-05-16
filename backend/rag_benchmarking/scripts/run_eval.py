@@ -117,7 +117,7 @@ def _load_variants_file(path: Path) -> list[RetrievalVariantSpec]:
     text = path.read_text(encoding="utf-8")
     if path.suffix in {".yaml", ".yml"}:
         try:
-            import yaml  # type: ignore[import-not-found]
+            import yaml
         except ImportError as exc:  # pragma: no cover - yaml is a transitive dep
             raise SystemExit("YAML variants files require PyYAML; pass JSON instead") from exc
         raw = yaml.safe_load(text)
@@ -291,14 +291,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("Pass at most one of --ablation-preset / --variants-file")
     if args.ablation_preset:
         variant_specs = list(ABLATION_PRESETS[args.ablation_preset])
-        logger.info(
-            "ablation_preset=%s variants=%s", args.ablation_preset, [spec.name for spec in variant_specs]
-        )
+        logger.info("ablation_preset=%s variants=%s", args.ablation_preset, [spec.name for spec in variant_specs])
     elif args.variants_file:
         variant_specs = _load_variants_file(args.variants_file)
-        logger.info(
-            "variants_file=%s variants=%s", args.variants_file, [spec.name for spec in variant_specs]
-        )
+        logger.info("variants_file=%s variants=%s", args.variants_file, [spec.name for spec in variant_specs])
     variants = [v.strip() for v in args.variants.split(",") if v.strip()]
 
     if args.existing_run_id:

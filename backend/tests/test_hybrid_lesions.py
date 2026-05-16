@@ -5,8 +5,6 @@ true lexical-only / semantic-only retrieval, without spuriously executing the
 disabled channel's network call or SQL query.
 """
 
-from __future__ import annotations
-
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -41,7 +39,7 @@ def _empty_plan() -> RetrievalPlan:
         filing_date_end=None,
         metrics=[],
         subquestions=[],
-        query_type=None,
+        query_type="fact_lookup",
         latest=False,
         ambiguity=None,
         reasoning=None,
@@ -63,6 +61,7 @@ def test_semantic_only_skips_lexical_sql(monkeypatch: pytest.MonkeyPatch) -> Non
     session = _fake_session()
 
     embed_calls: list[Any] = []
+
     def fake_embeddings(self: Any, texts: list[str], **_: Any) -> EmbeddingResult:
         embed_calls.append(texts)
         return EmbeddingResult(

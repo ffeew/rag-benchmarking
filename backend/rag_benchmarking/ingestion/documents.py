@@ -7,6 +7,7 @@ from rag_retrieval.dataset_config import (
     DEFAULT_CITATION_LABEL_TEMPLATE,
     DEFAULT_ENTITY_LABEL,
     DEFAULT_METRIC_TERMS,
+    DEFAULT_SEC_DOMAIN_LABEL,
     DEFAULT_VALID_FORMS,
 )
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from rag_benchmarking.ingestion.metadata import parse_filing_filename, raw_object_key, sha256_file
 
 SEC_DATASET_NAME = "sec-filings"
-SEC_DOMAIN_LABEL = "SEC filings of US public companies"
+SEC_DOMAIN_LABEL = DEFAULT_SEC_DOMAIN_LABEL
 
 
 def get_or_create_dataset(

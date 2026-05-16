@@ -1,17 +1,13 @@
 """Verify temperature=0 is plumbed through chat + pydantic-ai agents."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
+import pytest
 from pydantic import SecretStr
 from rag_common.config import Settings
 from rag_common.providers.zai import ZaiClient
 from rag_retrieval.agents import deterministic_model_settings
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def _real_settings(*, temp_zero: bool = True) -> Settings:
@@ -80,7 +76,7 @@ def test_deterministic_model_settings_returns_zero_when_enabled() -> None:
     result = deterministic_model_settings(settings)
     # ModelSettings is a TypedDict at runtime — assert structure, not isinstance.
     assert result is not None
-    assert result["temperature"] == 0  # type: ignore[index]
+    assert result["temperature"] == 0
 
 
 def test_deterministic_model_settings_is_none_when_disabled() -> None:

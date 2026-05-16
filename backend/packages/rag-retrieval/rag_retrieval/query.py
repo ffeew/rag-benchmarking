@@ -176,9 +176,6 @@ def run_query(
 ) -> QueryResponse:
     resolved = settings or get_settings()
     start = time.perf_counter()
-    dataset = session.get(models.Dataset, request.dataset_id)
-    if dataset is None:
-        raise ValueError(f"Dataset {request.dataset_id} was not found")
     dataset_config = load_dataset_config(session, request.dataset_id)
     top_k = request.top_k or resolved.evidence_top_k
 

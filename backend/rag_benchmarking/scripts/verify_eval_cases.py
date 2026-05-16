@@ -24,8 +24,6 @@ Writes a Markdown report with one row per case, marking PASS / FAIL and listing
 the failing reasons. Returns exit code 1 if any case fails.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import re
@@ -58,15 +56,17 @@ _UNIT_ALIASES: dict[str, set[str]] = {
 }
 
 
-_LIGATURE_FIXUP = str.maketrans({
-    "ﬁ": "fi",
-    "ﬂ": "fl",
-    "ﬀ": "ff",
-    "ﬃ": "ffi",
-    "ﬄ": "ffl",
-    "ﬆ": "st",
-    "ﬅ": "st",
-})
+_LIGATURE_FIXUP = str.maketrans(
+    {
+        "ﬁ": "fi",
+        "ﬂ": "fl",
+        "ﬀ": "ff",
+        "ﬃ": "ffi",
+        "ﬄ": "ffl",
+        "ﬆ": "st",
+        "ﬅ": "st",
+    }
+)
 
 
 def _denormalize_pdf_text(s: str) -> str:
@@ -162,9 +162,7 @@ def _expected_variants(
     if unit not in _DOLLAR_UNIT_SCALE:
         return [(expected, unit, tolerance_abs)]
     base_million = expected * _DOLLAR_UNIT_SCALE[unit]
-    base_tol_million = (
-        tolerance_abs * _DOLLAR_UNIT_SCALE[unit] if tolerance_abs is not None else None
-    )
+    base_tol_million = tolerance_abs * _DOLLAR_UNIT_SCALE[unit] if tolerance_abs is not None else None
     out: list[tuple[float, str | None, float | None]] = []
     for alt_unit, scale in _DOLLAR_UNIT_SCALE.items():
         scaled_value = base_million / scale
@@ -184,10 +182,7 @@ def _numeric_value_present(
 ) -> bool:
     candidates = _extract_numbers(text)
     for variant_value, variant_unit, variant_tol_abs in _expected_variants(expected, unit, tolerance_abs):
-        if variant_unit:
-            filtered = [c for c in candidates if _unit_matches(variant_unit, c.unit_text)]
-        else:
-            filtered = candidates
+        filtered = [c for c in candidates if _unit_matches(variant_unit, c.unit_text)] if variant_unit else candidates
         tolerance = _numeric_tolerance(variant_value, variant_tol_abs, tolerance_pct)
         if any(abs(c.value - variant_value) <= tolerance for c in filtered):
             return True
@@ -242,7 +237,7 @@ def _page_text(pdf: pypdf.PdfReader, page_number: int) -> str | None:
         return None
     try:
         return pdf.pages[page_number - 1].extract_text() or ""
-    except Exception as exc:  # pypdf can raise on a handful of pages
+    except Exception as exc:  # noqa: BLE001 - pypdf raises a wide variety of errors on malformed pages
         logger.warning("page_extract_failed page=%d err=%s", page_number, exc)
         return None
 
@@ -288,9 +283,8 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
     # Insufficient evidence: citations are optional (e.g., partial-disclosure).
     # If citations exist we still verify the cited page is real, but the
     # expected_values list should be empty.
-    if answer_type == "insufficient":
-        if expected_values:
-            failures.append("insufficient case has non-empty expected_values")
+    if answer_type == "insufficient" and expected_values:
+        failures.append("insufficient case has non-empty expected_values")
         # Negative coverage: assert the corpus genuinely lacks the asked-about
         # ticker/period when the tags suggest it (best-effort).
 
@@ -328,16 +322,12 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
         if filing_date is not None:
             actual_date = _filing_date_from_filename(pdf_path)
             if actual_date != filing_date:
-                failures.append(
-                    f"filing_date {filing_date} does not match filename {pdf_path.name}"
-                )
+                failures.append(f"filing_date {filing_date} does not match filename {pdf_path.name}")
 
         if is_latest_case:
             latest = _latest_filing_for(pdf_root, ticker, form_type)
             if latest is not None and latest != pdf_path:
-                failures.append(
-                    f"latest_filing case cites {pdf_path.name} but newest in corpus is {latest.name}"
-                )
+                failures.append(f"latest_filing case cites {pdf_path.name} but newest in corpus is {latest.name}")
 
         if page_number is None:
             notes.append(f"evidence has no page_number for {pdf_path.name}")
@@ -345,7 +335,7 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
 
         try:
             pdf = pypdf.PdfReader(str(pdf_path))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - pypdf raises a wide variety of errors on malformed PDFs
             failures.append(f"cannot open {pdf_path.name}: {exc}")
             continue
 
@@ -388,9 +378,7 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
                     found = True
                     break
             if not found:
-                msg = (
-                    f"value_numeric {value_numeric} (unit={unit}) for label={label!r} not found on any cited page"
-                )
+                msg = f"value_numeric {value_numeric} (unit={unit}) for label={label!r} not found on any cited page"
                 if synthesized:
                     notes.append(f"synthesized: {msg}")
                 else:
@@ -409,9 +397,7 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
                 stamp = needle_norm.replace("-", "")
                 found = any(stamp in str(p) for p in pdf_root.rglob("*.pdf"))
             if not found:
-                msg = (
-                    f"value_text {value_text!r} for label={label!r} not found on any cited page or filename"
-                )
+                msg = f"value_text {value_text!r} for label={label!r} not found on any cited page or filename"
                 if synthesized:
                     notes.append(f"synthesized: {msg}")
                 else:
@@ -430,7 +416,7 @@ def render_report(results: list[CaseResult], yaml_path: Path) -> str:
     lines: list[str] = []
     total = len(results)
     failed = [r for r in results if r.status == "FAIL"]
-    lines.append(f"# Eval cases verification report")
+    lines.append("# Eval cases verification report")
     lines.append("")
     lines.append(f"Source: `{yaml_path}`")
     lines.append("")

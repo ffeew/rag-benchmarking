@@ -398,10 +398,7 @@ function DocumentsPage() {
                         {d.minio_key}
                       </TD>
                       <TD onClick={(e) => e.stopPropagation()}>
-                        <DocumentRowMenu
-                          datasetId={datasetId}
-                          documentId={d.id}
-                        />
+                        <DocumentRowMenu documentId={d.id} />
                       </TD>
                     </TR>
                   )
@@ -433,19 +430,19 @@ function DocumentsPage() {
   )
 }
 
-function DocumentRowMenu({
-  datasetId,
-  documentId,
-}: {
-  datasetId: string
-  documentId: string
-}) {
-  function openInNewTab(suffix: 'original' | 'extracted') {
-    const href = `/datasets/${datasetId}/documents/${documentId}/${suffix}`
-    // Same-origin window.open lets the new tab inherit sessionStorage so
-    // the bearer token survives the navigation. Omit `noopener`.
-    window.open(href, '_blank')
-  }
+function DocumentRowMenu({ documentId }: { documentId: string }) {
+  const { token } = useToken()
+  const openMutation = useMutation({
+    mutationFn: (kind: 'original' | 'extracted') =>
+      kind === 'original'
+        ? api.documentFilePresignedUrl(token, documentId)
+        : api.documentExtractedPresignedUrl(token, documentId),
+    onSuccess: ({ url }) => {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    },
+    onError: (err) => toastApiError(err, 'Failed to open document'),
+  })
+  const inflight = openMutation.isPending
   return (
     <DropdownMenu>
       <DropdownTrigger asChild>
@@ -458,11 +455,17 @@ function DocumentRowMenu({
         </button>
       </DropdownTrigger>
       <DropdownContent>
-        <DropdownItem onSelect={() => openInNewTab('original')}>
+        <DropdownItem
+          disabled={inflight}
+          onSelect={() => openMutation.mutate('original')}
+        >
           <FileText className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
           View original document
         </DropdownItem>
-        <DropdownItem onSelect={() => openInNewTab('extracted')}>
+        <DropdownItem
+          disabled={inflight}
+          onSelect={() => openMutation.mutate('extracted')}
+        >
           <FileSearch className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
           View extracted document
         </DropdownItem>

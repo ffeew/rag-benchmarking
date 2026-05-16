@@ -1,17 +1,12 @@
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from chonkie import RecursiveChunker, TableChunker
 from rag_common.config import Settings, get_settings
-
-if TYPE_CHECKING:
-    from rag_common.db.models import ParsedPage
-
+from rag_common.db.models import ParsedPage
 
 logger = logging.getLogger(__name__)
 

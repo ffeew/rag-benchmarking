@@ -1,24 +1,17 @@
-from __future__ import annotations
-
 import logging
+from collections.abc import Callable
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 import httpx
 from pydantic_ai import Agent, UserError
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import ProviderError
 from rag_common.usage import TokenUsage
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from pydantic_ai.models import Model
-
 
 logger = logging.getLogger(__name__)
 

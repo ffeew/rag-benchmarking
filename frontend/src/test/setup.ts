@@ -6,7 +6,7 @@ afterEach(() => {
 })
 
 // jsdom does not implement matchMedia; some components read it during mount.
-if (typeof window !== 'undefined' && !window.matchMedia) {
+if (typeof window !== 'undefined' && !('matchMedia' in window)) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({

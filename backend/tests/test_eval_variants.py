@@ -1,7 +1,5 @@
 """Schema-level tests for the per-variant retrieval-config overrides."""
 
-from __future__ import annotations
-
 import pytest
 from pydantic import SecretStr, ValidationError
 from rag_common.config import Settings

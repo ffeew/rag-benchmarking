@@ -3,6 +3,7 @@ import json
 import time
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,11 @@ def get_minio_client(settings: Settings | None = None) -> Minio:
         access_key=resolved.minio_access_key,
         secret_key=resolved.minio_secret_key.get_secret_value(),
         secure=resolved.minio_secure,
+        # Pinning the region avoids a synchronous GetBucketLocation network
+        # call the SDK otherwise makes the first time it has to sign a v4
+        # request — important for presigning, where a missing region causes
+        # a slow round-trip per process. MinIO defaults to us-east-1.
+        region="us-east-1",
     )
 
 
@@ -38,6 +44,24 @@ class ObjectStore:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self.client = get_minio_client(self.settings)
+        self._public_client: Minio | None = None
+
+    def _presign_client(self) -> Minio:
+        # Presigned URLs embed the endpoint hostname. Inside docker compose
+        # minio_endpoint is "minio:9000", which the browser can't resolve, so
+        # mint signatures with a separate client bound to a host-reachable
+        # address when minio_public_endpoint is configured.
+        if self.settings.minio_public_endpoint is None:
+            return self.client
+        if self._public_client is None:
+            self._public_client = Minio(
+                self.settings.minio_public_endpoint,
+                access_key=self.settings.minio_access_key,
+                secret_key=self.settings.minio_secret_key.get_secret_value(),
+                secure=self.settings.minio_secure,
+                region="us-east-1",
+            )
+        return self._public_client
 
     def ensure_buckets(self) -> None:
         for bucket in {self.settings.raw_document_bucket, self.settings.artifact_bucket}:
@@ -156,3 +180,19 @@ class ObjectStore:
                 return False
             raise
         return True
+
+    def get_presigned_url(
+        self,
+        *,
+        bucket: str,
+        key: str,
+        version_id: str | None = None,
+        expires_seconds: int = 900,
+    ) -> str:
+        client = self._presign_client()
+        return client.presigned_get_object(
+            bucket,
+            key,
+            expires=timedelta(seconds=expires_seconds),
+            version_id=version_id,
+        )
