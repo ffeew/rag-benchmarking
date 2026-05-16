@@ -271,6 +271,107 @@ def test_agent_budget_exhaustion_falls_back_to_heuristic(monkeypatch: pytest.Mon
     assert result.tool_calls[0]["tool"] == "heuristic-hybrid_retrieve"
 
 
+def test_agent_recovers_from_two_modelretries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With tool_retries=2, the agent survives two ModelRetry raises before a clean call.
+
+    Uses pydantic-ai's real retry machinery via FunctionModel (the _FakeAgent fixture used
+    elsewhere short-circuits the tool_manager and never exercises the retry counter). The
+    script: model emits a bad-filter tool call twice (each raises ModelRetry from
+    perform_retrieve_evidence's filter check), then a good-filter call (succeeds), then
+    the final RetrievalAgentOutput. With tool_retries=1 (pre-fix) the second ModelRetry
+    would raise UnexpectedModelBehavior; with tool_retries=2 the third call goes through.
+    """
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    chunks = [_chunk("aapl-1", "AAPL", 10)]
+    _stub_hybrid_retrieve(monkeypatch, {"AAPL": chunks})
+
+    state = {"turn": 0}
+
+    def model_fn(_messages: object, info: AgentInfo) -> ModelResponse:
+        state["turn"] += 1
+        if state["turn"] <= 2:
+            # Bad ticker - perform_retrieve_evidence raises ModelRetry from the filter check.
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="retrieve_evidence",
+                        args={
+                            "query": "Apple R&D",
+                            "tickers": [f"FAKE{state['turn']}"],
+                            "use_hyde": False,
+                        },
+                        tool_call_id=f"call-{state['turn']}",
+                    )
+                ]
+            )
+        if state["turn"] == 3:
+            # Good ticker - tool returns chunks normally.
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="retrieve_evidence",
+                        args={"query": "Apple R&D", "tickers": ["AAPL"], "use_hyde": False},
+                        tool_call_id="call-3",
+                    )
+                ]
+            )
+        # Final turn: emit RetrievalAgentOutput via the agent's output tool.
+        output_tool_name = info.output_tools[0].name
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name=output_tool_name,
+                    args={
+                        "selected_chunk_ids": ["aapl-1"],
+                        "target_tickers": ["AAPL"],
+                        "forms": [],
+                        "query_type": "fact_lookup",
+                        "latest": False,
+                        "confidence": 0.8,
+                        "reasoning": "Recovered after two filter-rejection retries.",
+                    },
+                    tool_call_id="call-final",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(retrieval_tool, "build_chat_model", lambda _settings=None: FunctionModel(model_fn))
+
+    settings = cast(
+        "Settings",
+        SimpleNamespace(
+            allow_mock_providers=False,
+            openrouter_api_key=SimpleNamespace(get_secret_value=lambda: "sk-or"),
+            openrouter_embedding_model="mock-embedding",
+            zai_api_key=SimpleNamespace(get_secret_value=lambda: "sk-zai"),
+            zai_chat_model="glm-4.7",
+            zai_base_url="https://api.z.ai/api/paas/v4",
+            evidence_top_k=8,
+            hyde_enabled=False,
+            embedding_dimension=1024,
+            retrieval_agent_tool_call_budget=4,
+            eval_temperature_zero=False,
+        ),
+    )
+    result, metadata, _usage = run_retrieval_agent(
+        cast("Any", SimpleNamespace()),
+        dataset_id="d1",
+        question="What did Apple spend on R&D?",
+        filters=QueryFilters(),
+        known_tickers={"AAPL"},
+        settings=settings,
+    )
+
+    assert metadata["agent_used"] is True
+    # Two filter-rejection retries surface in tool_calls (plus one successful call = 3 total).
+    assert metadata["tool_call_count"] == 3
+    assert metadata["tool_retry_count"] == 2
+    assert [call.get("error_class") for call in result.tool_calls] == ["ModelRetry", "ModelRetry", None]
+    assert [c.chunk.id for c in result.chunks] == ["aapl-1"]
+
+
 def test_agent_with_no_selected_ids_falls_back_to_retrieved(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = [_chunk("c1", "AAPL", 10), _chunk("c2", "AAPL", 11), _chunk("c3", "AAPL", 12)]
     _stub_hybrid_retrieve(monkeypatch, {"AAPL": chunks})

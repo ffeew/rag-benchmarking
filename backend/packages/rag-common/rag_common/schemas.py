@@ -359,6 +359,15 @@ class TraceRead(BaseModel):
     created_at: datetime
 
 
+class TraceSummary(BaseModel):
+    id: str
+    dataset_id: str
+    user_question: str
+    retrieval_mode: str
+    confidence: float | None = None
+    created_at: datetime
+
+
 class ExpectedCitation(BaseModel):
     """Expected-citation hint used in eval cases for retriever/citation scoring."""
 

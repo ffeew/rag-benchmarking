@@ -402,8 +402,27 @@ def perform_retrieve_evidence(
     # Surface dropped filter values so the agent can see "FORM-X was rejected" instead
     # of getting zero hits with no trace signal. If the LLM proposed any unknown values
     # AND would now get zero results from the safe list, raise ModelRetry so the next
-    # turn includes the rejection info in the prompt.
+    # turn includes the rejection info in the prompt. Record the attempt in tool_calls
+    # so tool_retry_count and the trace UI both reflect filter-rejection retries (not
+    # just hybrid_retrieve exceptions).
     if (normalized.dropped_tickers or normalized.dropped_forms) and not (safe_tickers or safe_forms):
+        deps.tool_calls.append(
+            {
+                "tool": "retrieve_evidence",
+                "query": query,
+                "tickers": safe_tickers,
+                "form_types": safe_forms,
+                "dropped_tickers": normalized.dropped_tickers,
+                "dropped_forms": normalized.dropped_forms,
+                "filing_date_start": filing_date_start,
+                "filing_date_end": filing_date_end,
+                "top_k": safe_top_k,
+                "use_hyde": use_hyde,
+                "error": "ModelRetry: filters entirely outside dataset",
+                "error_class": "ModelRetry",
+                "returned": 0,
+            }
+        )
         raise ModelRetry(
             "retrieve_evidence filters were entirely outside the dataset. "
             f"dropped_tickers={normalized.dropped_tickers} (not in known_tickers); "
@@ -497,6 +516,13 @@ def build_retrieval_agent(
     are cached upstream, so this is cheap. We do not ``lru_cache`` the agent itself
     because the tool closure binds to a fresh ``deps`` for every run.
     """
+    # ``tool_retries`` and ``output_retries`` are both 2 (vs. pydantic-ai's default of 1)
+    # because the retry counter is cumulative across the whole agent run — one stochastic
+    # ``ModelRetry`` from glm-4.7 (hallucinated ticker, fabricated chunk_id, etc.) plus
+    # one near-miss correction is enough to trip the default limit and kill the run.
+    # ``tool_calls_limit=retrieval_agent_tool_call_budget`` (4 by default) is still the
+    # primary backstop on runaway loops, so giving the failure-feedback channel one extra
+    # turn here doesn't unbalance the overall budget.
     agent: Agent[RetrievalAgentDeps, RetrievalAgentOutput] = Agent(
         model=build_chat_model(settings),
         deps_type=RetrievalAgentDeps,
@@ -504,7 +530,8 @@ def build_retrieval_agent(
         instructions=_RETRIEVAL_AGENT_INSTRUCTIONS,
         name="rag-retrieval-agent",
         model_settings=deterministic_model_settings(settings),
-        output_retries=1,
+        output_retries=2,
+        tool_retries=2,
     )
 
     @agent.instructions
@@ -787,6 +814,11 @@ def run_retrieval_agent(
         logger.warning("retrieval_agent_failed", extra={"error": message})
         metadata["fallback_reason"] = "agent_error"
         metadata["error"] = message
+        # Surface what the agent managed to do before dying so dashboards can stratify
+        # "agent never got off the ground" (0 calls) from "agent burned its retry budget
+        # on ModelRetries" (tool_retry_count high, tool_call_count low).
+        metadata["tool_call_count"] = len(deps.tool_calls)
+        metadata["tool_retry_count"] = sum(1 for call in deps.tool_calls if call.get("error_class"))
         return (
             _heuristic_retrieval(
                 session,
@@ -821,6 +853,7 @@ def run_retrieval_agent(
     )
     metadata["agent_used"] = True
     metadata["tool_call_count"] = len(deps.tool_calls)
+    metadata["tool_retry_count"] = sum(1 for call in deps.tool_calls if call.get("error_class"))
     metadata["tool_call_budget"] = resolved.retrieval_agent_tool_call_budget
 
     return (

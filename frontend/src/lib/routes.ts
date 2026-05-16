@@ -24,10 +24,6 @@ export const paths = {
     to: '/datasets/$datasetId/ingestion',
     params: { datasetId },
   }),
-  datasetQuery: (datasetId: string) => ({
-    to: '/datasets/$datasetId/query',
-    params: { datasetId },
-  }),
   datasetEvaluations: (datasetId: string) => ({
     to: '/datasets/$datasetId/evaluations',
     params: { datasetId },
@@ -58,6 +54,7 @@ export const paths = {
 } as const
 
 export const LAST_DATASET_KEY = 'rag.lastDataset'
+export const QUERY_DRAFT_KEY = 'rag.queryDraft'
 
 export function readLastDataset(): string | null {
   if (typeof window === 'undefined') return null
@@ -75,5 +72,26 @@ export function writeLastDataset(id: string | null) {
     else window.localStorage.removeItem(LAST_DATASET_KEY)
   } catch {
     /* ignore quota */
+  }
+}
+
+/** Peek the trace-reproduce draft (does NOT clear it — QueryWorkspace consumes the
+ * question/mode in its own effect). Returns null if absent or malformed. */
+export function peekQueryDraft(): {
+  question?: string
+  retrieval_mode?: string
+  dataset_id?: string
+} | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(QUERY_DRAFT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as {
+      question?: string
+      retrieval_mode?: string
+      dataset_id?: string
+    }
+  } catch {
+    return null
   }
 }

@@ -170,31 +170,36 @@ def test_full_pipeline_happy_path(
         assert chunk.token_count > 0
         assert chunk.is_active is True
         assert chunk.metadata_["chunker"] == ChunkerType.CHONKIE
-        assert chunk.metadata_["ticker"] == seed_document.ticker
-        assert chunk.metadata_["form_type"] == seed_document.form_type
         assert chunk.metadata_["chunk_type"] in {ChunkType.NARRATIVE, ChunkType.TABLE, ChunkType.MIXED}
+        # Document-level fields are read from Document via FK at retrieval/API time;
+        # duplicating them into chunk.metadata is pure waste and was dropped in 0004.
+        for redundant in ("ticker", "form_type", "filing_date", "report_period", "parser", "source_object_version"):
+            assert redundant not in chunk.metadata_, (
+                f"chunk.metadata must not duplicate document/run field {redundant!r}"
+            )
+        assert chunk.embedding_vector is not None, "every chunk in the happy path must be embedded"
+        assert chunk.embedding_dimension == EMBEDDING_VECTOR_DIMENSION
+        assert len(chunk.embedding_vector) == EMBEDDING_VECTOR_DIMENSION
+        assert chunk.embedding_model
 
     assert any(chunk.contains_table for chunk in chunks), "table page should produce a table-flagged chunk"
-
-    chunk_ids = {chunk.id for chunk in chunks}
-    embeddings = db_session.query(models.Embedding).filter(models.Embedding.chunk_id.in_(chunk_ids)).all()
-    assert len(embeddings) == len(chunks), "every chunk must have exactly one embedding row"
-    for embedding in embeddings:
-        assert embedding.dimension == EMBEDDING_VECTOR_DIMENSION
-        assert len(embedding.vector) == EMBEDDING_VECTOR_DIMENSION
 
     # Round-trip a similarity query against the HNSW cosine index so we know the
     # written vectors are usable end-to-end (right type, right dim, index covers them).
     # pgvector returns the column as numpy float32 — re-cast to Python floats so
     # ``str([...])`` doesn't render ``np.float32(...)`` wrappers that pgvector's
     # text parser rejects.
-    probe = "[" + ",".join(repr(float(v)) for v in embeddings[0].vector) + "]"
+    probe_chunk = chunks[0]
+    probe = "[" + ",".join(repr(float(v)) for v in probe_chunk.embedding_vector) + "]"
     rows = db_session.execute(
-        text("SELECT chunk_id FROM embeddings ORDER BY vector <=> CAST(:probe AS vector) LIMIT 3"),
+        text(
+            "SELECT id FROM chunks WHERE embedding_vector IS NOT NULL "
+            "ORDER BY embedding_vector <=> CAST(:probe AS vector) LIMIT 3"
+        ),
         {"probe": probe},
     ).all()
     assert rows, "pgvector similarity query must return rows for committed embeddings"
-    assert rows[0][0] == embeddings[0].chunk_id, "self-similarity must rank the source chunk first"
+    assert rows[0][0] == probe_chunk.id, "self-similarity must rank the source chunk first"
 
     db_session.refresh(job)
     assert job.status == JobStatus.COMPLETED
@@ -382,11 +387,10 @@ def test_partial_state_survives_mid_embed_failure(
     assert parsed_pages == len(pages), "parsed pages must be durable across an embed-stage failure"
     assert chunks, "chunks must be durable across an embed-stage failure"
 
-    chunk_ids = {chunk.id for chunk in chunks}
-    embeddings = db_session.query(models.Embedding).filter(models.Embedding.chunk_id.in_(chunk_ids)).count()
+    embedded = sum(1 for chunk in chunks if chunk.embedding_vector is not None)
     # First batch (32 chunks) committed; second batch (8 chunks) failed before commit.
-    assert 0 < embeddings < len(chunks), (
-        f"expected partial embedding state (some succeeded, some failed); got {embeddings}/{len(chunks)}"
+    assert 0 < embedded < len(chunks), (
+        f"expected partial embedding state (some succeeded, some failed); got {embedded}/{len(chunks)}"
     )
 
     db_session.refresh(seed_document)
@@ -401,9 +405,9 @@ def test_force_reingest_gcs_prior_chunks_same_config(
     seed_document: models.Document,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Successful reingest with the same config must delete chunks, embeddings,
-    and parsed pages from prior runs of the same document. Cross-config runs
-    are intentionally preserved (tested elsewhere).
+    """Successful reingest with the same config must delete chunks (including
+    their embedding_vector column) and parsed pages from prior runs of the same
+    document. Cross-config runs are intentionally preserved (tested elsewhere).
     """
     pages = [_make_page(1, _NARRATIVE)]
     _stub_parse_pdf(monkeypatch, _make_draft(pages))

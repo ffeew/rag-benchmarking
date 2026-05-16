@@ -17,11 +17,12 @@ QUEUE_INGESTION: Final = "ingestion"
 QUEUE_EVALUATION: Final = "evaluation"
 QUEUE_MAINTENANCE: Final = "maintenance"
 
-# Dimensionality of the pgvector ``embeddings.vector`` column, set in migration
-# 0001_initial_schema.py. The column is declared ``vector(N)`` which enforces N
-# at INSERT time, and the HNSW cosine index built on it is fixed to that same
-# N. Any code that reads ``Settings.embedding_dimension`` must agree with this
-# constant; ``Settings`` validates the match at load time and refuses to start
-# otherwise. Changing this value requires a new migration that alters the
-# column type and rebuilds ``ix_embeddings_vector_hnsw``.
+# Dimensionality of the pgvector ``chunks.embedding_vector`` column. The column
+# is declared ``vector(N)`` which enforces N at INSERT/UPDATE time, and the HNSW
+# cosine index built on it (``ix_chunks_embedding_vector_hnsw``) is fixed to that
+# same N. Any code that reads ``Settings.embedding_dimension`` must agree with
+# this constant; ``Settings`` validates the match at load time and refuses to
+# start otherwise. Changing this value requires a new migration that alters
+# the column type and rebuilds the HNSW index. The column lived in a separate
+# ``embeddings`` table prior to migration 0004_consolidate_chunk_embedding.py.
 EMBEDDING_VECTOR_DIMENSION: Final = 1024

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
-from rag_common.schemas import QueryRequest, QueryResponse, TraceRead
-from rag_retrieval.query import read_trace, run_query
+from fastapi import APIRouter, HTTPException, Query, status
+from rag_common.schemas import QueryRequest, QueryResponse, TraceRead, TraceSummary
+from rag_retrieval.query import list_traces, read_trace, run_query
 
 from rag_benchmarking.api.deps import AuthDep, DbSession, SettingsDep
 from rag_benchmarking.api.serialization import citation_to_read
@@ -21,6 +21,42 @@ def query(
         return response
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/v1/traces")
+def list_traces_endpoint(
+    session: DbSession,
+    _auth: AuthDep,
+    dataset_id: str | None = None,
+    question_contains: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[TraceSummary]:
+    rows = list_traces(
+        session,
+        dataset_id=dataset_id,
+        question_contains=question_contains,
+        limit=limit,
+    )
+    summaries: list[TraceSummary] = []
+    for row in rows:
+        verifier = row.verifier_result or {}
+        raw_confidence = verifier.get("confidence") if isinstance(verifier, dict) else None
+        confidence: float | None
+        try:
+            confidence = float(raw_confidence) if raw_confidence is not None else None
+        except (TypeError, ValueError):
+            confidence = None
+        summaries.append(
+            TraceSummary(
+                id=row.id,
+                dataset_id=row.dataset_id,
+                user_question=row.user_question,
+                retrieval_mode=row.retrieval_mode,
+                confidence=confidence,
+                created_at=row.created_at,
+            )
+        )
+    return summaries
 
 
 @router.get("/v1/traces/{trace_id}")

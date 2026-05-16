@@ -122,7 +122,7 @@ export function Overview() {
               asChild
               leading={<Search className="h-3.5 w-3.5" />}
             >
-              <Link {...paths.datasetQuery(lastDataset.id)}>Run query</Link>
+              <Link {...paths.query}>Run query</Link>
             </Button>
           )}
         </div>

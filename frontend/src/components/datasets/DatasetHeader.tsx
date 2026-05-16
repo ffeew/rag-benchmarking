@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Activity, BarChart3, Database, FileText, LayoutGrid, Search } from 'lucide-react'
+import { Activity, BarChart3, Database, FileText, LayoutGrid } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { Badge } from '#/components/ui/badge'
@@ -22,7 +22,6 @@ const TABS: ReadonlyArray<Tab> = [
   { build: paths.dataset, label: 'SUMMARY', icon: LayoutGrid, exact: true },
   { build: paths.datasetDocuments, label: 'DOCUMENTS', icon: FileText },
   { build: paths.datasetIngestion, label: 'INGESTION', icon: Activity },
-  { build: paths.datasetQuery, label: 'QUERY', icon: Search },
   { build: paths.datasetEvaluations, label: 'EVALUATIONS', icon: BarChart3 },
 ]
 

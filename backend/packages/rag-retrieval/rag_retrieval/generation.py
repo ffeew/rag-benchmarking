@@ -179,7 +179,7 @@ def _build_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorO
         output_type=GeneratorOutput,
         instructions=_GENERATOR_INSTRUCTIONS,
         name="rag-generator",
-        output_retries=1,
+        output_retries=2,
     )
 
     @agent.instructions

@@ -64,13 +64,14 @@ function TracePage() {
         JSON.stringify({
           question: trace.user_question,
           retrieval_mode: trace.retrieval_mode,
+          dataset_id: trace.dataset_id,
         }),
       )
     } catch {
       /* ignore */
     }
     toast.info('Question copied — opening query workspace')
-    void navigate(paths.datasetQuery(trace.dataset_id))
+    void navigate(paths.query)
   }
 
   function copyId() {

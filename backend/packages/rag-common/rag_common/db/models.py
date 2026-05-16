@@ -167,24 +167,16 @@ class Chunk(TimestampMixin, Base):
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     source_offsets: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    # Nullable so the existing two-phase write survives: chunks commit before the
+    # embedding API call, the per-batch UPDATE fills these in, and a failed batch
+    # leaves NULLs that the retrieval query filters out.
+    embedding_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    embedding_dimension: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedding_vector: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_VECTOR_DIMENSION), nullable=True)
 
     ingestion_run: Mapped[IngestionRun] = relationship(back_populates="chunks")
     document: Mapped[Document] = relationship(back_populates="chunks")
-    embeddings: Mapped[list[Embedding]] = relationship(back_populates="chunk")
-
-
-class Embedding(TimestampMixin, Base):
-    __tablename__ = "embeddings"
-    __table_args__ = (UniqueConstraint("chunk_id", "provider", "model", name="uq_embeddings_chunk_provider_model"),)
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    chunk_id: Mapped[str] = mapped_column(ForeignKey("chunks.id", ondelete="CASCADE"), index=True)
-    provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    model: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
-    vector: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_VECTOR_DIMENSION))
-
-    chunk: Mapped[Chunk] = relationship(back_populates="embeddings")
 
 
 class QueryTrace(TimestampMixin, Base):

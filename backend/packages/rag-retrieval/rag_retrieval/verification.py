@@ -201,7 +201,7 @@ def _build_verifier_agent_for(model_id: str) -> Agent[VerifierDeps, VerifierOutp
         output_type=VerifierOutput,
         instructions=_VERIFIER_INSTRUCTIONS,
         name="rag-verifier",
-        output_retries=1,
+        output_retries=2,
     )
 
     @agent.instructions

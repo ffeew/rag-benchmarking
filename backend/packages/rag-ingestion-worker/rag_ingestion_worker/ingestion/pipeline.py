@@ -10,7 +10,7 @@ from rag_common.ingestion_run_state import record_ingestion_run_failure
 from rag_common.job_state import commit_job_progress
 from rag_common.providers.openrouter import OpenRouterClient
 from rag_common.storage.minio import ObjectStore
-from sqlalchemy import CursorResult, delete, select
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.orm import Session
 
 from rag_ingestion_worker.ingestion.chunking import chunk_pages, normalize_text
@@ -83,7 +83,7 @@ def get_or_create_ingestion_run(
             return existing, False
 
     # Bootstrap-commit the new row on a SEPARATE transaction. The caller's
-    # session will hold uncommitted ParsedPage/Chunk/Embedding writes for
+    # session will hold uncommitted ParsedPage/Chunk writes for
     # the rest of the pipeline; committing the run row up-front makes it
     # visible to the API/UI immediately and lets the task-level except
     # mark it failed on yet another transaction if the pipeline raises.
@@ -126,7 +126,7 @@ def gc_prior_runs_same_config(
     chunking_config_value: dict[str, Any],
     embedding_model: str,
 ) -> dict[str, int]:
-    """Delete heavyweight artifacts (parsed_pages, chunks, embeddings) from prior
+    """Delete heavyweight artifacts (parsed_pages, chunks) from prior
     ``IngestionRun`` rows for ``document_id`` whose config matches the current run.
 
     Different-config runs are intentionally preserved so cross-config benchmarking
@@ -146,14 +146,9 @@ def gc_prior_runs_same_config(
         models.IngestionRun.chunking_config == chunking_config_value,
         models.IngestionRun.embedding_model == embedding_model,
     )
-    prior_chunk_ids = select(models.Chunk.id).where(models.Chunk.ingestion_run_id.in_(prior_run_ids))
     # ``session.execute(delete(...))`` always returns a ``CursorResult`` at
     # runtime, but SQLAlchemy's stub types it as ``Result[Any]`` (which omits
     # ``rowcount``). Cast so mypy can see the DML-specific attribute.
-    embeddings_result = cast(
-        "CursorResult[Any]",
-        session.execute(delete(models.Embedding).where(models.Embedding.chunk_id.in_(prior_chunk_ids))),
-    )
     chunks_result = cast(
         "CursorResult[Any]",
         session.execute(delete(models.Chunk).where(models.Chunk.ingestion_run_id.in_(prior_run_ids))),
@@ -163,7 +158,6 @@ def gc_prior_runs_same_config(
         session.execute(delete(models.ParsedPage).where(models.ParsedPage.ingestion_run_id.in_(prior_run_ids))),
     )
     return {
-        "embeddings": embeddings_result.rowcount,
         "chunks": chunks_result.rowcount,
         "parsed_pages": parsed_pages_result.rowcount,
     }
@@ -346,21 +340,10 @@ def run_document_ingestion(
                 .order_by(models.ParsedPage.page_number)
             )
         )
-        chunk_ids_for_run = select(models.Chunk.id).where(models.Chunk.ingestion_run_id == run.id)
-        session.execute(delete(models.Embedding).where(models.Embedding.chunk_id.in_(chunk_ids_for_run)))
         session.execute(delete(models.Chunk).where(models.Chunk.ingestion_run_id == run.id))
         chunks = chunk_pages(pages, resolved)
         db_chunks: list[models.Chunk] = []
         for draft in chunks:
-            metadata = {
-                **draft.metadata,
-                "ticker": document.ticker,
-                "form_type": document.form_type,
-                "filing_date": document.filing_date.isoformat() if document.filing_date else None,
-                "report_period": document.report_period.isoformat() if document.report_period else None,
-                "parser": parsed.parser,
-                "source_object_version": document.minio_version_id,
-            }
             chunk = models.Chunk(
                 ingestion_run_id=run.id,
                 document_id=document.id,
@@ -370,7 +353,7 @@ def run_document_ingestion(
                 normalized_text=normalize_text(draft.text),
                 contains_table=draft.contains_table,
                 token_count=draft.token_count,
-                metadata_=metadata,
+                metadata_=draft.metadata,
                 source_offsets=draft.source_offsets,
                 is_active=True,
             )
@@ -414,21 +397,30 @@ def run_document_ingestion(
                 model=embedding_model,
                 dimensions=resolved.embedding_dimension,
             )
-            for chunk, vector in zip(batch, result.vectors, strict=True):
-                session.add(
-                    models.Embedding(
-                        chunk_id=chunk.id,
-                        provider=result.metadata.provider,
-                        model=result.metadata.model or embedding_model,
-                        dimension=len(vector),
-                        vector=vector,
-                    )
-                )
+            resolved_model = result.metadata.model or embedding_model
+            # SQLAlchemy 2.x "ORM Bulk UPDATE by Primary Key": passing a list of
+            # dicts that include the PK column triggers a single executemany
+            # round-trip with implicit ``WHERE id = :id``. One DB round-trip per
+            # 32-chunk batch instead of 32 INSERTs.
+            session.execute(
+                update(models.Chunk),
+                [
+                    {
+                        "id": chunk.id,
+                        "embedding_vector": vector,
+                        "embedding_provider": result.metadata.provider,
+                        "embedding_model": resolved_model,
+                        "embedding_dimension": len(vector),
+                    }
+                    for chunk, vector in zip(batch, result.vectors, strict=True)
+                ],
+            )
             # Commit each batch so a later batch's failure doesn't undo embedding
             # cost we've already paid. Combined with ``gc_prior_runs_same_config``
             # on the next successful retry, this turns "any embed failure throws
             # away the whole run" into "any embed failure costs at most one batch
-            # of recomputation".
+            # of recomputation". Unembedded chunks keep ``embedding_vector IS NULL``
+            # and are filtered out of semantic retrieval.
             session.commit()
             # 75–95% of the progress bar covers embedding so a hung batch is
             # visible in the UI; reserve the last 5 points for the final GC + commit.

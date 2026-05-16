@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import {
   AlertTriangle,
   ArrowRight,
@@ -72,12 +72,7 @@ function writeHistory(entry: HistoryEntry) {
   }
 }
 
-export const Route = createFileRoute('/datasets/$datasetId/query')({
-  component: QueryWorkspace,
-})
-
-function QueryWorkspace() {
-  const { datasetId } = Route.useParams()
+export function QueryWorkspace({ datasetId }: { datasetId: string }) {
   const { token } = useToken()
   const queryClient = useQueryClient()
 
@@ -119,8 +114,9 @@ function QueryWorkspace() {
   const historyRef = useRef<Array<HistoryEntry>>(readHistory())
 
   // Hydrate from the trace-view "Reproduce" handoff: traces.$traceId.tsx writes
-  // {question, retrieval_mode} to sessionStorage['rag.queryDraft'] then navigates
-  // here. Without this effect, that handoff silently dropped the question.
+  // {question, retrieval_mode, dataset_id} to sessionStorage['rag.queryDraft'] then
+  // navigates here. The /query parent peeks dataset_id to seed the picker; this
+  // effect consumes question/retrieval_mode and clears the key.
   useEffect(() => {
     try {
       const raw = window.sessionStorage.getItem('rag.queryDraft')
@@ -224,7 +220,7 @@ function QueryWorkspace() {
     tickers.length + forms.length + (filingFrom ? 1 : 0) + (filingTo ? 1 : 0)
 
   return (
-    <div className="mx-auto max-w-[1440px] px-6 py-6 grid gap-5">
+    <div className="grid gap-5">
       {/* Composer */}
       <Card>
         <CardHeader

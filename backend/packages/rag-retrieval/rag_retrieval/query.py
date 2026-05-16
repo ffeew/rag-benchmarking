@@ -217,6 +217,7 @@ def run_query(
             "fallback_reason": retrieval_agent_meta.get("fallback_reason"),
             "source": "retrieval_agent",
             "tool_call_count": retrieval_agent_meta.get("tool_call_count"),
+            "tool_retry_count": retrieval_agent_meta.get("tool_retry_count"),
             "tool_call_budget": retrieval_agent_meta.get("tool_call_budget"),
         }
         plan = RetrievalPlan(
@@ -314,6 +315,7 @@ def run_query(
         "verifier_error": verifier_meta.get("error"),
         "planner_source": planner_meta.get("source"),
         "tool_call_count": planner_meta.get("tool_call_count"),
+        "tool_retry_count": planner_meta.get("tool_retry_count"),
         "tool_call_budget": planner_meta.get("tool_call_budget"),
         "usage_summary": usage_summary_dict,
         "cost_breakdown_usd": cost_breakdown,
@@ -385,3 +387,22 @@ def read_trace(
         .order_by(models.Citation.created_at)
     ).all()
     return trace, [(row[0], row[1]) for row in rows]
+
+
+def list_traces(
+    session: Session,
+    *,
+    dataset_id: str | None = None,
+    question_contains: str | None = None,
+    limit: int = 50,
+) -> list[models.QueryTrace]:
+    stmt = (
+        select(models.QueryTrace)
+        .order_by(models.QueryTrace.created_at.desc())
+        .limit(limit)
+    )
+    if dataset_id:
+        stmt = stmt.where(models.QueryTrace.dataset_id == dataset_id)
+    if question_contains:
+        stmt = stmt.where(models.QueryTrace.user_question.ilike(f"%{question_contains}%"))
+    return list(session.execute(stmt).scalars())

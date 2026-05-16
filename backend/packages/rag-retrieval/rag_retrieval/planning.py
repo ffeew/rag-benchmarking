@@ -165,7 +165,7 @@ def _build_planner_agent_for(model_id: str) -> Agent[PlannerDeps, PlannerOutput]
         output_type=PlannerOutput,
         instructions=_PLANNER_INSTRUCTIONS,
         name="rag-planner",
-        output_retries=1,
+        output_retries=2,
     )
 
     @agent.instructions

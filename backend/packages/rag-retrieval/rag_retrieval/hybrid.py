@@ -163,11 +163,17 @@ def hybrid_retrieve(
         embedding_model_used = embedding_result.metadata.model
         embedding_provider_used = embedding_result.metadata.provider
 
-        distance = models.Embedding.vector.cosine_distance(query_vector).label("distance")
+        distance = models.Chunk.embedding_vector.cosine_distance(query_vector).label("distance")
+        # ``IS NOT NULL`` is required: ingestion writes the chunk row before the
+        # embedding API call (so a failed batch leaves NULL vectors), and
+        # ``cosine_distance(NULL)`` would surface NULLs into ORDER BY. HNSW also
+        # excludes NULL rows from the index, so this is a planner hint too.
         semantic_statement = (
             select(models.Chunk, models.Document, distance)
-            .join(models.Embedding, models.Embedding.chunk_id == models.Chunk.id)
-            .where(models.Embedding.model == (embedding_result.metadata.model or embedding_model))
+            .where(
+                models.Chunk.embedding_vector.is_not(None),
+                models.Chunk.embedding_model == (embedding_result.metadata.model or embedding_model),
+            )
             .order_by(distance)
             .limit(resolved.semantic_candidates)
         )

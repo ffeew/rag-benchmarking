@@ -23,10 +23,7 @@ function TracesList() {
 
   const tracesQuery = useQuery({
     queryKey: qk.traces.list({ question: search }),
-    queryFn: () =>
-      api
-        .traces(token, { question: search || undefined, limit: 80 })
-        .catch(() => []),
+    queryFn: () => api.traces(token, { question: search || undefined, limit: 80 }),
     enabled: isAuthed,
   })
 

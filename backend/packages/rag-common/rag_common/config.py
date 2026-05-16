@@ -141,20 +141,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_embedding_dimension_matches_schema(self) -> Self:
-        # The pgvector ``embeddings.vector`` column is declared ``vector(N)`` with
-        # N == EMBEDDING_VECTOR_DIMENSION in migration 0001, and the HNSW cosine
-        # index is built on that same N. A mismatch wouldn't be caught until the
-        # very last INSERT of an ingestion run, by which point parsing, chunking,
-        # and embedding work has already been done and discarded on rollback.
-        # Reject it at Settings load so the failure mode is "service refuses to
-        # start" instead of "every ingestion silently rolls back".
+        # The pgvector ``chunks.embedding_vector`` column is declared ``vector(N)``
+        # with N == EMBEDDING_VECTOR_DIMENSION, and the HNSW cosine index
+        # ``ix_chunks_embedding_vector_hnsw`` is built on that same N. A mismatch
+        # wouldn't be caught until the per-batch UPDATE in the embedding stage of
+        # an ingestion run, by which point parsing, chunking, and (partial)
+        # embedding work has already been done and rolled back. Reject it at
+        # Settings load so the failure mode is "service refuses to start" instead
+        # of "every ingestion silently rolls back".
         if self.embedding_dimension != EMBEDDING_VECTOR_DIMENSION:
             raise ValueError(
                 f"EMBEDDING_DIMENSION={self.embedding_dimension} does not match the "
-                f"pgvector schema (EMBEDDING_VECTOR_DIMENSION={EMBEDDING_VECTOR_DIMENSION}, "
-                "set in migrations/versions/0001_initial_schema.py). Changing the "
-                "embedding dimension requires a new migration that alters embeddings.vector "
-                "and rebuilds ix_embeddings_vector_hnsw."
+                f"pgvector schema (EMBEDDING_VECTOR_DIMENSION={EMBEDDING_VECTOR_DIMENSION}). "
+                "Changing the embedding dimension requires a new migration that alters "
+                "chunks.embedding_vector and rebuilds ix_chunks_embedding_vector_hnsw."
             )
         return self
 

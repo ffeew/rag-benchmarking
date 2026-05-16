@@ -21,7 +21,6 @@ import { Route as TracesTraceIdRouteImport } from './routes/traces.$traceId'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as DatasetsDatasetIdRouteImport } from './routes/datasets.$datasetId'
 import { Route as DatasetsDatasetIdIndexRouteImport } from './routes/datasets.$datasetId.index'
-import { Route as DatasetsDatasetIdQueryRouteImport } from './routes/datasets.$datasetId.query'
 import { Route as DatasetsDatasetIdIngestionRouteImport } from './routes/datasets.$datasetId.ingestion'
 import { Route as DatasetsDatasetIdEvalCasesRouteImport } from './routes/datasets.$datasetId.eval-cases'
 import { Route as DatasetsDatasetIdDocumentsRouteImport } from './routes/datasets.$datasetId.documents'
@@ -89,11 +88,6 @@ const DatasetsDatasetIdIndexRoute = DatasetsDatasetIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DatasetsDatasetIdRoute,
 } as any)
-const DatasetsDatasetIdQueryRoute = DatasetsDatasetIdQueryRouteImport.update({
-  id: '/query',
-  path: '/query',
-  getParentRoute: () => DatasetsDatasetIdRoute,
-} as any)
 const DatasetsDatasetIdIngestionRoute =
   DatasetsDatasetIdIngestionRouteImport.update({
     id: '/ingestion',
@@ -146,7 +140,6 @@ export interface FileRoutesByFullPath {
   '/datasets/$datasetId/documents': typeof DatasetsDatasetIdDocumentsRoute
   '/datasets/$datasetId/eval-cases': typeof DatasetsDatasetIdEvalCasesRoute
   '/datasets/$datasetId/ingestion': typeof DatasetsDatasetIdIngestionRoute
-  '/datasets/$datasetId/query': typeof DatasetsDatasetIdQueryRoute
   '/datasets/$datasetId/': typeof DatasetsDatasetIdIndexRoute
   '/datasets/$datasetId/evaluations/$evalRunId': typeof DatasetsDatasetIdEvaluationsEvalRunIdRoute
   '/datasets/$datasetId/evaluations/compare': typeof DatasetsDatasetIdEvaluationsCompareRoute
@@ -166,7 +159,6 @@ export interface FileRoutesByTo {
   '/datasets/$datasetId/documents': typeof DatasetsDatasetIdDocumentsRoute
   '/datasets/$datasetId/eval-cases': typeof DatasetsDatasetIdEvalCasesRoute
   '/datasets/$datasetId/ingestion': typeof DatasetsDatasetIdIngestionRoute
-  '/datasets/$datasetId/query': typeof DatasetsDatasetIdQueryRoute
   '/datasets/$datasetId': typeof DatasetsDatasetIdIndexRoute
   '/datasets/$datasetId/evaluations/$evalRunId': typeof DatasetsDatasetIdEvaluationsEvalRunIdRoute
   '/datasets/$datasetId/evaluations/compare': typeof DatasetsDatasetIdEvaluationsCompareRoute
@@ -188,7 +180,6 @@ export interface FileRoutesById {
   '/datasets/$datasetId/documents': typeof DatasetsDatasetIdDocumentsRoute
   '/datasets/$datasetId/eval-cases': typeof DatasetsDatasetIdEvalCasesRoute
   '/datasets/$datasetId/ingestion': typeof DatasetsDatasetIdIngestionRoute
-  '/datasets/$datasetId/query': typeof DatasetsDatasetIdQueryRoute
   '/datasets/$datasetId/': typeof DatasetsDatasetIdIndexRoute
   '/datasets/$datasetId/evaluations/$evalRunId': typeof DatasetsDatasetIdEvaluationsEvalRunIdRoute
   '/datasets/$datasetId/evaluations/compare': typeof DatasetsDatasetIdEvaluationsCompareRoute
@@ -211,7 +202,6 @@ export interface FileRouteTypes {
     | '/datasets/$datasetId/documents'
     | '/datasets/$datasetId/eval-cases'
     | '/datasets/$datasetId/ingestion'
-    | '/datasets/$datasetId/query'
     | '/datasets/$datasetId/'
     | '/datasets/$datasetId/evaluations/$evalRunId'
     | '/datasets/$datasetId/evaluations/compare'
@@ -231,7 +221,6 @@ export interface FileRouteTypes {
     | '/datasets/$datasetId/documents'
     | '/datasets/$datasetId/eval-cases'
     | '/datasets/$datasetId/ingestion'
-    | '/datasets/$datasetId/query'
     | '/datasets/$datasetId'
     | '/datasets/$datasetId/evaluations/$evalRunId'
     | '/datasets/$datasetId/evaluations/compare'
@@ -252,7 +241,6 @@ export interface FileRouteTypes {
     | '/datasets/$datasetId/documents'
     | '/datasets/$datasetId/eval-cases'
     | '/datasets/$datasetId/ingestion'
-    | '/datasets/$datasetId/query'
     | '/datasets/$datasetId/'
     | '/datasets/$datasetId/evaluations/$evalRunId'
     | '/datasets/$datasetId/evaluations/compare'
@@ -359,13 +347,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatasetsDatasetIdIndexRouteImport
       parentRoute: typeof DatasetsDatasetIdRoute
     }
-    '/datasets/$datasetId/query': {
-      id: '/datasets/$datasetId/query'
-      path: '/query'
-      fullPath: '/datasets/$datasetId/query'
-      preLoaderRoute: typeof DatasetsDatasetIdQueryRouteImport
-      parentRoute: typeof DatasetsDatasetIdRoute
-    }
     '/datasets/$datasetId/ingestion': {
       id: '/datasets/$datasetId/ingestion'
       path: '/ingestion'
@@ -415,7 +396,6 @@ interface DatasetsDatasetIdRouteChildren {
   DatasetsDatasetIdDocumentsRoute: typeof DatasetsDatasetIdDocumentsRoute
   DatasetsDatasetIdEvalCasesRoute: typeof DatasetsDatasetIdEvalCasesRoute
   DatasetsDatasetIdIngestionRoute: typeof DatasetsDatasetIdIngestionRoute
-  DatasetsDatasetIdQueryRoute: typeof DatasetsDatasetIdQueryRoute
   DatasetsDatasetIdIndexRoute: typeof DatasetsDatasetIdIndexRoute
   DatasetsDatasetIdEvaluationsEvalRunIdRoute: typeof DatasetsDatasetIdEvaluationsEvalRunIdRoute
   DatasetsDatasetIdEvaluationsCompareRoute: typeof DatasetsDatasetIdEvaluationsCompareRoute
@@ -426,7 +406,6 @@ const DatasetsDatasetIdRouteChildren: DatasetsDatasetIdRouteChildren = {
   DatasetsDatasetIdDocumentsRoute: DatasetsDatasetIdDocumentsRoute,
   DatasetsDatasetIdEvalCasesRoute: DatasetsDatasetIdEvalCasesRoute,
   DatasetsDatasetIdIngestionRoute: DatasetsDatasetIdIngestionRoute,
-  DatasetsDatasetIdQueryRoute: DatasetsDatasetIdQueryRoute,
   DatasetsDatasetIdIndexRoute: DatasetsDatasetIdIndexRoute,
   DatasetsDatasetIdEvaluationsEvalRunIdRoute:
     DatasetsDatasetIdEvaluationsEvalRunIdRoute,
