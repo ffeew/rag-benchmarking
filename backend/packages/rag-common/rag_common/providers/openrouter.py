@@ -101,6 +101,8 @@ class OpenRouterClient:
             "messages": messages,
             "provider": {"allow_fallbacks": True, "data_collection": "deny"},
         }
+        if self.settings.eval_temperature_zero:
+            payload["temperature"] = 0
         response = self._client.post("/chat/completions", headers=self._headers(), json=payload)
         if response.status_code >= 400:
             raise ProviderError(f"OpenRouter chat failed: {response.status_code} {response.text[:500]}")

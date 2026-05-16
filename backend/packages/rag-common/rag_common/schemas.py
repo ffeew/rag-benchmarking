@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rag_common.usage import RoleUsage
 
@@ -152,6 +152,40 @@ ExpectedAnswerType = Literal["numeric", "text", "multi_part", "insufficient", "r
 
 def default_eval_variants() -> list[RetrievalMode]:
     return ["full_agentic", "single_pass", "llm_only"]
+
+
+class RetrievalOverrides(BaseModel):
+    """Per-variant retrieval-config overrides applied as a Settings.model_copy(update=...).
+
+    Each field is optional; ``None`` means "inherit from the resolved Settings".
+    Zero-valued candidate counts intentionally allowed: ``semantic_candidates=0``
+    disables the vector channel (lexical-only), ``full_text_candidates=0``
+    disables the FTS channel (semantic-only).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    hyde_enabled: bool | None = None
+    reranker_enabled: bool | None = None
+    semantic_candidates: int | None = Field(default=None, ge=0, le=500)
+    full_text_candidates: int | None = Field(default=None, ge=0, le=500)
+    fused_candidates: int | None = Field(default=None, gt=0, le=100)
+    rerank_candidates: int | None = Field(default=None, gt=0, le=100)
+    evidence_top_k: int | None = Field(default=None, gt=0, le=20)
+    retrieval_agent_tool_call_budget: int | None = Field(default=None, ge=1, le=8)
+
+
+class RetrievalVariantSpec(BaseModel):
+    """A named retrieval configuration used by an eval run.
+
+    The ``name`` is the join key for paired statistical analysis and persists on
+    ``EvalResult.variant_name``. The ``retrieval_mode`` picks the underlying
+    pipeline branch; ``overrides`` knock individual components on/off.
+    """
+
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    retrieval_mode: RetrievalMode
+    overrides: RetrievalOverrides = Field(default_factory=RetrievalOverrides)
 
 
 class QueryRequest(BaseModel):
@@ -347,7 +381,26 @@ class EvaluationCreate(BaseModel):
     cases: list[EvalCaseCreate] | None = None
     case_ids: list[str] | None = None
     system_variants: list[RetrievalMode] = Field(default_factory=default_eval_variants)
+    variants: list[RetrievalVariantSpec] | None = None
     benchmark_profile: BenchmarkProfile = "scientific"
+
+    @model_validator(mode="after")
+    def coerce_variants(self) -> Self:
+        explicit = self.variants is not None
+        defaults_used = self.system_variants == default_eval_variants()
+        if explicit and not defaults_used:
+            raise ValueError(
+                "Specify either `system_variants` or `variants`, not both. "
+                "`variants` supersedes `system_variants` when set; pass only one."
+            )
+        if not explicit:
+            self.variants = [
+                RetrievalVariantSpec(name=mode, retrieval_mode=mode) for mode in self.system_variants
+            ]
+        names = [v.name for v in self.variants or []]
+        if len(set(names)) != len(names):
+            raise ValueError(f"variant names must be unique; got {names}")
+        return self
 
 
 class EvaluationCreateResponse(BaseModel):
@@ -359,6 +412,7 @@ class EvalResultRead(BaseModel):
     id: str
     eval_case_id: str | None
     retrieval_mode: str
+    variant_name: str | None = None
     answer: str | None
     trace_id: str | None
     metrics: dict[str, Any]

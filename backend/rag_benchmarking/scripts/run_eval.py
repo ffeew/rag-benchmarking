@@ -1,6 +1,7 @@
 """Trigger an evaluation run from the CLI and wait for terminal status.
 
 Usage:
+    # Default 3-mode comparison (back-compat):
     uv run --directory backend python -m rag_benchmarking.scripts.run_eval \\
         --dataset <dataset_id> \\
         [--variants full_agentic,single_pass,llm_only] \\
@@ -10,14 +11,23 @@ Usage:
         [--poll-seconds 5] \\
         [--timeout-seconds 3600]
 
+    # Component-lesion ablation matrix (9 locked configs):
+    uv run --directory backend python -m rag_benchmarking.scripts.run_eval \\
+        --dataset <dataset_id> --ablation-preset locked9
+
+    # Custom matrix from a YAML/JSON variants file:
+    uv run --directory backend python -m rag_benchmarking.scripts.run_eval \\
+        --dataset <dataset_id> --variants-file path/to/variants.yaml
+
 Reads ``API_BEARER_TOKEN`` and ``API_BASE_URL`` from ``backend/.env`` via
 ``rag_common.config.get_settings``. Writes the full aggregate metrics JSON to
 ``{artifact_dir}/{eval_run_id}.json`` and prints either a human table, the
 JSON, or a markdown summary suitable for pasting into the implementation
 report.
 
-The companion script ``compare_ablations.py`` consumes the same artifacts to
-render a multi-mode side-by-side table.
+The companion script ``compare_ablations.py`` renders a side-by-side variant
+table; ``analyze_ablation.py`` runs paired statistical analysis with FDR
+correction.
 """
 
 import argparse
@@ -31,6 +41,8 @@ from typing import Any, Literal, cast
 
 import httpx
 from rag_common.config import get_settings
+from rag_common.eval_variants import ABLATION_PRESETS
+from rag_common.schemas import RetrievalVariantSpec
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +88,16 @@ def _post_evaluation(
     dataset_id: str,
     variants: list[str],
     case_ids: list[str] | None,
+    variant_specs: list[RetrievalVariantSpec] | None = None,
 ) -> dict[str, str]:
     payload: dict[str, Any] = {
         "dataset_id": dataset_id,
-        "system_variants": variants,
         "benchmark_profile": "scientific",
     }
+    if variant_specs is not None:
+        payload["variants"] = [spec.model_dump(mode="json") for spec in variant_specs]
+    else:
+        payload["system_variants"] = variants
     if case_ids:
         payload["case_ids"] = case_ids
     response = httpx.post(
@@ -93,6 +109,23 @@ def _post_evaluation(
     if response.status_code >= 400:
         raise SystemExit(f"POST /v1/evaluations failed ({response.status_code}): {response.text}")
     return cast("dict[str, str]", response.json())
+
+
+def _load_variants_file(path: Path) -> list[RetrievalVariantSpec]:
+    """Load a list of RetrievalVariantSpec dicts from YAML or JSON."""
+
+    text = path.read_text(encoding="utf-8")
+    if path.suffix in {".yaml", ".yml"}:
+        try:
+            import yaml  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover - yaml is a transitive dep
+            raise SystemExit("YAML variants files require PyYAML; pass JSON instead") from exc
+        raw = yaml.safe_load(text)
+    else:
+        raw = json.loads(text)
+    if not isinstance(raw, list):
+        raise SystemExit(f"{path}: expected a list of variant specs at top level")
+    return [RetrievalVariantSpec.model_validate(item) for item in raw]
 
 
 def _get_evaluation(base_url: str, headers: dict[str, str], eval_run_id: str) -> dict[str, Any]:
@@ -204,7 +237,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--variants",
         default="full_agentic,single_pass,llm_only",
-        help="Comma-separated retrieval modes (default: all three)",
+        help=(
+            "Comma-separated retrieval modes (default: all three). "
+            "Mutually exclusive with --ablation-preset / --variants-file."
+        ),
+    )
+    parser.add_argument(
+        "--ablation-preset",
+        choices=sorted(ABLATION_PRESETS.keys()),
+        default=None,
+        help="Use a named ablation matrix (e.g. 'locked9' = 9 component-lesion configs).",
+    )
+    parser.add_argument(
+        "--variants-file",
+        default=None,
+        type=Path,
+        help="Path to a YAML or JSON file listing RetrievalVariantSpec dicts.",
     )
     parser.add_argument(
         "--case-ids",
@@ -236,14 +284,28 @@ def main(argv: list[str] | None = None) -> int:
 
     base_url = _api_base_url()
     headers = _auth_headers()
-    variants = [v.strip() for v in args.variants.split(",") if v.strip()]
     case_ids = [c.strip() for c in args.case_ids.split(",")] if args.case_ids else None
+
+    variant_specs: list[RetrievalVariantSpec] | None = None
+    if args.ablation_preset and args.variants_file:
+        raise SystemExit("Pass at most one of --ablation-preset / --variants-file")
+    if args.ablation_preset:
+        variant_specs = list(ABLATION_PRESETS[args.ablation_preset])
+        logger.info(
+            "ablation_preset=%s variants=%s", args.ablation_preset, [spec.name for spec in variant_specs]
+        )
+    elif args.variants_file:
+        variant_specs = _load_variants_file(args.variants_file)
+        logger.info(
+            "variants_file=%s variants=%s", args.variants_file, [spec.name for spec in variant_specs]
+        )
+    variants = [v.strip() for v in args.variants.split(",") if v.strip()]
 
     if args.existing_run_id:
         eval_run_id = args.existing_run_id
         logger.info("eval_resume eval_run_id=%s", eval_run_id)
     else:
-        created = _post_evaluation(base_url, headers, args.dataset, variants, case_ids)
+        created = _post_evaluation(base_url, headers, args.dataset, variants, case_ids, variant_specs)
         eval_run_id = created["eval_run_id"]
         logger.info("eval_created eval_run_id=%s job_id=%s", eval_run_id, created.get("job_id"))
 

@@ -247,6 +247,7 @@ class EvalResult(TimestampMixin, Base):
     eval_run_id: Mapped[str] = mapped_column(ForeignKey("eval_runs.id", ondelete="CASCADE"), index=True)
     eval_case_id: Mapped[str | None] = mapped_column(ForeignKey("eval_cases.id", ondelete="SET NULL"))
     retrieval_mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    variant_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     answer: Mapped[str | None] = mapped_column(Text)
     trace_id: Mapped[str | None] = mapped_column(ForeignKey("query_traces.id", ondelete="SET NULL"))
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

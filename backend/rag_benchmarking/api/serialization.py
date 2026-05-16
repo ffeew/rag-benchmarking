@@ -137,6 +137,7 @@ def eval_run_to_read(eval_run: models.EvalRun) -> EvalRunRead:
                 id=result.id,
                 eval_case_id=result.eval_case_id,
                 retrieval_mode=result.retrieval_mode,
+                variant_name=result.variant_name,
                 answer=result.answer,
                 trace_id=result.trace_id,
                 metrics=result.metrics,

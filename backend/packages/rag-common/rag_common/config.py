@@ -51,8 +51,10 @@ class Settings(BaseSettings):
     frontend_dist_path: Path = Path("frontend/dist")
     local_corpus_path: Path = Path("sec_filings_pdf")
 
-    semantic_candidates: Annotated[int, Field(gt=0, le=500)] = 50
-    full_text_candidates: Annotated[int, Field(gt=0, le=500)] = 50
+    # ge=0 (not gt=0) so ablations can set a channel to zero to disable it:
+    # semantic_candidates=0 -> lexical-only; full_text_candidates=0 -> semantic-only.
+    semantic_candidates: Annotated[int, Field(ge=0, le=500)] = 50
+    full_text_candidates: Annotated[int, Field(ge=0, le=500)] = 50
     fused_candidates: Annotated[int, Field(gt=0, le=100)] = 20
     evidence_top_k: Annotated[int, Field(gt=0, le=20)] = 8
     rerank_candidates: Annotated[int, Field(gt=0, le=100)] = 20
@@ -62,6 +64,10 @@ class Settings(BaseSettings):
     agent_retry_budget: Annotated[int, Field(ge=0, le=3)] = 1
     hyde_enabled: bool = True
     retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 4
+    # When true, OpenRouter chat + pydantic-ai agent + RAGAS judge calls are pinned to
+    # temperature=0 for evaluation determinism. Set to false only for debug runs that
+    # intentionally re-enable sampling.
+    eval_temperature_zero: bool = True
 
     embedding_dimension: Annotated[int, Field(gt=0)] = 1024
     chunk_target_tokens: Annotated[int, Field(gt=100)] = 1000

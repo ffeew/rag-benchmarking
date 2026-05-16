@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
+from rag_common.eval_variants import apply_overrides
 from rag_common.job_state import commit_job_progress
 from rag_common.pricing import PricingResolver, load_pricing_overrides, merge_pricing
-from rag_common.schemas import QueryFilters, QueryRequest
+from rag_common.schemas import QueryFilters, QueryRequest, RetrievalOverrides, RetrievalVariantSpec
 from rag_common.usage import TokenUsage
 from rag_retrieval.agents import judge_available
 from rag_retrieval.query import run_query
@@ -371,12 +372,61 @@ def _build_pricing(settings: Settings) -> PricingResolver:
     return PricingResolver(table=merge_pricing(overrides))
 
 
+_LEGACY_VARIANTS: list[str] = ["full_agentic", "single_pass", "llm_only"]
+
+
+def _resolve_variants(run_config: dict[str, Any]) -> list[RetrievalVariantSpec]:
+    """Materialize the variant specs for this eval run.
+
+    Reads ``run_config['variants']`` (new shape, list of dicts) and falls back
+    to ``run_config['system_variants']`` (legacy, list of RetrievalMode literals)
+    so older eval runs continue to aggregate. Never raises on legacy rows; only
+    raises if the new ``variants`` payload is malformed.
+    """
+
+    raw = run_config.get("variants")
+    if raw:
+        if not isinstance(raw, list):
+            raise ValueError("run_config['variants'] must be a list of variant specs")
+        return [RetrievalVariantSpec.model_validate(item) for item in raw]
+    legacy = run_config.get("system_variants") or _LEGACY_VARIANTS
+    return [
+        RetrievalVariantSpec(name=mode, retrieval_mode=mode, overrides=RetrievalOverrides()) for mode in legacy
+    ]
+
+
+def _detect_pairing_skew(
+    case_ids_per_variant: dict[str, set[str]], *, expected_cases: set[str]
+) -> dict[str, Any]:
+    """Detect cases that succeeded for some variants but not others.
+
+    Returns a structured summary used by the analyzer to either drop affected
+    case×pair contrasts (preferred) or surface the skew in the report. An empty
+    ``missing`` block means every variant covered the exact same case set.
+    """
+
+    missing: dict[str, list[str]] = {}
+    for variant, ids in case_ids_per_variant.items():
+        diff = sorted(expected_cases - ids)
+        if diff:
+            missing[variant] = diff
+    return {
+        "expected_case_count": len(expected_cases),
+        "variant_case_counts": {variant: len(ids) for variant, ids in case_ids_per_variant.items()},
+        "missing": missing,
+        "balanced": not missing,
+    }
+
+
 def aggregate_metrics(results: list[models.EvalResult], *, seed: int = 1729) -> dict[str, Any]:
     by_mode: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_mode_results: dict[str, list[models.EvalResult]] = defaultdict(list)
     for result in results:
-        by_mode[result.retrieval_mode].append(result.metrics or {})
-        by_mode_results[result.retrieval_mode].append(result)
+        # Bucket on variant_name when present (post-0005), fall back to retrieval_mode
+        # for legacy rows so historical eval runs still aggregate.
+        bucket = result.variant_name or result.retrieval_mode
+        by_mode[bucket].append(result.metrics or {})
+        by_mode_results[bucket].append(result)
     aggregate: dict[str, Any] = {}
     grand_total_cost = 0.0
     for mode, metrics in by_mode.items():
@@ -411,6 +461,15 @@ def aggregate_metrics(results: list[models.EvalResult], *, seed: int = 1729) -> 
         per_mode["by_difficulty"] = _grouped_summaries(metrics, key="difficulty", seed=seed)
         per_mode["by_tag"] = _tagged_summaries(metrics, seed=seed)
         per_mode["representative_failures"] = _representative_failures(metrics)
+        # Surface the underlying pipeline literal and the overrides that produced
+        # this bucket so downstream tooling (analyze_ablation, dashboards) can
+        # group named variants by their lineage.
+        sample_row = by_mode_results[mode][0]
+        per_mode["retrieval_mode"] = sample_row.retrieval_mode
+        sample_metric = metrics[0] if metrics else {}
+        overrides_applied = sample_metric.get("overrides_applied")
+        if isinstance(overrides_applied, dict):
+            per_mode["overrides_applied"] = overrides_applied
         aggregate[mode] = per_mode
     if grand_total_cost > 0.0:
         aggregate["total_cost_usd"] = grand_total_cost
@@ -651,6 +710,19 @@ def _attach_ragas_scores(
 
     client = OpenAI(base_url=settings.openrouter_base_url, api_key=api_key)
     llm = llm_factory(model=settings.openrouter_judge_model or "", client=client)
+    # Best-effort temperature=0 on the RAGAS judge. The wrapper's attribute path
+    # varies by RAGAS version, so we try the common ones and fall through silently.
+    # Residual judge stochasticity is acknowledged in docs/eval/ablation_v1_plan.md;
+    # RAGAS scores are reported as informational-only, not under FDR control.
+    if settings.eval_temperature_zero:
+        import contextlib
+
+        for attr in ("langchain_llm", "llm"):
+            underlying = getattr(llm, attr, None)
+            if underlying is not None and hasattr(underlying, "temperature"):
+                with contextlib.suppress(AttributeError, ValueError, TypeError):
+                    underlying.temperature = 0
+                break
     embeddings = None
     if settings.openrouter_embedding_model:
         embeddings = RagasOpenAIEmbeddings(client=client, model=settings.openrouter_embedding_model)
@@ -749,14 +821,17 @@ def run_evaluation(
                 "Scientific evaluation requires verified cases with structured gold fields. "
                 f"Invalid cases: {', '.join(invalid_cases[:10])}"
             )
-    variants = eval_run.run_config.get("system_variants") or ["full_agentic", "single_pass", "llm_only"]
+    specs = _resolve_variants(eval_run.run_config)
     bootstrap_seed = int(eval_run.run_config.get("bootstrap_seed") or 1729)
-    total = max(1, len(cases) * len(variants))
+    total = max(1, len(cases) * len(specs))
     completed = 0
     errors: list[dict[str, Any]] = []
     pending_ragas: list[tuple[models.EvalResult, dict[str, Any]]] = []
+    case_ids_per_variant: dict[str, set[str]] = defaultdict(set)
     for case in cases:
-        for variant in variants:
+        for spec in specs:
+            overrides_dump = spec.overrides.model_dump(exclude_none=True)
+            effective = apply_overrides(resolved, spec.overrides)
             try:
                 start = time.perf_counter()
                 response = run_query(
@@ -765,12 +840,12 @@ def run_evaluation(
                         dataset_id=eval_run.dataset_id,
                         question=case.question,
                         filters=QueryFilters(),
-                        top_k=max(resolved.evidence_top_k, 10),
+                        top_k=max(effective.evidence_top_k, 10),
                         include_trace=True,
-                        retrieval_mode=variant,
+                        retrieval_mode=spec.retrieval_mode,
                         include_full_retrieval=True,
                     ),
-                    settings=resolved,
+                    settings=effective,
                 )
                 latency_ms = int((time.perf_counter() - start) * 1000)
                 metrics = _compute_case_metrics(
@@ -779,6 +854,9 @@ def run_evaluation(
                     case=case,
                     latency_ms=latency_ms,
                 )
+                metrics["variant_name"] = spec.name
+                metrics["retrieval_mode"] = spec.retrieval_mode
+                metrics["overrides_applied"] = overrides_dump
                 usage_dump = (
                     response.usage_summary.model_dump()
                     if response.usage_summary is not None
@@ -798,7 +876,8 @@ def run_evaluation(
                 result_row = models.EvalResult(
                     eval_run_id=eval_run.id,
                     eval_case_id=case.id,
-                    retrieval_mode=variant,
+                    retrieval_mode=spec.retrieval_mode,
+                    variant_name=spec.name,
                     answer=response.answer,
                     trace_id=response.trace_id,
                     metrics=metrics,
@@ -808,17 +887,23 @@ def run_evaluation(
                 )
                 session.add(result_row)
                 session.flush()
+                case_ids_per_variant[spec.name].add(case.id)
                 contexts = [evidence.snippet for evidence in response.evidence if evidence.snippet]
                 pending_ragas.append((result_row, _ragas_sample(case, response.answer, contexts)))
             except (OSError, RuntimeError, SQLAlchemyError, ValueError) as exc:
-                errors.append({"case_id": case.id, "variant": variant, "error": str(exc)})
+                errors.append({"case_id": case.id, "variant": spec.name, "error": str(exc)})
                 session.add(
                     models.EvalResult(
                         eval_run_id=eval_run.id,
                         eval_case_id=case.id,
-                        retrieval_mode=variant,
+                        retrieval_mode=spec.retrieval_mode,
+                        variant_name=spec.name,
                         error=str(exc),
-                        metrics={},
+                        metrics={
+                            "variant_name": spec.name,
+                            "retrieval_mode": spec.retrieval_mode,
+                            "overrides_applied": overrides_dump,
+                        },
                     )
                 )
             completed += 1
@@ -830,6 +915,8 @@ def run_evaluation(
             )
             session.flush()
 
+    pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
+
     commit_job_progress(job_id, status="running", progress=92, current_step="computing ragas metrics")
     ragas_summary = _attach_ragas_scores(pending_ragas, resolved)
     session.flush()
@@ -839,6 +926,24 @@ def run_evaluation(
     eval_run.metrics = aggregate_metrics(results, seed=bootstrap_seed)
     eval_run.metrics["benchmark_profile"] = benchmark_profile
     eval_run.metrics["ingestion_diagnostics"] = _ingestion_diagnostics(session, eval_run.dataset_id)
+    eval_run.metrics["pairing_skew"] = pairing_skew
+    eval_run.metrics["variants_used"] = [
+        {
+            "name": spec.name,
+            "retrieval_mode": spec.retrieval_mode,
+            "overrides": spec.overrides.model_dump(exclude_none=True),
+        }
+        for spec in specs
+    ]
+    if not pairing_skew["balanced"]:
+        logger.warning(
+            "ablation_pairing_skew",
+            extra={
+                "eval_run_id": eval_run.id,
+                "missing": pairing_skew["missing"],
+                "expected_case_count": pairing_skew["expected_case_count"],
+            },
+        )
     if ragas_summary:
         eval_run.metrics["ragas_run"] = ragas_summary
     eval_run.status = "completed" if not errors else "completed_with_errors"

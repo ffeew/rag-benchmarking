@@ -83,16 +83,24 @@ def create_evaluation(
     if payload.benchmark_profile == "scientific":
         _validate_scientific_cases(session, payload.dataset_id, case_ids)
 
+    # ``payload.variants`` is always populated by ``EvaluationCreate.coerce_variants``;
+    # ``system_variants`` is kept for legacy readers (no dedup — preserves ordering
+    # so legacy single-mode tooling still sees the right literal).
+    variants_payload = payload.variants or []
+    variants_dump = [spec.model_dump(mode="json") for spec in variants_payload]
+    legacy_modes = [spec.retrieval_mode for spec in variants_payload]
     eval_run = models.EvalRun(
         dataset_id=payload.dataset_id,
         status="queued",
         run_config={
             "case_ids": case_ids,
-            "system_variants": payload.system_variants,
+            "system_variants": legacy_modes,
+            "variants": variants_dump,
+            "variants_version": 1,
             "benchmark_profile": payload.benchmark_profile,
             "bootstrap_seed": 1729,
         },
-        system_variant=",".join(payload.system_variants),
+        system_variant=",".join(spec.name for spec in variants_payload),
         model_metadata={
             "chat_model": settings.openrouter_chat_model,
             "judge_model": settings.openrouter_judge_model,
@@ -109,7 +117,7 @@ def create_evaluation(
         current_step="queued",
         dataset_id=payload.dataset_id,
         eval_run_id=eval_run.id,
-        metadata_={"variants": payload.system_variants},
+        metadata_={"variants": [spec.name for spec in variants_payload]},
     )
     session.add(job)
     session.flush()

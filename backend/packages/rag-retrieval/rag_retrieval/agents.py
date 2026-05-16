@@ -9,6 +9,7 @@ from pydantic_ai import Agent, UserError
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.settings import ModelSettings
 from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import ProviderError
 from rag_common.usage import TokenUsage
@@ -52,6 +53,20 @@ def judge_available(settings: Settings | None = None) -> bool:
 @lru_cache(maxsize=4)
 def _provider_for_key(api_key: str) -> OpenRouterProvider:
     return OpenRouterProvider(api_key=api_key)
+
+
+def deterministic_model_settings(settings: Settings | None = None) -> ModelSettings | None:
+    """Return ``ModelSettings(temperature=0)`` when the eval determinism knob is on.
+
+    Used by every Pydantic AI ``Agent`` we build so HyDE / retrieval / verifier /
+    generator all run at temperature=0 during evaluation. Returns ``None`` when
+    determinism is disabled so the agent falls back to provider defaults.
+    """
+
+    resolved = settings or get_settings()
+    if not resolved.eval_temperature_zero:
+        return None
+    return ModelSettings(temperature=0)
 
 
 def build_chat_model(settings: Settings | None = None) -> Model:
@@ -112,4 +127,5 @@ def build_agent[T](
         output_type=output_type,
         system_prompt=system_prompt,
         name=name,
+        model_settings=deterministic_model_settings(settings),
     )

@@ -134,59 +134,78 @@ def hybrid_retrieve(
     resolved = settings or get_settings()
     provider = OpenRouterClient(resolved)
     embedding_model = resolved.openrouter_embedding_model or "mock-embedding"
-    embedding_text = semantic_query if semantic_query else question
-    embedding_result = provider.embeddings(
-        [embedding_text],
-        model=embedding_model,
-        dimensions=resolved.embedding_dimension,
-    )
-    query_vector = embedding_result.vectors[0]
-    embedding_usage = from_openrouter_usage(
-        embedding_result.metadata.usage,
-        provider=embedding_result.metadata.provider,
-        model=embedding_result.metadata.model,
-    )
+    semantic_enabled = resolved.semantic_candidates > 0
+    lexical_enabled = resolved.full_text_candidates > 0
+    if not semantic_enabled and not lexical_enabled:
+        raise ValueError(
+            "hybrid_retrieve requires at least one channel: "
+            "semantic_candidates and full_text_candidates cannot both be zero."
+        )
+    embedding_usage = TokenUsage()
     rerank_usage = TokenUsage()
+    semantic_rows: list[tuple[models.Chunk, models.Document, float]] = []
+    lexical_rows: list[tuple[models.Chunk, models.Document, float]] = []
+    embedding_model_used: str | None = None
+    embedding_provider_used: str | None = None
 
-    distance = models.Embedding.vector.cosine_distance(query_vector).label("distance")
-    semantic_statement = (
-        select(models.Chunk, models.Document, distance)
-        .join(models.Embedding, models.Embedding.chunk_id == models.Chunk.id)
-        .where(models.Embedding.model == (embedding_result.metadata.model or embedding_model))
-        .order_by(distance)
-        .limit(resolved.semantic_candidates)
-    )
-    semantic_statement = apply_filters(
-        semantic_statement,
-        dataset_id=dataset_id,
-        plan=plan,
-        filters=filters,
-    )
-    semantic_rows = [(row[0], row[1], float(row[2])) for row in session.execute(semantic_statement).all()]
+    if semantic_enabled:
+        embedding_text = semantic_query if semantic_query else question
+        embedding_result = provider.embeddings(
+            [embedding_text],
+            model=embedding_model,
+            dimensions=resolved.embedding_dimension,
+        )
+        query_vector = embedding_result.vectors[0]
+        embedding_usage = from_openrouter_usage(
+            embedding_result.metadata.usage,
+            provider=embedding_result.metadata.provider,
+            model=embedding_result.metadata.model,
+        )
+        embedding_model_used = embedding_result.metadata.model
+        embedding_provider_used = embedding_result.metadata.provider
 
-    ts_query = func.websearch_to_tsquery("english", question)
-    rank = func.ts_rank_cd(func.to_tsvector("english", models.Chunk.normalized_text), ts_query).label("rank")
-    lexical_statement = (
-        select(models.Chunk, models.Document, rank)
-        .where(func.to_tsvector("english", models.Chunk.normalized_text).op("@@")(ts_query))
-        .order_by(desc(rank))
-        .limit(resolved.full_text_candidates)
-    )
-    lexical_statement = apply_filters(
-        lexical_statement,
-        dataset_id=dataset_id,
-        plan=plan,
-        filters=filters,
-    )
-    lexical_rows = [(row[0], row[1], float(row[2])) for row in session.execute(lexical_statement).all()]
+        distance = models.Embedding.vector.cosine_distance(query_vector).label("distance")
+        semantic_statement = (
+            select(models.Chunk, models.Document, distance)
+            .join(models.Embedding, models.Embedding.chunk_id == models.Chunk.id)
+            .where(models.Embedding.model == (embedding_result.metadata.model or embedding_model))
+            .order_by(distance)
+            .limit(resolved.semantic_candidates)
+        )
+        semantic_statement = apply_filters(
+            semantic_statement,
+            dataset_id=dataset_id,
+            plan=plan,
+            filters=filters,
+        )
+        semantic_rows = [(row[0], row[1], float(row[2])) for row in session.execute(semantic_statement).all()]
+
+    if lexical_enabled:
+        ts_query = func.websearch_to_tsquery("english", question)
+        rank = func.ts_rank_cd(func.to_tsvector("english", models.Chunk.normalized_text), ts_query).label("rank")
+        lexical_statement = (
+            select(models.Chunk, models.Document, rank)
+            .where(func.to_tsvector("english", models.Chunk.normalized_text).op("@@")(ts_query))
+            .order_by(desc(rank))
+            .limit(resolved.full_text_candidates)
+        )
+        lexical_statement = apply_filters(
+            lexical_statement,
+            dataset_id=dataset_id,
+            plan=plan,
+            filters=filters,
+        )
+        lexical_rows = [(row[0], row[1], float(row[2])) for row in session.execute(lexical_statement).all()]
 
     fused = reciprocal_rank_fusion(semantic_rows, lexical_rows, resolved.fused_candidates)
     trace: dict[str, Any] = {
-        "embedding_model": embedding_result.metadata.model,
-        "embedding_provider": embedding_result.metadata.provider,
+        "embedding_model": embedding_model_used,
+        "embedding_provider": embedding_provider_used,
         "semantic_count": len(semantic_rows),
         "lexical_count": len(lexical_rows),
         "fused_count": len(fused),
+        "semantic_enabled": semantic_enabled,
+        "lexical_enabled": lexical_enabled,
         "rerank_degraded": False,
         "semantic_query_used": semantic_query is not None,
         "semantic_query_preview": (semantic_query[:200] if semantic_query else None),

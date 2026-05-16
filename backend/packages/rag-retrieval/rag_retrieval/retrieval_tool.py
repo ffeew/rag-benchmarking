@@ -30,7 +30,7 @@ from rag_common.providers.openrouter import ProviderError
 from rag_common.schemas import QueryFilters
 from rag_common.usage import TokenUsage, merge, safe_pydantic_ai_usage
 
-from rag_retrieval.agents import agent_available, build_chat_model
+from rag_retrieval.agents import agent_available, build_chat_model, deterministic_model_settings
 from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve
 from rag_retrieval.hyde import generate_hyde_passage
 from rag_retrieval.planning import (
@@ -447,6 +447,7 @@ def build_retrieval_agent(
         output_type=RetrievalAgentOutput,
         system_prompt=_RETRIEVAL_AGENT_SYSTEM_PROMPT,
         name="sec-rag-retrieval-agent",
+        model_settings=deterministic_model_settings(settings),
     )
 
     @agent.tool
