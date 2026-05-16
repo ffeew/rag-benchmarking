@@ -218,7 +218,7 @@ function JobDetail() {
             }
           />
           <CardBody>
-            <pre className="overflow-x-auto rounded-[3px] border border-[var(--bad)]/30 bg-[var(--bad-soft)] p-3 font-mono text-[11.5px] leading-relaxed text-[var(--ink)]">
+            <pre className="whitespace-pre-wrap break-words rounded-[3px] border border-[var(--bad)]/30 bg-[var(--bad-soft)] p-3 font-mono text-[11.5px] leading-relaxed text-[var(--ink)]">
               {job.error}
             </pre>
           </CardBody>
@@ -250,7 +250,7 @@ function JobDetail() {
           />
           {showMeta && (
             <CardBody>
-              <pre className="overflow-x-auto rounded-[3px] border border-[var(--rule)] bg-[var(--surface-2)] p-3 font-mono text-[11px] leading-relaxed text-[var(--ink-dim)]">
+              <pre className="whitespace-pre-wrap break-words rounded-[3px] border border-[var(--rule)] bg-[var(--surface-2)] p-3 font-mono text-[11px] leading-relaxed text-[var(--ink-dim)]">
                 {JSON.stringify(job.metadata, null, 2)}
               </pre>
             </CardBody>
