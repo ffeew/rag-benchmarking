@@ -178,13 +178,32 @@ def _chunk_narrative(text: str, target_tokens: int, overlap_tokens: int) -> list
         refinery = _overlap_refinery(overlap_tokens)
         if refinery is not None:
             chunks = refinery.refine(chunks)
-    return [chunk.text for chunk in chunks if chunk.text.strip()]
+    accepted = [chunk.text for chunk in chunks if chunk.text.strip()]
+    dropped = len(chunks) - len(accepted)
+    if dropped:
+        # Whitespace-only chunks were filtered out. Surface so silent data loss
+        # (e.g., degraded tokenizer fallback emitting empty pieces) shows up in
+        # logs instead of just shrinking the chunk count.
+        logger.warning("chunker_dropped_empty_pieces", extra={"kind": "narrative", "dropped": dropped})
+    return accepted
 
 
 def _chunk_table(text: str, max_tokens: int) -> list[str]:
     chunker = _table_chunker(max_tokens)
-    pieces = [chunk.text for chunk in chunker.chunk(text) if chunk.text.strip()]
-    return pieces if pieces else [text]
+    raw = chunker.chunk(text)
+    pieces = [chunk.text for chunk in raw if chunk.text.strip()]
+    dropped = len(raw) - len(pieces)
+    if dropped:
+        logger.warning("chunker_dropped_empty_pieces", extra={"kind": "table", "dropped": dropped})
+    if pieces:
+        return pieces
+    # TableChunker yielded nothing usable — fall back to recursive prose chunking
+    # so the table content is preserved. Header repetition is lost for the
+    # resulting pieces, but returning ``[text]`` here (the previous behavior)
+    # forced the caller into the oversized branch where the whole block was
+    # stored as a single chunk that later broke the embedding batch.
+    logger.warning("chunker_table_fallback_narrative", extra={"reason": "no_table_pieces"})
+    return _chunk_narrative(text, max_tokens, 0)
 
 
 def chunk_pages(pages: list[ParsedPage], settings: Settings | None = None) -> list[ChunkDraft]:
@@ -248,22 +267,35 @@ def chunk_pages(pages: list[ParsedPage], settings: Settings | None = None) -> li
                 block_index += 1
                 piece_tokens = estimate_tokens(piece)
                 if is_table and piece_tokens > max_tokens:
+                    # TableChunker couldn't get this piece under max_tokens. Recursively
+                    # split via the prose chunker so the embedding call doesn't reject
+                    # the chunk for exceeding the model's input window. Header
+                    # repetition is lost here; ``oversized_recovered`` keeps the
+                    # failure mode observable for monitoring.
                     flush()
-                    drafts.append(
-                        ChunkDraft(
-                            text=piece,
-                            page_start=page.page_number,
-                            page_end=page.page_number,
-                            contains_table=True,
-                            token_count=piece_tokens,
-                            metadata={
-                                "chunk_type": ChunkType.TABLE,
-                                "chunker": ChunkerType.CHONKIE,
-                                "oversized": True,
-                            },
-                            source_offsets={"block_start": block_index, "block_end": block_index},
+                    sub_pieces = _chunk_narrative(piece, max_tokens, 0)
+                    if not sub_pieces:
+                        logger.warning(
+                            "chunker_oversized_table_unrecoverable",
+                            extra={"piece_tokens": piece_tokens, "max_tokens": max_tokens},
                         )
-                    )
+                        continue
+                    for sub in sub_pieces:
+                        drafts.append(
+                            ChunkDraft(
+                                text=sub,
+                                page_start=page.page_number,
+                                page_end=page.page_number,
+                                contains_table=True,
+                                token_count=estimate_tokens(sub),
+                                metadata={
+                                    "chunk_type": ChunkType.TABLE,
+                                    "chunker": ChunkerType.CHONKIE,
+                                    "oversized_recovered": True,
+                                },
+                                source_offsets={"block_start": block_index, "block_end": block_index},
+                            )
+                        )
                     continue
 
                 proposed_tokens = estimate_tokens("\n\n".join([*current_parts, piece]))

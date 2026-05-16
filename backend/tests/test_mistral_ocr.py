@@ -93,6 +93,109 @@ def test_mistral_ocr_normalizes_zero_and_one_based_page_indexes(
     assert [page.page_number for page in result.pages] == expected_page_numbers
 
 
+def test_mistral_ocr_falls_back_to_position_when_index_missing() -> None:
+    """If a page lacks an ``index`` field, the parser must fall back to the
+    1-based stream position so we don't emit ``page_number=0`` or duplicates."""
+    requests: list[httpx.Request] = []
+    http_client = _client_for_response(
+        {
+            "pages": [
+                {"markdown": "page A"},
+                {"markdown": "page B"},
+                {"markdown": "page C"},
+            ],
+            "model": "mistral-ocr-2512",
+        },
+        requests,
+    )
+
+    result = MistralOcrClient(_settings(), client=http_client).parse_pdf(b"%PDF")
+
+    assert [page.page_number for page in result.pages] == [1, 2, 3]
+
+
+def test_mistral_ocr_mixes_indexed_and_unindexed_pages() -> None:
+    """A page with no index uses its stream position; pages with explicit
+    indexes are normalized against the detected 0/1-base. The two paths must
+    coexist without one corrupting the other."""
+    requests: list[httpx.Request] = []
+    # Presence of 0 in the indexed pages selects 0-base mode; the middle page
+    # has no index and must use stream position 2.
+    http_client = _client_for_response(
+        {
+            "pages": [
+                {"index": 0, "markdown": "first"},
+                {"markdown": "middle"},
+                {"index": 2, "markdown": "third"},
+            ],
+            "model": "mistral-ocr-2512",
+        },
+        requests,
+    )
+
+    result = MistralOcrClient(_settings(), client=http_client).parse_pdf(b"%PDF")
+
+    assert [page.page_number for page in result.pages] == [1, 2, 3]
+
+
+def test_mistral_ocr_accepts_string_index_values() -> None:
+    """Some Mistral responses return ``"index": "0"`` as a string; ``_as_int``
+    coerces it. The page-number logic must then treat it the same as the int."""
+    requests: list[httpx.Request] = []
+    http_client = _client_for_response(
+        {
+            "pages": [
+                {"index": "0", "markdown": "first"},
+                {"index": "1", "markdown": "second"},
+            ],
+            "model": "mistral-ocr-2512",
+        },
+        requests,
+    )
+
+    result = MistralOcrClient(_settings(), client=http_client).parse_pdf(b"%PDF")
+
+    assert [page.page_number for page in result.pages] == [1, 2]
+
+
+def test_mistral_ocr_handles_negative_or_zero_normalized_index() -> None:
+    """If 1-base mode is selected (no zero appears) and a page still produces a
+    normalized value < 1 — e.g., a stray ``"index": -1`` — fall back to the
+    stream position rather than emitting ``page_number=0``."""
+    requests: list[httpx.Request] = []
+    http_client = _client_for_response(
+        {
+            "pages": [
+                {"index": -1, "markdown": "anomalous"},
+                {"index": 1, "markdown": "ok"},
+                {"index": 2, "markdown": "ok2"},
+            ],
+            "model": "mistral-ocr-2512",
+        },
+        requests,
+    )
+
+    result = MistralOcrClient(_settings(), client=http_client).parse_pdf(b"%PDF")
+
+    # The presence of 1 (no 0) selects 1-base, so index=-1 normalizes to -1 → < 1
+    # → fall back to stream position 1; indexes 1 and 2 pass through.
+    assert [page.page_number for page in result.pages] == [1, 1, 2]
+
+
+def test_mistral_ocr_returns_no_pages_when_response_has_none() -> None:
+    """An empty ``pages`` array must produce an empty result without raising."""
+    requests: list[httpx.Request] = []
+    http_client = _client_for_response(
+        {"pages": [], "model": "mistral-ocr-2512"},
+        requests,
+    )
+
+    result = MistralOcrClient(_settings(), client=http_client).parse_pdf(b"%PDF")
+
+    assert result.pages == []
+    assert result.model == "mistral-ocr-2512"
+
+
 def test_mistral_ocr_retries_transient_statuses() -> None:
     calls = 0
 

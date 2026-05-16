@@ -1,5 +1,5 @@
 import time
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from rag_common.config import Settings, get_settings
@@ -10,7 +10,7 @@ from rag_common.ingestion_run_state import record_ingestion_run_failure
 from rag_common.job_state import commit_job_progress
 from rag_common.providers.openrouter import OpenRouterClient
 from rag_common.storage.minio import ObjectStore
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.orm import Session
 
 from rag_ingestion_worker.ingestion.chunking import chunk_pages, normalize_text
@@ -103,8 +103,85 @@ def get_or_create_ingestion_run(
         run_id = run.id
 
     attached = session.get(models.IngestionRun, run_id)
-    assert attached is not None, "row was just committed on the same DB"  # noqa: S101 - sanity check on row we just committed
+    if attached is None:
+        # The bootstrap transaction above committed run_id to the same database
+        # the caller session is bound to, so a missing row here indicates a real
+        # infrastructure problem (replica routing, transaction isolation higher
+        # than read-committed, connection mismatch). Raise instead of asserting
+        # so the check survives Python -O.
+        raise RuntimeError(
+            f"IngestionRun {run_id} was committed in a bootstrap transaction but is "
+            "not visible to the worker session. Check that the worker and bootstrap "
+            "sessions share the same database / connection pool."
+        )
     return attached, True
+
+
+def gc_prior_runs_same_config(
+    session: Session,
+    *,
+    document_id: str,
+    current_run_id: str,
+    parser_config_value: dict[str, Any],
+    chunking_config_value: dict[str, Any],
+    embedding_model: str,
+) -> dict[str, int]:
+    """Delete heavyweight artifacts (parsed_pages, chunks, embeddings) from prior
+    ``IngestionRun`` rows for ``document_id`` whose config matches the current run.
+
+    Different-config runs are intentionally preserved so cross-config benchmarking
+    keeps working — this only collapses duplicates within a single config tuple
+    that the dedup query would normally have reused but couldn't (because the
+    prior run failed, or the caller passed ``force=True``). The IngestionRun
+    rows themselves stay for audit (status, error_summary, timings, counts).
+
+    Citations to deleted chunks cascade-delete via the FK; that is the
+    intended behavior because citations carry their own ``evidence_text``
+    snapshot for the answer-quality record.
+    """
+    prior_run_ids = select(models.IngestionRun.id).where(
+        models.IngestionRun.document_id == document_id,
+        models.IngestionRun.id != current_run_id,
+        models.IngestionRun.parser_config == parser_config_value,
+        models.IngestionRun.chunking_config == chunking_config_value,
+        models.IngestionRun.embedding_model == embedding_model,
+    )
+    prior_chunk_ids = select(models.Chunk.id).where(models.Chunk.ingestion_run_id.in_(prior_run_ids))
+    # ``session.execute(delete(...))`` always returns a ``CursorResult`` at
+    # runtime, but SQLAlchemy's stub types it as ``Result[Any]`` (which omits
+    # ``rowcount``). Cast so mypy can see the DML-specific attribute.
+    embeddings_result = cast(
+        "CursorResult[Any]",
+        session.execute(delete(models.Embedding).where(models.Embedding.chunk_id.in_(prior_chunk_ids))),
+    )
+    chunks_result = cast(
+        "CursorResult[Any]",
+        session.execute(delete(models.Chunk).where(models.Chunk.ingestion_run_id.in_(prior_run_ids))),
+    )
+    parsed_pages_result = cast(
+        "CursorResult[Any]",
+        session.execute(delete(models.ParsedPage).where(models.ParsedPage.ingestion_run_id.in_(prior_run_ids))),
+    )
+    return {
+        "embeddings": embeddings_result.rowcount,
+        "chunks": chunks_result.rowcount,
+        "parsed_pages": parsed_pages_result.rowcount,
+    }
+
+
+def quality_flag_summary(pages: list[Any]) -> dict[str, int]:
+    """Aggregate ``quality_flags`` set across all parsed pages.
+
+    Returns a per-flag count (e.g. ``{"empty_text": 2, "malformed_markdown_table": 1}``)
+    so degraded OCR runs leave a fingerprint in ``IngestionRun.counts`` instead of
+    being silently absorbed into the chunk pipeline.
+    """
+    summary: dict[str, int] = {}
+    for page in pages:
+        for flag, value in page.quality_flags.items():
+            if value:
+                summary[flag] = summary.get(flag, 0) + 1
+    return summary
 
 
 def mark_job(
@@ -172,9 +249,17 @@ def run_document_ingestion(
 
     store = ObjectStore(resolved)
     provider = OpenRouterClient(resolved)
+    resolved_parser_config = parser_config(resolved)
+    resolved_chunking_config = chunking_config(resolved)
+    resolved_embedding_model = resolved.openrouter_embedding_model or "mock-embedding"
     try:
         mark_job(session, job, status=JobStatus.RUNNING, progress=5, step="reading raw PDF")
         run.status = IngestionRunStatus.RUNNING
+        # Surface RUNNING immediately. Without this commit the row remains at its
+        # bootstrap QUEUED value for the entire pipeline, so an operator watching
+        # ``IngestionRun.status`` cannot distinguish a worker that is hard at work
+        # from one that died after picking up the task.
+        session.commit()
         log.debug(
             "pipeline_stage_minio_get_start",
             bucket=document.minio_bucket,
@@ -197,6 +282,17 @@ def run_document_ingestion(
         log.debug("pipeline_stage_parse_start")
         stage_started = time.perf_counter()
         parsed = parse_pdf(pdf_bytes, resolved)
+        page_quality_summary = quality_flag_summary(parsed.pages)
+        if page_quality_summary:
+            # Per-page quality flags previously went into ``ParsedPage.quality_flags``
+            # and were never read again. Aggregate and log them here so a run with
+            # mostly-empty pages or malformed tables is visible at the warning level.
+            log.warning(
+                "pipeline_quality_flags_detected",
+                flag_counts=page_quality_summary,
+                affected_pages=sum(1 for page in parsed.pages if page.quality_flags),
+                total_pages=len(parsed.pages),
+            )
         log.debug(
             "pipeline_stage_parse_done",
             parser=parsed.parser,
@@ -230,6 +326,11 @@ def run_document_ingestion(
                 )
             )
         session.flush()
+        # Make parsed pages durable before chunking. A chunker or embedding failure
+        # after this point no longer discards the OCR work; the parsed-page rows
+        # belong to this (failed) run and are GC'd by ``gc_prior_runs_same_config``
+        # once a later attempt succeeds with the same config.
+        session.commit()
         log.debug(
             "pipeline_stage_artifacts_upload_done",
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
@@ -276,6 +377,11 @@ def run_document_ingestion(
             session.add(chunk)
             db_chunks.append(chunk)
         session.flush()
+        # Make chunks durable before the (potentially long, network-bound)
+        # embedding stage. If a batch later fails, the chunk rows survive under
+        # this run for analysis; ``gc_prior_runs_same_config`` cleans them up
+        # when a subsequent attempt of the same config succeeds.
+        session.commit()
         log.debug(
             "pipeline_stage_chunk_done",
             chunk_count=len(db_chunks),
@@ -292,12 +398,14 @@ def run_document_ingestion(
             batch_size=batch_size,
         )
         stage_started = time.perf_counter()
+        total_batches = max(1, (len(db_chunks) + batch_size - 1) // batch_size)
         for offset in range(0, len(db_chunks), batch_size):
             batch = db_chunks[offset : offset + batch_size]
             batch_started = time.perf_counter()
+            batch_index = offset // batch_size
             log.debug(
                 "pipeline_stage_embed_batch_start",
-                batch_index=offset // batch_size,
+                batch_index=batch_index,
                 batch_size=len(batch),
                 offset=offset,
             )
@@ -316,9 +424,25 @@ def run_document_ingestion(
                         vector=vector,
                     )
                 )
+            # Commit each batch so a later batch's failure doesn't undo embedding
+            # cost we've already paid. Combined with ``gc_prior_runs_same_config``
+            # on the next successful retry, this turns "any embed failure throws
+            # away the whole run" into "any embed failure costs at most one batch
+            # of recomputation".
+            session.commit()
+            # 75–95% of the progress bar covers embedding so a hung batch is
+            # visible in the UI; reserve the last 5 points for the final GC + commit.
+            progress_pct = 75 + int(20 * (batch_index + 1) / total_batches)
+            mark_job(
+                session,
+                job,
+                status=JobStatus.RUNNING,
+                progress=progress_pct,
+                step=f"embedding batch {batch_index + 1}/{total_batches}",
+            )
             log.debug(
                 "pipeline_stage_embed_batch_done",
-                batch_index=offset // batch_size,
+                batch_index=batch_index,
                 batch_size=len(batch),
                 provider=result.metadata.provider,
                 elapsed_seconds=round(time.perf_counter() - batch_started, 3),
@@ -333,22 +457,42 @@ def run_document_ingestion(
             "pages": len(pages),
             "chunks": len(db_chunks),
             "table_chunks": sum(1 for chunk in db_chunks if chunk.contains_table),
+            "pages_with_quality_flags": sum(1 for page in parsed.pages if page.quality_flags),
+            "quality_flag_counts": page_quality_summary,
         }
         document.active_ingestion_run_id = run.id
+        # GC chunks/embeddings/parsed_pages from earlier same-config runs of this
+        # document (whether they completed earlier or failed mid-way thanks to the
+        # per-stage commits above). Cross-config runs survive so cross-config
+        # benchmarking remains intact; the dedup query already keys on this same
+        # tuple so this is just "collapse duplicates within a config".
+        gc_counts = gc_prior_runs_same_config(
+            session,
+            document_id=document.id,
+            current_run_id=run.id,
+            parser_config_value=resolved_parser_config,
+            chunking_config_value=resolved_chunking_config,
+            embedding_model=resolved_embedding_model,
+        )
+        run.counts["gc_prior_runs"] = gc_counts
         mark_job(session, job, status=JobStatus.COMPLETED, progress=100, step="completed")
         session.flush()
         log.info(
             "pipeline_completed",
             pages=len(pages),
             chunks=len(db_chunks),
+            quality_flags=page_quality_summary,
+            gc_counts=gc_counts,
             elapsed_seconds=round(time.perf_counter() - pipeline_start, 3),
         )
         return run
     except Exception as exc:
-        # Roll back the main session explicitly so partial chunk/embedding inserts
-        # are discarded before we touch any external state. The context manager
-        # exit would also roll back, but doing it here makes the cleanup ordering
-        # obvious and avoids relying on implicit teardown semantics.
+        # Discard uncommitted state on the worker session before we touch external
+        # state. Per-stage commits above mean previously committed parsed_pages,
+        # chunks, and embedded batches are durable under this (now-failed) run —
+        # ``gc_prior_runs_same_config`` collapses them when a later attempt with
+        # the same config succeeds. The rollback here only covers what hadn't
+        # been committed yet (typically the current batch of embeddings).
         session.rollback()
         # Mark the run and job failed via separate transactions. Both helpers
         # refuse to clobber terminal statuses, so a follow-up call from the

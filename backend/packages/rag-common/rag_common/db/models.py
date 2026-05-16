@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from rag_common.constants import EMBEDDING_VECTOR_DIMENSION
 from rag_common.enums import (
     IngestionRunStatus,
     JobStatus,
@@ -181,7 +182,7 @@ class Embedding(TimestampMixin, Base):
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     dimension: Mapped[int] = mapped_column(Integer, nullable=False)
-    vector: Mapped[list[float]] = mapped_column(Vector(1024))
+    vector: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_VECTOR_DIMENSION))
 
     chunk: Mapped[Chunk] = relationship(back_populates="embeddings")
 

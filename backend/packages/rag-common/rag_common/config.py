@@ -6,6 +6,8 @@ from typing import Annotated, Any, Literal, Self
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from rag_common.constants import EMBEDDING_VECTOR_DIMENSION
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -134,6 +136,25 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Missing required AI provider configuration. "
                 f"Set {joined}, or use ALLOW_MOCK_PROVIDERS=true for offline smoke tests."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_embedding_dimension_matches_schema(self) -> Self:
+        # The pgvector ``embeddings.vector`` column is declared ``vector(N)`` with
+        # N == EMBEDDING_VECTOR_DIMENSION in migration 0001, and the HNSW cosine
+        # index is built on that same N. A mismatch wouldn't be caught until the
+        # very last INSERT of an ingestion run, by which point parsing, chunking,
+        # and embedding work has already been done and discarded on rollback.
+        # Reject it at Settings load so the failure mode is "service refuses to
+        # start" instead of "every ingestion silently rolls back".
+        if self.embedding_dimension != EMBEDDING_VECTOR_DIMENSION:
+            raise ValueError(
+                f"EMBEDDING_DIMENSION={self.embedding_dimension} does not match the "
+                f"pgvector schema (EMBEDDING_VECTOR_DIMENSION={EMBEDDING_VECTOR_DIMENSION}, "
+                "set in migrations/versions/0001_initial_schema.py). Changing the "
+                "embedding dimension requires a new migration that alters embeddings.vector "
+                "and rebuilds ix_embeddings_vector_hnsw."
             )
         return self
 
