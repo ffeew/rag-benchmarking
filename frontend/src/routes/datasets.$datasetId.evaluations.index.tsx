@@ -12,9 +12,10 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { StatusDot } from '#/components/ui/status-dot'
 import { EmptyState } from '#/components/data/EmptyState'
 import { ErrorState } from '#/components/data/ErrorState'
+import { LiveRelative } from '#/components/data/LiveTime'
 import { NewEvaluationDialog } from '#/components/eval/NewEvaluationDialog'
 import { api } from '#/lib/api'
-import { formatRelative, truncateId } from '#/lib/format'
+import { truncateId } from '#/lib/format'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
 import { useToken } from '#/providers/TokenProvider'
@@ -142,7 +143,7 @@ function EvaluationsList() {
                       <div className="font-mono text-[10.5px] text-[var(--ink-muted)] mt-0.5">
                         {run.results.length} result
                         {run.results.length === 1 ? '' : 's'} ·{' '}
-                        {formatRelative(run.created_at)}
+                        <LiveRelative value={run.created_at} />
                       </div>
                     </Link>
                     <div className="flex flex-col items-end font-mono text-[11px] text-[var(--ink-dim)]">

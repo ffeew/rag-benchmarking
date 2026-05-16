@@ -19,15 +19,11 @@ import { StatusDot } from '#/components/ui/status-dot'
 import { Table, TBody, TD, TH, THead, TR } from '#/components/ui/table'
 import { EmptyState } from '#/components/data/EmptyState'
 import { ErrorState } from '#/components/data/ErrorState'
+import { LiveDuration, LiveRelative } from '#/components/data/LiveTime'
 import { api } from '#/lib/api'
 import type { Job } from '#/lib/api'
-import {
-  formatDuration,
-  formatRelative,
-  truncate,
-  truncateId,
-} from '#/lib/format'
-import { nextJobsListInterval } from '#/lib/polling'
+import { truncate, truncateId } from '#/lib/format'
+import { isTerminalJobStatus, nextJobsListInterval } from '#/lib/polling'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
 import { toast, toastApiError } from '#/providers/ToastProvider'
@@ -278,12 +274,7 @@ function JobRow({
   retrying: boolean
   cancelling: boolean
 }) {
-  const duration =
-    job.started_at && job.completed_at
-      ? new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()
-      : job.started_at
-        ? Date.now() - new Date(job.started_at).getTime()
-        : null
+  const terminal = isTerminalJobStatus(job.status)
   return (
     <TR interactive>
       <TD>
@@ -321,10 +312,16 @@ function JobRow({
         {job.retry_count}
       </TD>
       <TD className="font-mono text-[11px] text-[var(--ink-muted)]">
-        {formatRelative(job.started_at ?? job.created_at)}
+        <LiveRelative
+          value={job.started_at ?? job.created_at}
+          intervalMs={terminal ? 30_000 : 1000}
+        />
       </TD>
       <TD className="font-mono text-[11px] text-[var(--ink-muted)]">
-        {duration != null ? formatDuration(duration) : '–'}
+        <LiveDuration
+          startedAt={job.started_at}
+          completedAt={job.completed_at}
+        />
       </TD>
       <TD className="text-right">
         <div className="inline-flex gap-1">

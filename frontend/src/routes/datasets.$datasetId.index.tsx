@@ -10,8 +10,9 @@ import { Card, CardBody, CardHeader } from '#/components/ui/card'
 import { Skeleton } from '#/components/ui/skeleton'
 import { StatusDot } from '#/components/ui/status-dot'
 import { EmptyState } from '#/components/data/EmptyState'
+import { LiveRelative } from '#/components/data/LiveTime'
 import { api } from '#/lib/api'
-import { formatRelative, truncate, truncateId } from '#/lib/format'
+import { truncate, truncateId } from '#/lib/format'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
 import { useToken } from '#/providers/TokenProvider'
@@ -314,7 +315,7 @@ function DatasetSummary() {
                             {j.status}
                           </Badge>
                           <span className="ml-auto font-mono numeric text-[10.5px] text-[var(--ink-muted)]">
-                            {formatRelative(j.created_at)}
+                            <LiveRelative value={j.created_at} />
                           </span>
                         </div>
                         {(j.current_step || j.error) && (

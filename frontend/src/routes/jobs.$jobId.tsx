@@ -12,8 +12,9 @@ import { StatusDot } from '#/components/ui/status-dot'
 import { ErrorState } from '#/components/data/ErrorState'
 import { KeyValueGrid } from '#/components/data/KeyValueGrid'
 import type { KVRow } from '#/components/data/KeyValueGrid'
+import { LiveDuration } from '#/components/data/LiveTime'
 import { api } from '#/lib/api'
-import { formatDateTime, formatDuration } from '#/lib/format'
+import { formatDateTime } from '#/lib/format'
 import { isTerminalJobStatus, nextJobInterval } from '#/lib/polling'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
@@ -75,13 +76,6 @@ function JobDetail() {
 
   const job = jobQuery.data
   const terminal = isTerminalJobStatus(job.status)
-  const duration =
-    job.started_at && job.completed_at
-      ? new Date(job.completed_at).getTime() -
-        new Date(job.started_at).getTime()
-      : job.started_at
-        ? Date.now() - new Date(job.started_at).getTime()
-        : null
 
   const rows: Array<KVRow> = [
     { key: 'job id', value: job.id, mono: true, copyable: true },
@@ -114,8 +108,17 @@ function JobDetail() {
           mono: true,
         }
       : null,
-    duration != null
-      ? { key: 'duration', value: formatDuration(duration), mono: true }
+    job.started_at
+      ? {
+          key: 'duration',
+          value: (
+            <LiveDuration
+              startedAt={job.started_at}
+              completedAt={job.completed_at}
+            />
+          ),
+          mono: true,
+        }
       : null,
     job.retry_count
       ? { key: 'retries', value: String(job.retry_count), mono: true }
@@ -151,9 +154,12 @@ function JobDetail() {
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge tone={toneForStatus(job.status)}>{job.status}</Badge>
-              {duration != null && (
+              {job.started_at && (
                 <span className="font-mono text-[11.5px] text-[var(--ink-muted)]">
-                  {formatDuration(duration)}
+                  <LiveDuration
+                    startedAt={job.started_at}
+                    completedAt={job.completed_at}
+                  />
                 </span>
               )}
             </div>

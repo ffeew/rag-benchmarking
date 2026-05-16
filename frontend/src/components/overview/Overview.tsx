@@ -17,9 +17,10 @@ import { Progress } from '#/components/ui/progress'
 import { Skeleton, SkeletonRows } from '#/components/ui/skeleton'
 import { StatusDot } from '#/components/ui/status-dot'
 import { EmptyState } from '#/components/data/EmptyState'
+import { LiveRelative } from '#/components/data/LiveTime'
 import { MetricNumber } from '#/components/data/MetricNumber'
 import { api } from '#/lib/api'
-import { formatRelative, truncate, truncateId } from '#/lib/format'
+import { truncate, truncateId } from '#/lib/format'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
 import { useToken } from '#/providers/TokenProvider'
@@ -297,7 +298,7 @@ export function Overview() {
                         <div className="flex flex-col items-end gap-1 min-w-[110px]">
                           <Progress value={j.progress} className="w-24" />
                           <span className="font-mono numeric text-[10.5px] text-[var(--ink-muted)]">
-                            {formatRelative(j.created_at)}
+                            <LiveRelative value={j.created_at} />
                           </span>
                         </div>
                       </Link>
@@ -351,7 +352,8 @@ export function Overview() {
                             {t.user_question}
                           </div>
                           <div className="font-mono text-[10.5px] text-[var(--ink-muted)]">
-                            {truncateId(t.id)} · {formatRelative(t.created_at)}
+                            {truncateId(t.id)} ·{' '}
+                            <LiveRelative value={t.created_at} />
                           </div>
                         </div>
                         {t.confidence != null && (
