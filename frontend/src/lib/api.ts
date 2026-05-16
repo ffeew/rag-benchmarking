@@ -593,12 +593,20 @@ export const api = {
       }),
     )
   },
-  async ingestionRuns(token: string, datasetId: string) {
-    return z
-      .array(ingestionRunSchema)
-      .parse(
-        await apiFetch(`/v1/datasets/${datasetId}/ingestion-runs`, { token }),
-      )
+  async ingestionRuns(
+    token: string,
+    datasetId: string,
+    params: PageParams = {},
+  ) {
+    return pageSchema(ingestionRunSchema).parse(
+      await apiFetch(`/v1/datasets/${datasetId}/ingestion-runs`, {
+        token,
+        searchParams: {
+          limit: params.limit ?? 50,
+          offset: params.offset ?? 0,
+        },
+      }),
+    )
   },
   /* jobs */
   async jobs(

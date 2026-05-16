@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Activity, Layers } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { Badge, toneForStatus } from '#/components/ui/badge'
 import { Card, CardBody, CardHeader } from '#/components/ui/card'
+import { Pagination } from '#/components/ui/pagination'
 import { Skeleton } from '#/components/ui/skeleton'
 import { StatusDot } from '#/components/ui/status-dot'
 import { EmptyState } from '#/components/data/EmptyState'
@@ -28,21 +30,37 @@ function IngestionPage() {
   const { datasetId } = Route.useParams()
   const { token, isAuthed } = useToken()
 
+  const [limit, setLimit] = useState(50)
+  const [offset, setOffset] = useState(0)
+
+  useEffect(() => {
+    setOffset(0)
+  }, [limit])
+
   const runsQuery = useQuery({
-    queryKey: qk.datasets.ingestionRuns(datasetId),
-    queryFn: () => api.ingestionRuns(token, datasetId).catch(() => []),
+    queryKey: qk.datasets.ingestionRuns({ datasetId, limit, offset }),
+    queryFn: () => api.ingestionRuns(token, datasetId, { limit, offset }),
     enabled: isAuthed,
+    placeholderData: keepPreviousData,
     refetchInterval: 6000,
   })
 
-  const runs = runsQuery.data ?? []
+  const runs = runsQuery.data?.items ?? []
+  const total = runsQuery.data?.total ?? 0
 
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-6">
       <Card>
         <CardHeader
-          title="INGESTION RUNS"
-          subtitle={`${runs.length} historical run${runs.length === 1 ? '' : 's'}`}
+          title={
+            <span>
+              INGESTION RUNS{' '}
+              <span className="font-mono numeric text-[var(--ink-muted)]">
+                · {runs.length}/{total}
+              </span>
+            </span>
+          }
+          subtitle={`${total} historical run${total === 1 ? '' : 's'}`}
         />
         <CardBody padded={false}>
           {runsQuery.isLoading ? (
@@ -141,6 +159,15 @@ function IngestionPage() {
               })}
             </ul>
           )}
+          <Pagination
+            total={total}
+            limit={limit}
+            offset={offset}
+            onChange={({ limit: nextLimit, offset: nextOffset }) => {
+              setLimit(nextLimit)
+              setOffset(nextOffset)
+            }}
+          />
         </CardBody>
       </Card>
     </div>

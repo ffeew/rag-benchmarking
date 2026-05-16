@@ -1,9 +1,15 @@
 from fastapi import APIRouter, HTTPException, status
 from rag_common.db import models
-from rag_common.schemas import IngestionCreate, IngestionCreateResponse, IngestionRunRead
+from rag_common.schemas import (
+    IngestionCreate,
+    IngestionCreateResponse,
+    IngestionRunRead,
+    Page,
+)
 from sqlalchemy import select
 
 from rag_benchmarking.api.deps import AuthDep, DbSession
+from rag_benchmarking.api.pagination import LimitParam, OffsetParam, paged_query
 from rag_benchmarking.api.serialization import ingestion_run_to_read
 from rag_benchmarking.ingestion.queueing import queue_ingestion_jobs
 
@@ -15,16 +21,21 @@ def list_ingestion_runs(
     dataset_id: str,
     session: DbSession,
     _auth: AuthDep,
-) -> list[IngestionRunRead]:
+    limit: LimitParam = 50,
+    offset: OffsetParam = 0,
+) -> Page[IngestionRunRead]:
     dataset = session.get(models.Dataset, dataset_id)
     if dataset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    statement = (
-        select(models.IngestionRun)
-        .where(models.IngestionRun.dataset_id == dataset_id)
-        .order_by(models.IngestionRun.created_at.desc())
+    base = select(models.IngestionRun).where(models.IngestionRun.dataset_id == dataset_id)
+    ordered = base.order_by(models.IngestionRun.created_at.desc())
+    rows, total = paged_query(session, base=base, ordered=ordered, limit=limit, offset=offset)
+    return Page[IngestionRunRead](
+        items=[ingestion_run_to_read(run) for run in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
-    return [ingestion_run_to_read(run) for run in session.scalars(statement)]
 
 
 @router.post("/v1/datasets/{dataset_id}/ingestions")

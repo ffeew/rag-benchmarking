@@ -16,6 +16,12 @@ export type DocumentsListKey = {
   offset: number
 }
 
+export type IngestionRunsListKey = {
+  datasetId: string
+  limit: number
+  offset: number
+}
+
 export type EvaluationsListKey = {
   datasetId?: string
   limit: number
@@ -33,7 +39,10 @@ export const qk = {
     documents: (p: DocumentsListKey) =>
       ['datasets', p.datasetId, 'documents', p] as const,
     documentsAll: (id: string) => ['datasets', id, 'documents'] as const,
-    ingestionRuns: (id: string) => ['datasets', id, 'ingestion-runs'] as const,
+    ingestionRunsAll: (id: string) =>
+      ['datasets', id, 'ingestion-runs'] as const,
+    ingestionRuns: (p: IngestionRunsListKey) =>
+      ['datasets', p.datasetId, 'ingestion-runs', p] as const,
   },
   documents: {
     detail: (id: string) => ['documents', id] as const,
