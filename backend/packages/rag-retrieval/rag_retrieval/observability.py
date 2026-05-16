@@ -18,7 +18,10 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets.wrapper import WrapperToolset
 
 if TYPE_CHECKING:
-    from pydantic_ai.tools import RunContext
+    from pydantic import ValidationError
+    from pydantic_ai.exceptions import ModelRetry
+    from pydantic_ai.messages import ToolCallPart
+    from pydantic_ai.tools import RunContext, ToolDefinition
     from pydantic_ai.toolsets import AbstractToolset
     from pydantic_ai.toolsets.abstract import ToolsetTool
 
@@ -88,3 +91,29 @@ class LogToolCalls(AbstractCapability[Any]):
         # the capability ran or the tool simply wasn't called).
         logger.info("logging_toolset_installed", wrapped=type(toolset).__name__)
         return LoggingToolset(wrapped=toolset)
+
+    async def on_tool_validate_error(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: str | dict[str, Any],
+        error: ValidationError | ModelRetry,
+    ) -> dict[str, Any]:
+        # Argument validation runs BEFORE LoggingToolset.call_tool, so without this hook
+        # bad-args tool calls are silently invisible — the model burns the per-tool retry
+        # budget without leaving a trace. Surface raw args + the validator's message so
+        # the operator can see exactly what the LLM emitted that didn't match the schema.
+        retries = getattr(ctx, "retries", {}) or {}
+        logger.warning(
+            "agent_tool_validate_error",
+            tool=call.tool_name,
+            agent=getattr(getattr(ctx, "agent", None), "name", None),
+            error_type=type(error).__name__,
+            error=str(error),
+            args_preview=_preview(args),
+            retry_count=retries.get(call.tool_name, 0),
+            max_retries=getattr(ctx, "max_retries", None),
+        )
+        raise error

@@ -15,13 +15,15 @@ key, or upstream failure), the orchestrator falls back to a single deterministic
 retrieval never goes dark.
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 from rag_common.config import Settings, get_settings
 from rag_common.enums import Provider, QueryType
@@ -212,6 +214,31 @@ def _parse_iso_date(value: str | None) -> date | None:
             return datetime.strptime(value, "%Y-%m-%d").date()  # noqa: DTZ007 - tolerate naive ISO dates from LLM
         except ValueError:
             return None
+
+
+def _coerce_str_list(value: object) -> object:
+    """JSON-decode a string-encoded list so pydantic's array validator accepts it.
+
+    Some chat models (glm-4.7 in particular) occasionally emit list-valued tool
+    arguments as JSON-string-encoded literals (e.g. ``'["AAPL"]'``) instead of as
+    real JSON arrays. Pydantic's strict ``list_type`` validator rejects these, and
+    each rejection burns a tool-retry slot without ever reaching ``call_tool`` —
+    the model just rebuilds the same malformed payload and times out. Try a single
+    JSON-decode pass before validation; pass through unchanged on anything else so
+    genuine type errors still surface for human-eyeballed diagnosis.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+_StrListArg = Annotated[list[str] | None, BeforeValidator(_coerce_str_list)]
 
 
 def _short_snippet(text: str, limit: int = 400) -> str:
@@ -503,13 +530,21 @@ def build_retrieval_agent(
     # fabricates a chunk_id on the first emit and self-corrects on the next. The
     # global ``tool_calls_limit=retrieval_agent_tool_call_budget`` (4 by default)
     # passed via UsageLimits is still the backstop on runaway loops.
+    # Retrieval is structured tool-calling work — temperature=0 unconditionally, not
+    # gated on ``eval_temperature_zero``. Other agents (HyDE, generator) still consult
+    # ``deterministic_model_settings`` because their stochasticity can be useful during
+    # debug runs, but here non-determinism manifests as malformed tool args (e.g. glm-4.7
+    # emitting ``tickers='["AAPL"]'`` as a JSON-string instead of an array) that burn the
+    # retry budget without anything productive to retry against.
+    base_settings = deterministic_model_settings(settings) or ModelSettings()
+    base_settings["temperature"] = 0
     agent: Agent[RetrievalAgentDeps, RetrievalAgentOutput] = Agent(
         model=build_chat_model(settings),
         deps_type=RetrievalAgentDeps,
         output_type=RetrievalAgentOutput,
         instructions=_RETRIEVAL_AGENT_INSTRUCTIONS,
         name="rag-retrieval-agent",
-        model_settings=deterministic_model_settings(settings),
+        model_settings=base_settings,
         output_retries=2,
         tool_retries=2,
         capabilities=[LogToolCalls()],
@@ -546,8 +581,8 @@ def build_retrieval_agent(
     def retrieve_evidence(
         ctx: RunContext[RetrievalAgentDeps],
         query: str,
-        tickers: list[str] | None = None,
-        form_types: list[str] | None = None,
+        tickers: _StrListArg = None,
+        form_types: _StrListArg = None,
         filing_date_start: str | None = None,
         filing_date_end: str | None = None,
         top_k: int = 6,
@@ -831,6 +866,15 @@ def run_retrieval_agent(
     )
 
     chunks = _materialize_selected(normalized_output, deps.chunk_lookup, resolved.evidence_top_k)
+    # _materialize_selected falls back to top-K when the LLM emits an empty
+    # selected_chunk_ids (or otherwise misses the curation step). Reflect the actual
+    # materialized chunks back onto ``selected_chunk_ids`` so the verifier section
+    # of the trace shows the chunks that fed the answer instead of an empty list.
+    # When the LLM did curate, this is a no-op — the materialized chunks match the
+    # original selection in id order.
+    materialized_ids = [c.chunk.id for c in chunks]
+    if materialized_ids != list(normalized_output.selected_chunk_ids):
+        normalized_output = normalized_output.model_copy(update={"selected_chunk_ids": materialized_ids})
     agent_chat_usage = safe_pydantic_ai_usage(
         result,
         provider=Provider.ZAI,

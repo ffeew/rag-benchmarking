@@ -50,6 +50,7 @@ def _agent_available_settings() -> Settings:
             hyde_enabled=False,
             embedding_dimension=1024,
             retrieval_agent_tool_call_budget=4,
+            eval_temperature_zero=False,
         ),
     )
 
@@ -271,6 +272,71 @@ def test_agent_budget_exhaustion_falls_back_to_heuristic(monkeypatch: pytest.Mon
     assert result.tool_calls[0]["tool"] == "heuristic-hybrid_retrieve"
 
 
+def test_agent_accepts_json_encoded_list_tickers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """glm-4.7 occasionally emits ``tickers='["AAPL"]'`` (a JSON-encoded string) instead
+    of an array. The ``_coerce_str_list`` BeforeValidator on the tool parameter should
+    transparently decode it so the call doesn't burn the per-tool retry budget on a
+    schema mismatch.
+    """
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    chunks = [_chunk("aapl-1", "AAPL", 10)]
+    _stub_hybrid_retrieve(monkeypatch, {"AAPL": chunks})
+
+    state = {"turn": 0}
+
+    def model_fn(_messages: object, info: AgentInfo) -> ModelResponse:
+        state["turn"] += 1
+        if state["turn"] == 1:
+            # JSON-string-encoded list - the pre-fix shape that blew the retry budget.
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="retrieve_evidence",
+                        args={"query": "Apple revenue", "tickers": '["AAPL"]', "use_hyde": False},
+                        tool_call_id="call-1",
+                    )
+                ]
+            )
+        output_tool_name = info.output_tools[0].name
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name=output_tool_name,
+                    args={
+                        "selected_chunk_ids": ["aapl-1"],
+                        "target_tickers": ["AAPL"],
+                        "forms": [],
+                        "query_type": "fact_lookup",
+                        "latest": False,
+                        "confidence": 0.8,
+                        "reasoning": "ok",
+                    },
+                    tool_call_id="call-final",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(retrieval_tool, "build_chat_model", lambda _settings=None: FunctionModel(model_fn))
+
+    settings = _agent_available_settings()
+    result, metadata, _usage = run_retrieval_agent(
+        cast("Any", SimpleNamespace()),
+        dataset_id="d1",
+        question="Apple revenue?",
+        filters=QueryFilters(),
+        known_tickers={"AAPL"},
+        settings=settings,
+    )
+
+    assert metadata["agent_used"] is True
+    assert metadata["tool_call_count"] == 1
+    assert metadata["tool_retry_count"] == 0
+    # The decoded ticker reached perform_retrieve_evidence and produced the expected hit.
+    assert [c.chunk.id for c in result.chunks] == ["aapl-1"]
+
+
 def test_agent_recovers_from_two_modelretries(monkeypatch: pytest.MonkeyPatch) -> None:
     """With tool_retries=2, the agent survives two ModelRetry raises before a clean call.
 
@@ -405,3 +471,7 @@ def test_agent_with_no_selected_ids_falls_back_to_retrieved(monkeypatch: pytest.
 
     # Safety net: when selected_chunk_ids is empty, fall back to top-of-lookup ranked chunks.
     assert {c.chunk.id for c in result.chunks} == {"c1", "c2", "c3"}
+    # And ``output.selected_chunk_ids`` is backfilled to match the materialized chunks so
+    # the verifier section of the trace reflects the evidence that actually fed the
+    # answer (previously it would show "0 supported" despite real chunks being used).
+    assert list(result.output.selected_chunk_ids) == [c.chunk.id for c in result.chunks]

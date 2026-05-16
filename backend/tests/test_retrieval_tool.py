@@ -14,6 +14,7 @@ from rag_retrieval.hybrid import RetrievedChunk
 from rag_retrieval.planning import RetrievalPlan
 from rag_retrieval.retrieval_tool import (
     RetrievalAgentDeps,
+    _coerce_str_list,
     perform_retrieve_evidence,
 )
 
@@ -136,6 +137,26 @@ def test_tool_drops_unknown_tickers_and_invalid_forms(monkeypatch: pytest.Monkey
     # Tool call log reflects normalized filters.
     assert deps.tool_calls[-1]["tickers"] == ["AAPL"]
     assert deps.tool_calls[-1]["form_types"] == ["10-K"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # Real glm-4.7 failure mode: tickers serialized as a JSON string literal.
+        ('["AAPL"]', ["AAPL"]),
+        ('["AAPL", "MSFT"]', ["AAPL", "MSFT"]),
+        ('  ["AAPL"]  ', ["AAPL"]),  # tolerates leading/trailing whitespace
+        # Already-correct shapes pass through untouched.
+        (["AAPL"], ["AAPL"]),
+        (None, None),
+        # Plain strings are not coerced (validator will surface the type error).
+        ("AAPL", "AAPL"),
+        # Malformed JSON in list-shaped braces falls through as-is.
+        ("[AAPL]", "[AAPL]"),
+    ],
+)
+def test_coerce_str_list_handles_json_encoded_arrays(raw: object, expected: object) -> None:
+    assert _coerce_str_list(raw) == expected
 
 
 def test_tool_silently_drops_when_all_filters_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
