@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import httpx
 from pydantic_ai import Agent, UserError
-from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -21,8 +21,15 @@ logger = logging.getLogger(__name__)
 # deliberately excluded: catching them would silently mask agent-construction
 # regressions in CI and let production drift onto the heuristic path for days
 # without any visible error. Let those propagate.
+#
+# ``UsageLimitExceeded`` is included so that an agent which over-spends its
+# ``UsageLimits`` budget (tool_calls_limit / request_limit) degrades to the
+# heuristic path instead of crashing the query. It is a sibling of
+# ``UnexpectedModelBehavior`` under ``AgentRunError``, not a subclass, so it
+# must be listed explicitly.
 AGENT_RETRYABLE_ERRORS: tuple[type[BaseException], ...] = (
     UnexpectedModelBehavior,
+    UsageLimitExceeded,
     ModelHTTPError,
     ProviderError,
     httpx.HTTPError,

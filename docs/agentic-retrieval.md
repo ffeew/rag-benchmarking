@@ -323,7 +323,7 @@ one tool call each, then synthesize" or "1 broad call + 3 narrow follow-ups, the
 synthesize" without surprising costs.
 
 When the limit is hit, Pydantic AI raises `UsageLimitExceeded`, which `run_retrieval_agent`
-catches via `_RETRIEVAL_AGENT_RETRYABLE_ERRORS` and falls back to the heuristic path.
+catches via `AGENT_RETRYABLE_ERRORS` and falls back to the heuristic path.
 In practice the system prompt nudges the agent to stay within budget; the runtime cap
 is just a backstop.
 

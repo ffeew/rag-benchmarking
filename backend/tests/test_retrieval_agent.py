@@ -234,6 +234,43 @@ def test_agent_failure_falls_back_to_heuristic(monkeypatch: pytest.MonkeyPatch) 
     assert [c.chunk.id for c in result.chunks] == ["c1"]
 
 
+def test_agent_budget_exhaustion_falls_back_to_heuristic(monkeypatch: pytest.MonkeyPatch) -> None:
+    # UsageLimitExceeded is a sibling of UnexpectedModelBehavior under AgentRunError,
+    # not a subclass, so it must be explicitly retryable for the heuristic fallback to
+    # kick in when the agent over-spends its tool_calls_limit / request_limit budget.
+    chunks = [_chunk("c1", "AAPL", 10)]
+    _stub_hybrid_retrieve(monkeypatch, {"AAPL": chunks})
+
+    class _OverBudget:
+        def run_sync(self, _prompt: str, *, deps: object, usage_limits: object) -> object:  # noqa: ARG002
+            from pydantic_ai.exceptions import UsageLimitExceeded
+
+            raise UsageLimitExceeded("The next request would exceed the tool_calls_limit of 4")
+
+    monkeypatch.setattr(retrieval_tool, "build_retrieval_agent", lambda _settings: _OverBudget())
+
+    settings = _agent_available_settings()
+    result, metadata, agent_chat_usage = run_retrieval_agent(
+        cast("Any", SimpleNamespace()),
+        dataset_id="d1",
+        question="Compare AAPL vs MSFT R&D over five years",
+        filters=QueryFilters(),
+        known_tickers={"AAPL"},
+        settings=settings,
+    )
+
+    assert metadata["agent_used"] is False
+    assert metadata["fallback_reason"] == "agent_error"
+    error_value = metadata["error"]
+    assert isinstance(error_value, str)
+    assert "UsageLimitExceeded" in error_value
+    assert agent_chat_usage.is_empty()
+    assert [c.chunk.id for c in result.chunks] == ["c1"]
+    # Heuristic fallback shape: one synthesized tool_call entry from the keyword path.
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0]["tool"] == "heuristic-hybrid_retrieve"
+
+
 def test_agent_with_no_selected_ids_falls_back_to_retrieved(monkeypatch: pytest.MonkeyPatch) -> None:
     chunks = [_chunk("c1", "AAPL", 10), _chunk("c2", "AAPL", 11), _chunk("c3", "AAPL", 12)]
     _stub_hybrid_retrieve(monkeypatch, {"AAPL": chunks})
