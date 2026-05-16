@@ -11,6 +11,7 @@ from rag_benchmarking.api.routes import (
     datasets,
     documents,
     eval_cases,
+    eval_packs,
     evaluations,
     health,
     ingestions,
@@ -44,6 +45,7 @@ app.include_router(jobs.router)
 app.include_router(query.router)
 app.include_router(evaluations.router)
 app.include_router(eval_cases.router)
+app.include_router(eval_packs.router)
 
 
 _API_PATH_PREFIXES: tuple[str, ...] = ("v1/", "health", "ready", "docs", "redoc", "openapi.json")

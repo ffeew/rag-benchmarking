@@ -6,6 +6,7 @@ from rag_common.schemas import (
     DocumentRead,
     EvalResultRead,
     EvalRunRead,
+    IngestionRunRead,
     JobRead,
 )
 from sqlalchemy import func, select
@@ -87,6 +88,23 @@ def document_to_read(session: Session, document: models.Document) -> DocumentRea
         active_ingestion_run_id=document.active_ingestion_run_id,
         ingestion_status=ingestion_status,
         created_at=document.created_at,
+    )
+
+
+def ingestion_run_to_read(run: models.IngestionRun) -> IngestionRunRead:
+    return IngestionRunRead(
+        id=run.id,
+        dataset_id=run.dataset_id,
+        document_id=run.document_id,
+        job_id=run.job_id,
+        parser_config=run.parser_config,
+        chunking_config=run.chunking_config,
+        embedding_model=run.embedding_model,
+        status=run.status,
+        timings=run.timings,
+        counts=run.counts,
+        error_summary=run.error_summary,
+        created_at=run.created_at,
     )
 
 

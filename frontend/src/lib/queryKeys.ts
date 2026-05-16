@@ -73,4 +73,8 @@ export const qk = {
     ) => ['eval-cases', 'list', params] as const,
     detail: (id: string) => ['eval-cases', 'detail', id] as const,
   },
+  evalPacks: {
+    all: () => ['eval-packs'] as const,
+    list: () => ['eval-packs', 'list'] as const,
+  },
 } as const

@@ -213,6 +213,27 @@ export const evalCaseSchema = z.object({
   updated_at: z.string().optional(),
 })
 
+export const evalPackSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  gold_version: z.string().nullable().optional(),
+  case_count: z.number(),
+  verified_count: z.number(),
+  categories: z.array(z.string()),
+  difficulties: z.array(z.string()),
+  tags: z.array(z.string()),
+})
+
+export const evalPackImportResponseSchema = z.object({
+  pack_id: z.string(),
+  dataset_id: z.string(),
+  created: z.number(),
+  updated: z.number(),
+  skipped: z.number(),
+  case_ids: z.array(z.string()),
+})
+
 export const ingestionRunSchema = z.object({
   id: z.string(),
   dataset_id: z.string(),
@@ -247,6 +268,8 @@ export type TraceSummary = z.infer<typeof traceSummarySchema>
 export type EvalRun = z.infer<typeof evalRunSchema>
 export type EvalResult = z.infer<typeof evalResultSchema>
 export type EvalCase = z.infer<typeof evalCaseSchema>
+export type EvalPackSummary = z.infer<typeof evalPackSummarySchema>
+export type EvalPackImportResponse = z.infer<typeof evalPackImportResponseSchema>
 export type IngestionRun = z.infer<typeof ingestionRunSchema>
 export type ReadyStatus = z.infer<typeof readySchema>
 
@@ -765,5 +788,24 @@ export const api = {
   },
   async deleteEvalCase(token: string, id: string) {
     await apiFetch(`/v1/eval-cases/${id}`, { token, method: 'DELETE' })
+  },
+  /* eval packs (bundled YAML evals shipped with the repo) */
+  async evalPacks(token: string) {
+    return z
+      .array(evalPackSummarySchema)
+      .parse(await apiFetch('/v1/eval-packs', { token }))
+  },
+  async importEvalPack(
+    token: string,
+    packId: string,
+    body: { dataset_id: string; dry_run?: boolean },
+  ) {
+    return evalPackImportResponseSchema.parse(
+      await apiFetch(`/v1/eval-packs/${packId}/import`, {
+        token,
+        method: 'POST',
+        body,
+      }),
+    )
   },
 }

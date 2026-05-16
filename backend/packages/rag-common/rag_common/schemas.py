@@ -207,6 +207,21 @@ class IngestionCreateResponse(BaseModel):
     broker_unavailable_document_ids: list[str] = Field(default_factory=list)
 
 
+class IngestionRunRead(BaseModel):
+    id: str
+    dataset_id: str
+    document_id: str
+    job_id: str | None
+    parser_config: dict[str, Any]
+    chunking_config: dict[str, Any]
+    embedding_model: str | None
+    status: str
+    timings: dict[str, Any]
+    counts: dict[str, Any]
+    error_summary: str | None
+    created_at: datetime
+
+
 class JobRead(BaseModel):
     id: str
     job_type: str
@@ -534,6 +549,32 @@ class EvalRunRead(BaseModel):
     errors: list[dict[str, Any]]
     results: list[EvalResultRead]
     created_at: datetime
+
+
+class EvalPackSummary(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    gold_version: str | None = None
+    case_count: int
+    verified_count: int
+    categories: list[str]
+    difficulties: list[str]
+    tags: list[str]
+
+
+class EvalPackImportRequest(BaseModel):
+    dataset_id: str
+    dry_run: bool = False
+
+
+class EvalPackImportResponse(BaseModel):
+    pack_id: str
+    dataset_id: str
+    created: int
+    updated: int
+    skipped: int
+    case_ids: list[str]
 
 
 class ReadinessResponse(BaseModel):
