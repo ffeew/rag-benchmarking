@@ -276,44 +276,48 @@ def test_agent_recovers_from_two_modelretries(monkeypatch: pytest.MonkeyPatch) -
 
     Uses pydantic-ai's real retry machinery via FunctionModel (the _FakeAgent fixture used
     elsewhere short-circuits the tool_manager and never exercises the retry counter). The
-    script: model emits a bad-filter tool call twice (each raises ModelRetry from
-    perform_retrieve_evidence's filter check), then a good-filter call (succeeds), then
-    the final RetrievalAgentOutput. With tool_retries=1 (pre-fix) the second ModelRetry
-    would raise UnexpectedModelBehavior; with tool_retries=2 the third call goes through.
+    script: hybrid_retrieve raises twice (each turns into ModelRetry inside
+    perform_retrieve_evidence), then succeeds on the third call. With tool_retries=1
+    (pydantic-ai default) the second ModelRetry would surface as UnexpectedModelBehavior;
+    with tool_retries=2 the third call goes through.
     """
     from pydantic_ai.messages import ModelResponse, ToolCallPart
     from pydantic_ai.models.function import AgentInfo, FunctionModel
 
     chunks = [_chunk("aapl-1", "AAPL", 10)]
-    _stub_hybrid_retrieve(monkeypatch, {"AAPL": chunks})
+
+    hr_state = {"calls": 0}
+
+    def flaky_hybrid_retrieve(
+        _session: object,
+        *,
+        dataset_id: str,  # noqa: ARG001
+        question: str,  # noqa: ARG001
+        filters: QueryFilters,  # noqa: ARG001
+        plan: RetrievalPlan,
+        top_k: int,
+        settings: Settings,  # noqa: ARG001
+        semantic_query: str | None = None,  # noqa: ARG001
+    ) -> tuple[list[RetrievedChunk], dict[str, Any], TokenUsage, TokenUsage]:
+        hr_state["calls"] += 1
+        if hr_state["calls"] <= 2:
+            raise RuntimeError(f"pgvector transient blip #{hr_state['calls']}")
+        return (chunks[:top_k], {"trace": "ok", "tickers": plan.target_tickers}, TokenUsage(), TokenUsage())
+
+    monkeypatch.setattr(retrieval_tool, "hybrid_retrieve", flaky_hybrid_retrieve)
 
     state = {"turn": 0}
 
     def model_fn(_messages: object, info: AgentInfo) -> ModelResponse:
         state["turn"] += 1
-        if state["turn"] <= 2:
-            # Bad ticker - perform_retrieve_evidence raises ModelRetry from the filter check.
-            return ModelResponse(
-                parts=[
-                    ToolCallPart(
-                        tool_name="retrieve_evidence",
-                        args={
-                            "query": "Apple R&D",
-                            "tickers": [f"FAKE{state['turn']}"],
-                            "use_hyde": False,
-                        },
-                        tool_call_id=f"call-{state['turn']}",
-                    )
-                ]
-            )
-        if state["turn"] == 3:
-            # Good ticker - tool returns chunks normally.
+        if state["turn"] <= 3:
+            # Same good filters every turn; hybrid_retrieve decides whether to fail.
             return ModelResponse(
                 parts=[
                     ToolCallPart(
                         tool_name="retrieve_evidence",
                         args={"query": "Apple R&D", "tickers": ["AAPL"], "use_hyde": False},
-                        tool_call_id="call-3",
+                        tool_call_id=f"call-{state['turn']}",
                     )
                 ]
             )
@@ -330,7 +334,7 @@ def test_agent_recovers_from_two_modelretries(monkeypatch: pytest.MonkeyPatch) -
                         "query_type": "fact_lookup",
                         "latest": False,
                         "confidence": 0.8,
-                        "reasoning": "Recovered after two filter-rejection retries.",
+                        "reasoning": "Recovered after two transient hybrid_retrieve failures.",
                     },
                     tool_call_id="call-final",
                 )
@@ -365,10 +369,10 @@ def test_agent_recovers_from_two_modelretries(monkeypatch: pytest.MonkeyPatch) -
     )
 
     assert metadata["agent_used"] is True
-    # Two filter-rejection retries surface in tool_calls (plus one successful call = 3 total).
+    # Two retries from hybrid_retrieve failures plus one successful call = 3 total.
     assert metadata["tool_call_count"] == 3
     assert metadata["tool_retry_count"] == 2
-    assert [call.get("error_class") for call in result.tool_calls] == ["ModelRetry", "ModelRetry", None]
+    assert [call.get("error_class") for call in result.tool_calls] == ["RuntimeError", "RuntimeError", None]
     assert [c.chunk.id for c in result.chunks] == ["aapl-1"]
 
 

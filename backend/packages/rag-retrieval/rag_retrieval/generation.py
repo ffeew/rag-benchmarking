@@ -296,10 +296,9 @@ def _confidence_from_output(output: GeneratorOutput, fallback: float) -> float:
 
 def _request_count(result: object) -> int:
     """Read ``usage.requests`` from a pydantic-ai run result; default to 1 on absence."""
-    usage_attr = getattr(result, "usage", None)
-    if usage_attr is None:
+    usage_value = getattr(result, "usage", None)
+    if usage_value is None:
         return 1
-    usage_value = usage_attr() if callable(usage_attr) else usage_attr
     return int(getattr(usage_value, "requests", 1) or 1)
 
 

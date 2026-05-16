@@ -138,6 +138,42 @@ def test_tool_drops_unknown_tickers_and_invalid_forms(monkeypatch: pytest.Monkey
     assert deps.tool_calls[-1]["form_types"] == ["10-K"]
 
 
+def test_tool_silently_drops_when_all_filters_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When every proposed filter is out-of-corpus the tool falls back to no filter.
+
+    Previously this raised ModelRetry, which burned the per-tool retry budget on
+    stochastic ticker hallucinations. The new contract is to silently drop and let
+    the unfiltered query run, matching the docstring's "silently dropped" wording.
+    """
+    fake_retrieve, captured = _fake_hybrid_retrieve_factory([_chunk("c1", "AAPL", 10, "Apple revenue")])
+    monkeypatch.setattr(retrieval_tool, "hybrid_retrieve", fake_retrieve)
+
+    deps = _deps(known_tickers={"AAPL"})
+    hits = perform_retrieve_evidence(
+        deps,
+        "Apple revenue",
+        tickers=["FAKE1", "FAKE2"],
+        form_types=["S-1"],
+        use_hyde=False,
+    )
+
+    # Tool succeeded with no filter — no ModelRetry raised.
+    assert len(hits) == 1
+    plan = cast("RetrievalPlan", captured["plan"])
+    assert plan.target_tickers == []
+    assert plan.forms == []
+    # The call entry surfaces the dropped values for trace-side debugging.
+    last = deps.tool_calls[-1]
+    assert last["dropped_tickers"] == ["FAKE1", "FAKE2"]
+    assert last["dropped_forms"] == ["S-1"]
+    assert last.get("error_class") is None
+    assert last["returned"] == 1
+    # And the new output-enrichment fields are populated.
+    assert last["returned_chunk_ids"] == ["c1"]
+    assert last["returned_tickers"] == ["AAPL"]
+    assert last["returned_forms"] == ["10-K"]
+
+
 def test_tool_clamps_top_k(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_retrieve, captured = _fake_hybrid_retrieve_factory([])
     monkeypatch.setattr(retrieval_tool, "hybrid_retrieve", fake_retrieve)

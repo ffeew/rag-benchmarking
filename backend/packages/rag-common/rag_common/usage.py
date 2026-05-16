@@ -74,22 +74,14 @@ def from_pydantic_ai_usage(usage: object, *, provider: str | None = None, model:
 
 
 def safe_pydantic_ai_usage(result: object, *, provider: str | None = None, model: str | None = None) -> TokenUsage:
-    """Extract TokenUsage from a pydantic-ai run result, tolerating missing usage().
+    """Extract TokenUsage from a pydantic-ai run result, tolerating missing usage.
 
-    Real ``AgentRunResult`` objects expose ``.usage()``; test doubles often don't. This helper
-    treats any missing attribute or call failure as "no usage recorded" rather than crashing.
+    ``AgentRunResult.usage`` is a property in current pydantic-ai. The ``getattr`` guard
+    keeps test doubles that omit the attribute entirely from crashing trace persistence.
     """
-    usage_attr = getattr(result, "usage", None)
-    if usage_attr is None:
+    usage_value = getattr(result, "usage", None)
+    if usage_value is None:
         return TokenUsage(provider=provider, model=model)
-    usage_value: object
-    if callable(usage_attr):
-        try:
-            usage_value = usage_attr()
-        except Exception:  # noqa: BLE001 - test doubles or upstream renames must not crash trace persistence
-            return TokenUsage(provider=provider, model=model)
-    else:
-        usage_value = usage_attr
     return from_pydantic_ai_usage(usage_value, provider=provider, model=model)
 
 

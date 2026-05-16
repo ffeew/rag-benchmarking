@@ -400,37 +400,13 @@ def perform_retrieve_evidence(
         filing_date_start=_parse_iso_date(filing_date_start),
         filing_date_end=_parse_iso_date(filing_date_end),
     )
-    # Surface dropped filter values so the agent can see "FORM-X was rejected" instead
-    # of getting zero hits with no trace signal. If the LLM proposed any unknown values
-    # AND would now get zero results from the safe list, raise ModelRetry so the next
-    # turn includes the rejection info in the prompt. Record the attempt in tool_calls
-    # so tool_retry_count and the trace UI both reflect filter-rejection retries (not
-    # just hybrid_retrieve exceptions).
-    if (normalized.dropped_tickers or normalized.dropped_forms) and not (safe_tickers or safe_forms):
-        deps.tool_calls.append(
-            {
-                "tool": "retrieve_evidence",
-                "query": query,
-                "tickers": safe_tickers,
-                "form_types": safe_forms,
-                "dropped_tickers": normalized.dropped_tickers,
-                "dropped_forms": normalized.dropped_forms,
-                "filing_date_start": filing_date_start,
-                "filing_date_end": filing_date_end,
-                "top_k": safe_top_k,
-                "use_hyde": use_hyde,
-                "error": "ModelRetry: filters entirely outside dataset",
-                "error_class": "ModelRetry",
-                "returned": 0,
-            }
-        )
-        raise ModelRetry(
-            "retrieve_evidence filters were entirely outside the dataset. "
-            f"dropped_tickers={normalized.dropped_tickers} (not in known_tickers); "
-            f"dropped_forms={normalized.dropped_forms} (not in valid_forms). "
-            "Retry with values from the system context, or call without ticker/form filters."
-        )
-
+    # Unknown filter values are silently dropped (and surfaced in the trace via
+    # dropped_tickers / dropped_forms on call_entry below). Earlier this branch raised
+    # ModelRetry when every proposed value was out-of-corpus, but that burned the
+    # per-tool retry budget (pydantic-ai tracks retries per tool, with default 1; we
+    # set 2) on stochastic ticker hallucinations and tripped "exceeded max retries"
+    # before the agent could converge. Returning [] is a meaningful signal the agent
+    # can recover from by retrying without filters.
     semantic_query: str | None = None
     hyde_meta: dict[str, object] = {"agent_used": False}
     if use_hyde:
@@ -491,6 +467,9 @@ def perform_retrieve_evidence(
 
     call_entry["retrieval_trace"] = retrieval_trace
     call_entry["returned"] = len(retrieved)
+    call_entry["returned_chunk_ids"] = [item.chunk.id for item in retrieved]
+    call_entry["returned_tickers"] = sorted({item.document.ticker for item in retrieved})
+    call_entry["returned_forms"] = sorted({item.document.form_type for item in retrieved})
     deps.tool_calls.append(call_entry)
 
     return [
@@ -517,13 +496,13 @@ def build_retrieval_agent(
     are cached upstream, so this is cheap. We do not ``lru_cache`` the agent itself
     because the tool closure binds to a fresh ``deps`` for every run.
     """
-    # ``tool_retries`` and ``output_retries`` are both 2 (vs. pydantic-ai's default of 1)
-    # because the retry counter is cumulative across the whole agent run — one stochastic
-    # ``ModelRetry`` from glm-4.7 (hallucinated ticker, fabricated chunk_id, etc.) plus
-    # one near-miss correction is enough to trip the default limit and kill the run.
-    # ``tool_calls_limit=retrieval_agent_tool_call_budget`` (4 by default) is still the
-    # primary backstop on runaway loops, so giving the failure-feedback channel one extra
-    # turn here doesn't unbalance the overall budget.
+    # ``tool_retries`` is per-tool (pydantic-ai tracks the counter on each function
+    # tool independently, not globally) and ``output_retries`` is per-run. Bumping
+    # both to 2 (default is 1) gives the chunk-id validator and the hybrid_retrieve
+    # error path one near-miss correction each before the run dies — glm-4.7 sometimes
+    # fabricates a chunk_id on the first emit and self-corrects on the next. The
+    # global ``tool_calls_limit=retrieval_agent_tool_call_budget`` (4 by default)
+    # passed via UsageLimits is still the backstop on runaway loops.
     agent: Agent[RetrievalAgentDeps, RetrievalAgentOutput] = Agent(
         model=build_chat_model(settings),
         deps_type=RetrievalAgentDeps,
@@ -580,10 +559,11 @@ def build_retrieval_agent(
             query: The information to search for. A question, phrase, topic, or even a
                 domain term. FTS uses this verbatim; HyDE (when enabled) uses an
                 LLM-generated hypothetical passage for the vector probe.
-            tickers: Restrict to these tickers (must be in the dataset's known set;
-                unknown tickers are silently dropped). Leave None for no ticker filter.
+            tickers: Restrict to these tickers (see KNOWN_TICKERS in the system
+                context). Unknown tickers are silently dropped. Leave None for no
+                ticker filter.
             form_types: Restrict to a subset of the dataset's known forms (see
-                KNOWN_FORMS in the system context). Invalid forms are silently dropped.
+                KNOWN_FORMS in the system context). Unknown forms are silently dropped.
                 Leave None for no form filter.
             filing_date_start: ISO date (YYYY-MM-DD) lower bound on filing_date.
             filing_date_end: ISO date (YYYY-MM-DD) upper bound on filing_date.
@@ -597,6 +577,9 @@ def build_retrieval_agent(
             A list of ToolRetrievalHit. Empty list if nothing matched or the call failed
             (a failed call is recorded in the trace; you can retry with different
             filters or wording).
+
+        If you are not sure which ticker or form applies, leave both as None — a broad
+        search is preferable to a filter that throws away all results.
         """
         return perform_retrieve_evidence(
             ctx.deps,

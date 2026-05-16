@@ -2,8 +2,9 @@
 
 Wires a :class:`LoggingToolset` around every agent's composite toolset via the
 :class:`LogToolCalls` capability so each tool invocation emits a structlog record
-with name, duration, and outcome. Args and results are previewed only at DEBUG to
-keep INFO logs scannable when ``retrieve_evidence`` returns long chunk lists.
+with name, duration, outcome, and truncated previews of the input args and result
+so the call can be inspected from ``docker compose logs api`` without raising the
+log level to DEBUG.
 """
 
 from __future__ import annotations
@@ -70,11 +71,6 @@ class LoggingToolset(WrapperToolset[Any]):
             duration_ms=round(duration_ms, 2),
             status="ok",
             result_len=result_len,
-        )
-        logger.debug(
-            "agent_tool_call_detail",
-            tool=name,
-            agent=agent_name,
             args_preview=_preview(tool_args),
             result_preview=_preview(result),
         )
@@ -86,4 +82,9 @@ class LogToolCalls(AbstractCapability[Any]):
     """Capability that installs :class:`LoggingToolset` over the agent's toolsets."""
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[Any]) -> AbstractToolset[Any]:
+        # Emit one record per install so we can verify in production that the wrapper
+        # is actually being applied to the agent's toolset (silent absence of
+        # ``agent_tool_call`` records previously made it impossible to tell whether
+        # the capability ran or the tool simply wasn't called).
+        logger.info("logging_toolset_installed", wrapped=type(toolset).__name__)
         return LoggingToolset(wrapped=toolset)

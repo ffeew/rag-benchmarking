@@ -59,17 +59,11 @@ def test_safe_pydantic_ai_usage_handles_missing_attribute() -> None:
     assert safe_pydantic_ai_usage(result).is_empty()
 
 
-def test_safe_pydantic_ai_usage_handles_exception_in_call() -> None:
-    def boom() -> object:
-        raise RuntimeError("boom")
-
-    result = SimpleNamespace(usage=boom)
-    assert safe_pydantic_ai_usage(result).is_empty()
-
-
-def test_safe_pydantic_ai_usage_reads_callable_usage() -> None:
+def test_safe_pydantic_ai_usage_reads_property_usage() -> None:
+    # AgentRunResult.usage is a property in current pydantic-ai (was a method in older
+    # versions). The helper reads the attribute directly without calling it.
     usage_obj = SimpleNamespace(input_tokens=10, output_tokens=5, total_tokens=15)
-    result = SimpleNamespace(usage=lambda: usage_obj)
+    result = SimpleNamespace(usage=usage_obj)
     usage = safe_pydantic_ai_usage(result, provider="openrouter", model="m3")
     assert usage.total_tokens == 15
     assert usage.model == "m3"

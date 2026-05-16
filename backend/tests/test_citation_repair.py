@@ -52,10 +52,10 @@ def _settings() -> Settings:
 
 
 def _fake_result(output: GeneratorOutput, *, requests: int) -> object:
-    """Build a result that quacks like ``AgentRunResult``: ``output`` + callable ``usage()``."""
+    """Build a result that quacks like ``AgentRunResult``: ``output`` + ``usage`` property."""
     return SimpleNamespace(
         output=output,
-        usage=lambda: SimpleNamespace(requests=requests, input_tokens=0, output_tokens=0, total_tokens=0),
+        usage=SimpleNamespace(requests=requests, input_tokens=0, output_tokens=0, total_tokens=0),
     )
 
 
