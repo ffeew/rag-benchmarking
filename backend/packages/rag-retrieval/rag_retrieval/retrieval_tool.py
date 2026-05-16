@@ -37,6 +37,7 @@ from rag_retrieval.agents import (
 from rag_retrieval.dataset_config import DatasetConfig
 from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve
 from rag_retrieval.hyde import generate_hyde_passage
+from rag_retrieval.observability import LogToolCalls
 from rag_retrieval.planning import (
     VALID_QUERY_TYPES,
     RetrievalPlan,
@@ -532,6 +533,7 @@ def build_retrieval_agent(
         model_settings=deterministic_model_settings(settings),
         output_retries=2,
         tool_retries=2,
+        capabilities=[LogToolCalls()],
     )
 
     @agent.instructions

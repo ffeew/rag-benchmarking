@@ -13,6 +13,8 @@ from rag_common.config import Settings, get_settings
 from rag_common.providers.openrouter import ProviderError
 from rag_common.usage import TokenUsage
 
+from .observability import LogToolCalls
+
 logger = logging.getLogger(__name__)
 
 
@@ -150,4 +152,5 @@ def build_agent[D, T](
         name=name,
         model_settings=deterministic_model_settings(settings),
         output_retries=output_retries,
+        capabilities=[LogToolCalls()],
     )
