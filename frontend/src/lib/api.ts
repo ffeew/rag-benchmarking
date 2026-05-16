@@ -117,6 +117,7 @@ export const traceSchema = z.object({
   verifier_result: z.record(z.string(), z.unknown()),
   model_metadata: z.record(z.string(), z.unknown()),
   final_answer_metadata: z.record(z.string(), z.unknown()),
+  answer: z.string().nullable().optional(),
   timings: z.record(z.string(), z.unknown()),
   citations: z.array(citationSchema),
   created_at: z.string(),
@@ -269,7 +270,9 @@ export type EvalRun = z.infer<typeof evalRunSchema>
 export type EvalResult = z.infer<typeof evalResultSchema>
 export type EvalCase = z.infer<typeof evalCaseSchema>
 export type EvalPackSummary = z.infer<typeof evalPackSummarySchema>
-export type EvalPackImportResponse = z.infer<typeof evalPackImportResponseSchema>
+export type EvalPackImportResponse = z.infer<
+  typeof evalPackImportResponseSchema
+>
 export type IngestionRun = z.infer<typeof ingestionRunSchema>
 export type ReadyStatus = z.infer<typeof readySchema>
 

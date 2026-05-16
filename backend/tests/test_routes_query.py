@@ -109,6 +109,7 @@ def test_trace_returns_persisted_trace(
         verifier_result={},
         model_metadata={},
         final_answer_metadata={},
+        answer="The answer is 42.",
         timings={},
     )
     db_session.add(trace)
@@ -118,6 +119,7 @@ def test_trace_returns_persisted_trace(
     body = response.json()
     assert body["id"] == trace.id
     assert body["user_question"] == "q"
+    assert body["answer"] == "The answer is 42."
 
 
 def _make_trace(

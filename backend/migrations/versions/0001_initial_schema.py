@@ -225,6 +225,7 @@ def upgrade() -> None:
         sa.Column("verifier_result", postgresql.JSONB(), nullable=False),
         sa.Column("model_metadata", postgresql.JSONB(), nullable=False),
         sa.Column("final_answer_metadata", postgresql.JSONB(), nullable=False),
+        sa.Column("answer", sa.Text(), nullable=True),
         sa.Column("timings", postgresql.JSONB(), nullable=False),
         sa.Column("usage_summary", postgresql.JSONB(), nullable=True),
         sa.Column("cost_estimate_usd", sa.Numeric(precision=10, scale=6), nullable=True),
@@ -318,10 +319,7 @@ def upgrade() -> None:
     op.execute(
         "CREATE INDEX ix_chunks_normalized_text_fts ON chunks USING gin (to_tsvector('english', normalized_text))"
     )
-    op.execute(
-        "CREATE INDEX ix_chunks_embedding_vector_hnsw "
-        "ON chunks USING hnsw (embedding_vector vector_cosine_ops)"
-    )
+    op.execute("CREATE INDEX ix_chunks_embedding_vector_hnsw ON chunks USING hnsw (embedding_vector vector_cosine_ops)")
 
 
 def downgrade() -> None:

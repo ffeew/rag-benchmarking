@@ -71,6 +71,7 @@ def persist_trace(
     final_answer_metadata: dict[str, Any],
     timings: dict[str, Any],
     citations: list[RetrievedChunk],
+    answer: str | None = None,
     usage_summary: dict[str, Any] | None = None,
     cost_estimate_usd: float | None = None,
     citation_template: str | None = None,
@@ -84,6 +85,7 @@ def persist_trace(
         verifier_result=verifier_result,
         model_metadata=model_metadata,
         final_answer_metadata=final_answer_metadata,
+        answer=answer,
         timings=timings,
         usage_summary=usage_summary,
         cost_estimate_usd=Decimal(str(cost_estimate_usd)) if cost_estimate_usd is not None else None,
@@ -329,6 +331,7 @@ def run_query(
         verifier_result=verifier_result,
         model_metadata=model_metadata,
         final_answer_metadata=answer.metadata,
+        answer=answer.answer,
         timings=timings,
         citations=verified_evidence,
         usage_summary=usage_summary_dict,
@@ -396,11 +399,7 @@ def list_traces(
     question_contains: str | None = None,
     limit: int = 50,
 ) -> list[models.QueryTrace]:
-    stmt = (
-        select(models.QueryTrace)
-        .order_by(models.QueryTrace.created_at.desc())
-        .limit(limit)
-    )
+    stmt = select(models.QueryTrace).order_by(models.QueryTrace.created_at.desc()).limit(limit)
     if dataset_id:
         stmt = stmt.where(models.QueryTrace.dataset_id == dataset_id)
     if question_contains:

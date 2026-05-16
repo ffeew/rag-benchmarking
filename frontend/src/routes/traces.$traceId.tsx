@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { ArrowLeft, Copy, ExternalLink, Repeat } from 'lucide-react'
+import { ArrowLeft, Copy, ExternalLink, Repeat, Sparkles } from 'lucide-react'
+import { useState } from 'react'
 
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardBody, CardHeader } from '#/components/ui/card'
 import { Skeleton } from '#/components/ui/skeleton'
+import { AnswerArticle } from '#/components/query/AnswerArticle'
 import { CitationCard } from '#/components/query/CitationCard'
+import { ConfidenceMeter } from '#/components/query/ConfidenceMeter'
 import { ErrorState } from '#/components/data/ErrorState'
 import { ModelMetaCard } from '#/components/trace/ModelMetaCard'
 import { PlanCard } from '#/components/trace/PlanCard'
@@ -28,6 +31,7 @@ function TracePage() {
   const { traceId } = Route.useParams()
   const { token, isAuthed } = useToken()
   const navigate = useNavigate()
+  const [highlighted, setHighlighted] = useState<number | null>(null)
 
   const traceQuery = useQuery({
     queryKey: qk.traces.detail(traceId),
@@ -83,6 +87,23 @@ function TracePage() {
     }
   }
 
+  function jumpToCitation(idx: number) {
+    setHighlighted(idx)
+    const node = document.getElementById(`citation-${idx}`)
+    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(
+      () => setHighlighted((current) => (current === idx ? null : current)),
+      1400,
+    )
+  }
+
+  const rawConfidence = (trace.verifier_result as { confidence?: unknown })
+    .confidence
+  const confidence =
+    typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)
+      ? rawConfidence
+      : null
+
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-6 grid gap-5">
       {/* Header */}
@@ -132,6 +153,34 @@ function TracePage() {
           </Button>
         </div>
       </div>
+
+      {/* Answer */}
+      <Card>
+        <CardHeader
+          title={
+            <span className="inline-flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+              ANSWER
+            </span>
+          }
+          actions={
+            confidence !== null ? <ConfidenceMeter value={confidence} /> : null
+          }
+        />
+        <CardBody>
+          {trace.answer ? (
+            <AnswerArticle
+              answer={trace.answer}
+              highlightCitation={highlighted}
+              onCitationClick={jumpToCitation}
+            />
+          ) : (
+            <p className="text-[12.5px] text-[var(--ink-muted)]">
+              No answer recorded for this trace.
+            </p>
+          )}
+        </CardBody>
+      </Card>
 
       {/* Timing */}
       <Card>
@@ -194,7 +243,13 @@ function TracePage() {
                 </p>
               ) : (
                 trace.citations.map((c, i) => (
-                  <CitationCard key={c.chunk_id} citation={c} index={i + 1} />
+                  <CitationCard
+                    key={c.chunk_id}
+                    citation={c}
+                    index={i + 1}
+                    highlighted={highlighted === i + 1}
+                    onSelect={(idx) => jumpToCitation(idx)}
+                  />
                 ))
               )}
             </CardBody>

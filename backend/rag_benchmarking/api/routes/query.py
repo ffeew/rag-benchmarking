@@ -75,6 +75,7 @@ def trace(trace_id: str, session: DbSession, _auth: AuthDep) -> TraceRead:
         verifier_result=query_trace.verifier_result,
         model_metadata=query_trace.model_metadata,
         final_answer_metadata=query_trace.final_answer_metadata,
+        answer=query_trace.answer,
         timings=query_trace.timings,
         citations=[citation_to_read(citation, document) for citation, document in citation_rows],
         created_at=query_trace.created_at,

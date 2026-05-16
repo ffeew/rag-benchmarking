@@ -191,6 +191,7 @@ class QueryTrace(TimestampMixin, Base):
     verifier_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     model_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     final_answer_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     timings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     usage_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     cost_estimate_usd: Mapped[Decimal | None] = mapped_column(Numeric(precision=10, scale=6), nullable=True)

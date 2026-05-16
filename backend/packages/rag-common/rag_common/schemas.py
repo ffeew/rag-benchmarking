@@ -369,6 +369,7 @@ class TraceRead(BaseModel):
     verifier_result: dict[str, Any]
     model_metadata: dict[str, Any]
     final_answer_metadata: dict[str, Any]
+    answer: str | None = None
     timings: dict[str, Any]
     citations: list[CitationRead]
     created_at: datetime
