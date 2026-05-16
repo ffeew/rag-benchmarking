@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, ValidationError
 from rag_common.config import get_settings
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
+from rag_common.enums import ExpectedAnswerType, VerificationStatus
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class SeedEvalCase(BaseModel):
     expected_citations: list[SeedExpectedCitation] = Field(default_factory=list)
     expected_answer_spec: dict[str, Any] = Field(default_factory=dict)
     expected_evidence: list[SeedExpectedEvidence] = Field(default_factory=list)
-    verification_status: str = Field(default="draft", max_length=16)
+    verification_status: str = Field(default=VerificationStatus.DRAFT, max_length=16)
     verified_by: str | None = Field(default=None, max_length=128)
     verified_at: datetime | None = None
     gold_version: str = Field(default="v1", max_length=32)
@@ -152,7 +153,7 @@ def _expected_answer_spec(case: SeedEvalCase) -> dict[str, Any]:
         return case.expected_answer_spec
     if not case.expected_answer:
         return {}
-    answer_type = "refusal" if "refusal" in case.tags else "insufficient"
+    answer_type = ExpectedAnswerType.REFUSAL if "refusal" in case.tags else ExpectedAnswerType.INSUFFICIENT
     return {
         "answer_type": answer_type,
         "expected_values": [],

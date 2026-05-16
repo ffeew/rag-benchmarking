@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from rag_common.db import models
+from rag_common.enums import BenchmarkProfile, ExpectedAnswerType, JobStatus, JobType, VerificationStatus
 from rag_common.schemas import EvalRunRead, EvaluationCreate, EvaluationCreateResponse, Page
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -16,7 +17,7 @@ def _has_scientific_gold(case: models.EvalCase) -> bool:
     answer_spec = case.expected_answer_spec or {}
     expected_evidence = case.expected_evidence or []
     answer_type = answer_spec.get("answer_type")
-    has_answer_gold = answer_type in {"insufficient", "refusal"} or bool(
+    has_answer_gold = answer_type in {ExpectedAnswerType.INSUFFICIENT, ExpectedAnswerType.REFUSAL} or bool(
         answer_spec.get("expected_values") or answer_spec.get("required_claims")
     )
     has_evidence_gold = any(
@@ -25,7 +26,7 @@ def _has_scientific_gold(case: models.EvalCase) -> bool:
         and (item.get("document_id") or (item.get("ticker") and item.get("form_type")))
         for item in expected_evidence
     )
-    return case.verification_status == "verified" and (has_answer_gold or has_evidence_gold)
+    return case.verification_status == VerificationStatus.VERIFIED and (has_answer_gold or has_evidence_gold)
 
 
 def _validate_scientific_cases(session: DbSession, dataset_id: str, case_ids: list[str]) -> None:
@@ -80,7 +81,7 @@ def create_evaluation(
             session.flush()
             case_ids.append(db_case.id)
 
-    if payload.benchmark_profile == "scientific":
+    if payload.benchmark_profile == BenchmarkProfile.SCIENTIFIC:
         _validate_scientific_cases(session, payload.dataset_id, case_ids)
 
     # ``payload.variants`` is always populated by ``EvaluationCreate.coerce_variants``;
@@ -91,7 +92,7 @@ def create_evaluation(
     legacy_modes = [spec.retrieval_mode for spec in variants_payload]
     eval_run = models.EvalRun(
         dataset_id=payload.dataset_id,
-        status="queued",
+        status=JobStatus.QUEUED,
         run_config={
             "case_ids": case_ids,
             "system_variants": legacy_modes,
@@ -111,8 +112,8 @@ def create_evaluation(
     session.add(eval_run)
     session.flush()
     job = models.Job(
-        job_type="evaluation",
-        status="queued",
+        job_type=JobType.EVALUATION,
+        status=JobStatus.QUEUED,
         progress=0,
         current_step="queued",
         dataset_id=payload.dataset_id,

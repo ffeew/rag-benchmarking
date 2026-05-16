@@ -29,11 +29,10 @@ import structlog
 
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
+from rag_common.enums import JOB_TERMINAL_STATUSES as TERMINAL_STATUSES
+from rag_common.enums import JobStatus
 
-# Statuses we never overwrite — an explicit terminal outcome (operator cancel,
-# successful completion, completed_with_errors) wins over a later worker
-# event that might otherwise re-mark the row.
-TERMINAL_STATUSES = frozenset({"completed", "skipped", "cancelled", "completed_with_errors", "failed"})
+__all__ = ["TERMINAL_STATUSES", "commit_job_progress", "record_job_failure"]
 
 logger = structlog.get_logger(__name__)
 
@@ -64,10 +63,10 @@ def commit_job_progress(
             if job is None:
                 log.warning("commit_job_progress_job_missing")
                 return
-            if job.status == "cancelled":
+            if job.status == JobStatus.CANCELLED:
                 log.info("commit_job_progress_skipped_cancelled")
                 return
-            if job.status in TERMINAL_STATUSES and status != "failed":
+            if job.status in TERMINAL_STATUSES and status != JobStatus.FAILED:
                 log.info("commit_job_progress_skipped_terminal", existing_status=job.status)
                 return
             now = datetime.now(UTC)
@@ -76,9 +75,9 @@ def commit_job_progress(
             job.current_step = current_step
             job.error = error
             job.last_heartbeat_at = now
-            if status == "running" and job.started_at is None:
+            if status == JobStatus.RUNNING and job.started_at is None:
                 job.started_at = now
-            if status in {"completed", "failed", "skipped", "completed_with_errors"}:
+            if status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.SKIPPED, JobStatus.COMPLETED_WITH_ERRORS}:
                 job.completed_at = now
             session.commit()
             log.info("commit_job_progress_committed", last_heartbeat_at=now.isoformat())
@@ -109,7 +108,7 @@ def record_job_failure(job_id: str, error: str) -> None:
                 log.info("record_job_failure_skipped_terminal", existing_status=job.status)
                 return
             now = datetime.now(UTC)
-            job.status = "failed"
+            job.status = JobStatus.FAILED
             job.error = error
             job.completed_at = now
             job.last_heartbeat_at = now

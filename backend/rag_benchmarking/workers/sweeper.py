@@ -18,6 +18,7 @@ from typing import TypedDict
 import structlog
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
+from rag_common.enums import JobStatus
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -104,7 +105,7 @@ def _collect_redispatch_candidates(session: Session, now: datetime, queued_grace
     cutoff = now - timedelta(seconds=queued_grace_seconds)
     stmt = (
         select(models.Job)
-        .where(models.Job.status == "queued", models.Job.created_at <= cutoff)
+        .where(models.Job.status == JobStatus.QUEUED, models.Job.created_at <= cutoff)
         .order_by(models.Job.created_at)
         .with_for_update(skip_locked=True)
         .limit(50)
@@ -118,7 +119,7 @@ def _redispatch_queued(session: Session, now: datetime, queued_grace_seconds: in
     exhausted = 0
     for job in candidates:
         if job.retry_count >= MAX_RETRIES:
-            job.status = "failed"
+            job.status = JobStatus.FAILED
             job.error = f"retry budget exhausted after {job.retry_count} attempts"
             job.progress = 100
             job.current_step = "retry budget exhausted"
@@ -158,7 +159,7 @@ def _reap_silent_runners(session: Session, now: datetime, heartbeat_seconds: int
     stmt = (
         select(models.Job)
         .where(
-            models.Job.status == "running",
+            models.Job.status == JobStatus.RUNNING,
             models.Job.last_heartbeat_at.is_not(None),
             models.Job.last_heartbeat_at < cutoff,
         )
@@ -168,7 +169,7 @@ def _reap_silent_runners(session: Session, now: datetime, heartbeat_seconds: int
     reaped = 0
     for job in session.scalars(stmt):
         gap = now - (job.last_heartbeat_at or now)
-        job.status = "failed"
+        job.status = JobStatus.FAILED
         job.error = f"no heartbeat for {int(gap.total_seconds())}s"
         job.progress = 100
         job.current_step = "no heartbeat"
@@ -190,13 +191,17 @@ def _diagnostic_counts(session: Session) -> dict[str, int]:
     yet ``_reap_silent_runners`` cannot see them (its WHERE clause requires
     ``last_heartbeat_at IS NOT NULL``).
     """
-    queued = session.scalar(select(func.count()).select_from(models.Job).where(models.Job.status == "queued")) or 0
-    running = session.scalar(select(func.count()).select_from(models.Job).where(models.Job.status == "running")) or 0
+    queued = (
+        session.scalar(select(func.count()).select_from(models.Job).where(models.Job.status == JobStatus.QUEUED)) or 0
+    )
+    running = (
+        session.scalar(select(func.count()).select_from(models.Job).where(models.Job.status == JobStatus.RUNNING)) or 0
+    )
     running_no_hb = (
         session.scalar(
             select(func.count())
             .select_from(models.Job)
-            .where(models.Job.status == "running", models.Job.last_heartbeat_at.is_(None))
+            .where(models.Job.status == JobStatus.RUNNING, models.Job.last_heartbeat_at.is_(None))
         )
         or 0
     )

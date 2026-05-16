@@ -1,11 +1,10 @@
 """Token usage tracking shared across the retrieval and evaluation pipelines."""
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
-Role = Literal["planner", "verifier", "generator", "embedding", "rerank", "judge"]
-ROLES: tuple[Role, ...] = ("planner", "verifier", "generator", "embedding", "rerank", "judge")
+from rag_common.enums import PipelineRole
+
+__all__ = ["PipelineRole"]
 
 
 class TokenUsage(BaseModel):
@@ -108,8 +107,8 @@ def merge(a: TokenUsage, b: TokenUsage) -> TokenUsage:
 def total(role_usage: RoleUsage) -> TokenUsage:
     """Sum usage across all roles."""
     accumulator = TokenUsage()
-    for role in ROLES:
-        accumulator = merge(accumulator, getattr(role_usage, role))
+    for role in PipelineRole:
+        accumulator = merge(accumulator, getattr(role_usage, role.value))
     return accumulator
 
 

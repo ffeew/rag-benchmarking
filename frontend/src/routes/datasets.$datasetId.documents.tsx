@@ -59,7 +59,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 function DocumentsPage() {
   const { datasetId } = Route.useParams()
-  const { token } = useToken()
+  const { token, isAuthed } = useToken()
   const queryClient = useQueryClient()
 
   const [activeDoc, setActiveDoc] = useState<Document | null>(null)
@@ -98,6 +98,7 @@ function DocumentsPage() {
         limit,
         offset,
       }),
+    enabled: isAuthed,
     placeholderData: keepPreviousData,
   })
 

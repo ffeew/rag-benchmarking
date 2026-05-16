@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from rag_common.db import models
+from rag_common.enums import JobStatus
 from rag_common.schemas import JobRead, JobSweepResponse, Page
 from sqlalchemy import select
 
@@ -18,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["jobs"])
 
-_RETRYABLE_STATUSES = frozenset({"failed", "completed_with_errors", "cancelled"})
-_CANCELLABLE_STATUSES = frozenset({"queued", "running"})
+_RETRYABLE_STATUSES = frozenset({JobStatus.FAILED, JobStatus.COMPLETED_WITH_ERRORS, JobStatus.CANCELLED})
+_CANCELLABLE_STATUSES = frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
 
 
 @router.get("/v1/jobs")
@@ -89,7 +90,7 @@ def retry_job(job_id: str, session: DbSession, _auth: AuthDep) -> JobRead:
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot retry a job in status {job.status!r}",
         )
-    job.status = "queued"
+    job.status = JobStatus.QUEUED
     job.error = None
     job.started_at = None
     job.completed_at = None
@@ -121,9 +122,15 @@ def cancel_job(job_id: str, session: DbSession, _auth: AuthDep) -> JobRead:
             detail=f"Cannot cancel a job in status {job.status!r}",
         )
     if job.celery_task_id:
-        celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGTERM")
+        try:
+            celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGTERM")
+        except Exception as exc:  # noqa: BLE001 - kombu/amqp can raise anything; the sweeper reaps unrevoked tasks
+            # Mirror the sweeper's pattern (see workers/sweeper.py:78-89): proceed with
+            # the DB write so the row reflects operator intent. The worker either honors
+            # the revoke on next heartbeat or the sweeper marks it dead.
+            logger.warning("cancel_revoke_failed job_id=%s error=%s", job.id, exc, exc_info=True)
     now = datetime.now(UTC)
-    job.status = "cancelled"
+    job.status = JobStatus.CANCELLED
     job.completed_at = now
     job.last_heartbeat_at = now
     if not job.error:

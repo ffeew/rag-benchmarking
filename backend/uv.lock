@@ -3374,12 +3374,13 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "structlog" },
     { name = "tenacity" },
+    { name = "tiktoken" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "celery", extras = ["redis"], specifier = ">=5.5.0" },
-    { name = "chonkie", specifier = ">=0.5.0" },
+    { name = "chonkie", specifier = ">=1.6,<2.0" },
     { name = "docling", specifier = ">=2.30.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
@@ -3388,6 +3389,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.40" },
     { name = "structlog", specifier = ">=25.2.0" },
     { name = "tenacity", specifier = ">=9.1.0" },
+    { name = "tiktoken", specifier = ">=0.8.0" },
 ]
 
 [[package]]

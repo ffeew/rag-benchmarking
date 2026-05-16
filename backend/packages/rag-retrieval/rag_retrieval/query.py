@@ -4,6 +4,7 @@ from typing import Any
 
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
+from rag_common.enums import ChunkerType, PipelineRole, RetrievalMode
 from rag_common.pricing import PricingResolver, load_pricing_overrides, merge_pricing
 from rag_common.schemas import (
     CitationRead,
@@ -114,12 +115,8 @@ def _build_pricing_resolver(settings: Settings) -> PricingResolver:
 
 def _estimate_role_costs(role_usage: RoleUsage, pricing: PricingResolver) -> dict[str, float]:
     return {
-        "planner": pricing.estimate(role_usage.planner.model, role_usage.planner, "planner"),
-        "verifier": pricing.estimate(role_usage.verifier.model, role_usage.verifier, "verifier"),
-        "generator": pricing.estimate(role_usage.generator.model, role_usage.generator, "generator"),
-        "embedding": pricing.estimate(role_usage.embedding.model, role_usage.embedding, "embedding"),
-        "rerank": pricing.estimate(role_usage.rerank.model, role_usage.rerank, "rerank"),
-        "judge": pricing.estimate(role_usage.judge.model, role_usage.judge, "judge"),
+        role.value: pricing.estimate(getattr(role_usage, role.value).model, getattr(role_usage, role.value), role)
+        for role in PipelineRole
     }
 
 
@@ -193,7 +190,7 @@ def run_query(
     missing_subclaims: list[str] = []
     contradictions: list[str] = []
 
-    if request.retrieval_mode == "full_agentic":
+    if request.retrieval_mode == RetrievalMode.FULL_AGENTIC:
         known_tickers = set(dataset_config.known_tickers)
         agent_result, retrieval_agent_meta, agent_chat_usage = run_retrieval_agent(
             session,
@@ -251,7 +248,7 @@ def run_query(
         verifier_usage = TokenUsage()  # subsumed into planner_usage above
         missing_subclaims = list(agent_result.output.missing_subclaims)
         contradictions = list(agent_result.output.contradictions)
-    elif request.retrieval_mode == "single_pass":
+    elif request.retrieval_mode == RetrievalMode.SINGLE_PASS:
         plan, planner_meta, planner_usage = _heuristic_plan(
             session, request=request, resolved=resolved, dataset_config=dataset_config
         )
@@ -312,7 +309,7 @@ def run_query(
         "citation_repair_used": generator_metadata.get("repair_used", False),
         "citation_label_template": dataset_config.citation_label_template,
         "dataset_domain_label": dataset_config.domain_label,
-        "chunker": "chonkie",
+        "chunker": ChunkerType.CHONKIE,
         "planner_error": planner_meta.get("error"),
         "verifier_error": verifier_meta.get("error"),
         "planner_source": planner_meta.get("source"),
@@ -338,7 +335,7 @@ def run_query(
     )
     raw_supported_ids = verifier_result.get("supported_chunk_ids") or []
     citations = [to_citation_read(item, dataset_config.citation_label_template) for item in verified_evidence]
-    if request.retrieval_mode == "llm_only":
+    if request.retrieval_mode == RetrievalMode.LLM_ONLY:
         citations = []
 
     full_retrieval_refs: list[RetrievedChunkRef] | None = None
@@ -351,6 +348,13 @@ def run_query(
     }
 
     total_usage = total(role_usage)
+    degraded_reasons: list[str] = []
+    if planner_meta.get("error"):
+        degraded_reasons.append(f"planner_fallback: {planner_meta['error']}")
+    if verifier_meta.get("error"):
+        degraded_reasons.append(f"verifier_fallback: {verifier_meta['error']}")
+    if generator_metadata.get("generator") and generator_metadata.get("generator") != "pydantic-ai-agent":
+        degraded_reasons.append(f"generator_fallback: {generator_metadata['generator']}")
     return QueryResponse(
         answer=answer.answer,
         citations=citations,
@@ -362,6 +366,8 @@ def run_query(
         cost_estimate_usd=cost_total if not total_usage.is_empty() else None,
         generator_metadata=generator_metadata_with_plan,
         full_retrieval=full_retrieval_refs,
+        degraded=bool(degraded_reasons),
+        degraded_reasons=degraded_reasons,
     )
 
 

@@ -16,13 +16,21 @@ from rag_common.usage import TokenUsage
 logger = logging.getLogger(__name__)
 
 
+# Transient errors that warrant a fall-back to the deterministic path. Programmer
+# errors (``UserError`` — wrong deps_type, missing tool registration, etc.) are
+# deliberately excluded: catching them would silently mask agent-construction
+# regressions in CI and let production drift onto the heuristic path for days
+# without any visible error. Let those propagate.
 AGENT_RETRYABLE_ERRORS: tuple[type[BaseException], ...] = (
     UnexpectedModelBehavior,
     ModelHTTPError,
     ProviderError,
     httpx.HTTPError,
-    UserError,
 )
+
+# Re-exported for test imports that still reference the symbol; kept distinct
+# so a future maintainer cannot accidentally fold it back into the retryable set.
+AGENT_PROGRAMMER_ERRORS: tuple[type[BaseException], ...] = (UserError,)
 
 
 def agent_available(settings: Settings | None = None) -> bool:
@@ -103,7 +111,9 @@ def run_with_fallback[T](
         return result, True, None, usage
     except AGENT_RETRYABLE_ERRORS as exc:
         message = f"{type(exc).__name__}: {exc}"
-        logger.warning("agent_fallback", extra={"label": label, "error": message})
+        # ERROR (not WARNING) because the agent fallback is degraded behavior, not a
+        # routine condition. Operators monitoring ERROR-level events should see this.
+        logger.error("agent_fallback", extra={"label": label, "error": message})
         return fallback(), False, message, TokenUsage()
 
 

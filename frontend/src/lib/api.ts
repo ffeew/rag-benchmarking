@@ -422,7 +422,16 @@ export const api = {
   },
   async createDataset(
     token: string,
-    body: { name: string; description?: string },
+    body: {
+      name: string
+      description?: string
+      domain_label?: string
+      entity_label?: string
+      valid_forms?: string[]
+      metric_terms?: string[]
+      hyde_style_hint?: string
+      citation_label_template?: string
+    },
   ) {
     return datasetSchema.parse(
       await apiFetch('/v1/datasets', { token, method: 'POST', body }),
@@ -449,7 +458,17 @@ export const api = {
   },
   async registerLocalCorpus(
     token: string,
-    body: { dataset_name: string; description?: string; path?: string },
+    body: {
+      dataset_name: string
+      description?: string
+      path?: string
+      domain_label?: string
+      entity_label?: string
+      valid_forms?: string[]
+      metric_terms?: string[]
+      hyde_style_hint?: string
+      citation_label_template?: string
+    },
   ) {
     return registerCorpusResponseSchema.parse(
       await apiFetch('/v1/datasets/register-local-corpus', {

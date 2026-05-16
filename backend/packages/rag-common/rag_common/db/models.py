@@ -21,6 +21,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from rag_common.enums import (
+    IngestionRunStatus,
+    JobStatus,
+    RetrievalMode,
+    VerificationStatus,
+)
+
 
 def uuid_str() -> str:
     return str(uuid.uuid4())
@@ -44,14 +51,17 @@ class Dataset(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     default_query_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    # Domain-adaptive retrieval config; nulls fall back to SEC defaults in
-    # rag_retrieval.dataset_config so existing datasets keep current behavior.
-    domain_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Domain-adaptive retrieval config; nulls fall back to per-field defaults in
+    # rag_retrieval.dataset_config.load_dataset_config (SEC defaults for valid_forms /
+    # metric_terms / citation_label_template / domain_label / entity_label; None for
+    # hyde_style_hint). Column lengths mirror the Pydantic max_length on
+    # DatasetCreate / DatasetUpdate so the contract is enforced at both layers.
+    domain_label: Mapped[str | None] = mapped_column(String(512), nullable=True)
     entity_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
     valid_forms: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     metric_terms: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    hyde_style_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
-    citation_label_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hyde_style_hint: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    citation_label_template: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     documents: Mapped[list[Document]] = relationship(back_populates="dataset")
 
@@ -86,7 +96,7 @@ class Job(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     job_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="queued")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default=JobStatus.QUEUED)
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     current_step: Mapped[str | None] = mapped_column(String(255))
     celery_task_id: Mapped[str | None] = mapped_column(String(255), index=True)
@@ -111,7 +121,7 @@ class IngestionRun(TimestampMixin, Base):
     parser_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     chunking_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     embedding_model: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=IngestionRunStatus.QUEUED, index=True)
     timings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     counts: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     error_summary: Mapped[str | None] = mapped_column(Text)
@@ -225,7 +235,9 @@ class EvalCase(TimestampMixin, Base):
     expected_citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     expected_answer_spec: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     expected_evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
-    verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft", index=True)
+    verification_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=VerificationStatus.DRAFT, index=True
+    )
     verified_by: Mapped[str | None] = mapped_column(String(128))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     gold_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
@@ -238,9 +250,9 @@ class EvalRun(TimestampMixin, Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
     job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"), index=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=JobStatus.QUEUED, index=True)
     run_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    system_variant: Mapped[str] = mapped_column(String(64), nullable=False, default="full_agentic")
+    system_variant: Mapped[str] = mapped_column(String(64), nullable=False, default=RetrievalMode.FULL_AGENTIC)
     model_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     errors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)

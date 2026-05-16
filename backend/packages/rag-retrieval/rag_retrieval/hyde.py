@@ -16,6 +16,7 @@ from pydantic_ai import (
     RunContext,  # noqa: TC002 - resolved at runtime by @agent.instructions via get_type_hints
 )
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
 from rag_retrieval.agents import AGENT_RETRYABLE_ERRORS, agent_available, build_agent
@@ -109,7 +110,7 @@ def generate_hyde_passage(
     try:
         agent = _build_hyde_agent_for(resolved.zai_chat_model or "")
         result = agent.run_sync(f"QUESTION:\n{query}", deps=HydeDeps(dataset_config=config))
-        usage = safe_pydantic_ai_usage(result, provider="zai", model=resolved.zai_chat_model)
+        usage = safe_pydantic_ai_usage(result, provider=Provider.ZAI, model=resolved.zai_chat_model)
         passage = (result.output or "").strip()
         if not passage:
             metadata["fallback_reason"] = "empty_passage"

@@ -7,6 +7,15 @@ from typing import Any
 
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
+from rag_common.enums import (
+    BenchmarkProfile,
+    IngestionRunStatus,
+    JobStatus,
+    ParserType,
+    PipelineRole,
+    RagasMetric,
+    VerificationStatus,
+)
 from rag_common.eval_variants import apply_overrides
 from rag_common.job_state import commit_job_progress
 from rag_common.pricing import PricingResolver, load_pricing_overrides, merge_pricing
@@ -299,7 +308,7 @@ def _compute_case_metrics(
         insufficiency_reason=response.insufficiency_reason,
         raw_spec=case.expected_answer_spec,
     )
-    verified = case.verification_status == "verified"
+    verified = case.verification_status == VerificationStatus.VERIFIED
     answer_gold_eligible = verified and bool(answer_metrics.get("answer_scoreable"))
     evidence_gold_eligible = verified and bool(strict_expected)
 
@@ -480,7 +489,9 @@ def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[st
         "scientific_case_count": sum(1 for metric in metrics if metric.get("gold_eligible") is True),
         "answer_scientific_case_count": len(answer_values),
         "evidence_scientific_case_count": len(evidence_recall_values),
-        "draft_case_count": sum(1 for metric in metrics if metric.get("verification_status") != "verified"),
+        "draft_case_count": sum(
+            1 for metric in metrics if metric.get("verification_status") != VerificationStatus.VERIFIED
+        ),
         "answer_accuracy_rate": _mean_list(answer_values),
         "answer_accuracy_ci_95": bootstrap_mean_ci(answer_values, seed=seed),
         "avg_evidence_recall_at_10": _mean_list(evidence_recall_values),
@@ -618,7 +629,7 @@ def _extract_total_tokens(usage: dict[str, Any] | None) -> int:
 
 
 def _case_has_scientific_gold(case: models.EvalCase) -> bool:
-    if case.verification_status != "verified":
+    if case.verification_status != VerificationStatus.VERIFIED:
         return False
     answer_metrics = score_answer(answer="", insufficiency_reason=None, raw_spec=case.expected_answer_spec)
     expected_evidence = strict_evidence_eligible(coerce_expected_evidence(case.expected_evidence or []))
@@ -636,7 +647,7 @@ def _ingestion_diagnostics(session: Session, dataset_id: str) -> dict[str, Any]:
     )
     diagnostics: dict[str, Any] = {
         "ingestion_run_count": len(runs),
-        "completed_ingestion_run_count": sum(1 for run in runs if run.status == "completed"),
+        "completed_ingestion_run_count": sum(1 for run in runs if run.status == IngestionRunStatus.COMPLETED),
         "parsed_page_count": len(pages),
     }
     total_seconds = [
@@ -647,7 +658,7 @@ def _ingestion_diagnostics(session: Session, dataset_id: str) -> dict[str, Any]:
     if total_seconds:
         diagnostics["avg_ingestion_time_seconds"] = _mean(total_seconds)
     if pages:
-        fallback_pages = [page for page in pages if page.parser != "mistral-ocr"]
+        fallback_pages = [page for page in pages if page.parser != ParserType.MISTRAL_OCR]
         flagged_pages = [
             page for page in pages if isinstance(page.quality_flags, dict) and any(page.quality_flags.values())
         ]
@@ -722,37 +733,37 @@ def _attach_ragas_scores(
         embeddings = RagasOpenAIEmbeddings(client=embedding_client, model=settings.openrouter_embedding_model)
 
     has_reference = any(sample["reference"] for _, sample in pending)
-    metrics_config: list[tuple[str, Any]] = [
-        ("faithfulness", Faithfulness(llm=llm)),
-        ("context_precision", ContextPrecision(llm=llm)),
+    metrics_config: list[tuple[RagasMetric, Any]] = [
+        (RagasMetric.FAITHFULNESS, Faithfulness(llm=llm)),
+        (RagasMetric.CONTEXT_PRECISION, ContextPrecision(llm=llm)),
     ]
     if embeddings is not None:
-        metrics_config.append(("answer_relevancy", AnswerRelevancy(llm=llm, embeddings=embeddings)))
+        metrics_config.append((RagasMetric.ANSWER_RELEVANCY, AnswerRelevancy(llm=llm, embeddings=embeddings)))
     if has_reference:
-        metrics_config.append(("context_recall", ContextRecall(llm=llm)))
+        metrics_config.append((RagasMetric.CONTEXT_RECALL, ContextRecall(llm=llm)))
 
     for entry, sample in pending:
         scores: dict[str, float] = {}
         for key, metric in metrics_config:
             try:
-                if key == "faithfulness":
+                if key == RagasMetric.FAITHFULNESS:
                     result = metric.score(
                         user_input=sample["user_input"],
                         response=sample["response"],
                         retrieved_contexts=sample["retrieved_contexts"],
                     )
-                elif key == "answer_relevancy":
+                elif key == RagasMetric.ANSWER_RELEVANCY:
                     result = metric.score(
                         user_input=sample["user_input"],
                         response=sample["response"],
                     )
-                elif key == "context_precision":
+                elif key == RagasMetric.CONTEXT_PRECISION:
                     result = metric.score(
                         user_input=sample["user_input"],
                         reference=sample["reference"] or sample["response"],
                         retrieved_contexts=sample["retrieved_contexts"],
                     )
-                elif key == "context_recall":
+                elif key == RagasMetric.CONTEXT_RECALL:
                     result = metric.score(
                         user_input=sample["user_input"],
                         response=sample["response"],
@@ -762,7 +773,7 @@ def _attach_ragas_scores(
                 else:
                     continue
                 value = float(result.value) if result.value is not None else float("nan")
-            except (RuntimeError, ValueError, KeyError, OSError) as exc:
+            except (OSError, RuntimeError, SQLAlchemyError, ValueError) as exc:
                 logger.warning("ragas_metric_failed", extra={"metric": key, "error": str(exc)})
                 continue
             if not math.isnan(value):
@@ -791,8 +802,8 @@ def run_evaluation(
     eval_run = session.get(models.EvalRun, eval_run_id)
     if eval_run is None:
         raise ValueError(f"Evaluation run {eval_run_id} was not found")
-    commit_job_progress(job_id, status="running", progress=5, current_step="loading eval cases")
-    eval_run.status = "running"
+    commit_job_progress(job_id, status=JobStatus.RUNNING, progress=5, current_step="loading eval cases")
+    eval_run.status = JobStatus.RUNNING
     session.flush()
 
     case_ids = eval_run.run_config.get("case_ids") or []
@@ -807,8 +818,8 @@ def run_evaluation(
                 .limit(80)
             )
         )
-    benchmark_profile = str(eval_run.run_config.get("benchmark_profile") or "scientific")
-    if benchmark_profile == "scientific":
+    benchmark_profile = str(eval_run.run_config.get("benchmark_profile") or BenchmarkProfile.SCIENTIFIC)
+    if benchmark_profile == BenchmarkProfile.SCIENTIFIC:
         invalid_cases = [case.case_key or case.id for case in cases if not _case_has_scientific_gold(case)]
         if invalid_cases:
             raise ValueError(
@@ -860,12 +871,12 @@ def run_evaluation(
                 if response.usage_summary is not None:
                     role_usage = response.usage_summary
                     cost_breakdown = {
-                        "planner": pricing.estimate(role_usage.planner.model, role_usage.planner, "planner"),
-                        "verifier": pricing.estimate(role_usage.verifier.model, role_usage.verifier, "verifier"),
-                        "generator": pricing.estimate(role_usage.generator.model, role_usage.generator, "generator"),
-                        "embedding": pricing.estimate(role_usage.embedding.model, role_usage.embedding, "embedding"),
-                        "rerank": pricing.estimate(role_usage.rerank.model, role_usage.rerank, "rerank"),
-                        "judge": pricing.estimate(role_usage.judge.model, role_usage.judge, "judge"),
+                        role.value: pricing.estimate(
+                            getattr(role_usage, role.value).model,
+                            getattr(role_usage, role.value),
+                            role,
+                        )
+                        for role in PipelineRole
                     }
                 result_row = models.EvalResult(
                     eval_run_id=eval_run.id,
@@ -884,8 +895,16 @@ def run_evaluation(
                 case_ids_per_variant[spec.name].add(case.id)
                 contexts = [evidence.snippet for evidence in response.evidence if evidence.snippet]
                 pending_ragas.append((result_row, _ragas_sample(case, response.answer, contexts)))
-            except (OSError, RuntimeError, SQLAlchemyError, ValueError) as exc:
-                errors.append({"case_id": case.id, "variant": spec.name, "error": str(exc)})
+            except Exception as exc:  # noqa: BLE001 - per-case isolation: each case is independent; one failure must not abort the run
+                errors.append(
+                    {
+                        "case_id": case.id,
+                        "variant": spec.name,
+                        "error_class": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                )
+                logger.exception("eval_case_failed case=%s variant=%s", case.id, spec.name)
                 session.add(
                     models.EvalResult(
                         eval_run_id=eval_run.id,
@@ -903,7 +922,7 @@ def run_evaluation(
             completed += 1
             commit_job_progress(
                 job_id,
-                status="running",
+                status=JobStatus.RUNNING,
                 progress=int((completed / total) * 90),
                 current_step=f"evaluated {completed}/{total}",
             )
@@ -911,7 +930,7 @@ def run_evaluation(
 
     pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
 
-    commit_job_progress(job_id, status="running", progress=92, current_step="computing ragas metrics")
+    commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="computing ragas metrics")
     ragas_summary = _attach_ragas_scores(pending_ragas, resolved)
     session.flush()
 
@@ -940,7 +959,7 @@ def run_evaluation(
         )
     if ragas_summary:
         eval_run.metrics["ragas_run"] = ragas_summary
-    eval_run.status = "completed" if not errors else "completed_with_errors"
+    eval_run.status = JobStatus.COMPLETED if not errors else JobStatus.COMPLETED_WITH_ERRORS
     commit_job_progress(job_id, status=eval_run.status, progress=100, current_step="completed")
     session.flush()
     return eval_run

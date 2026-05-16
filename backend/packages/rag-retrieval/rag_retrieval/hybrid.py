@@ -48,20 +48,16 @@ def apply_filters(
     if filters.document_ids:
         statement = statement.where(models.Document.id.in_(filters.document_ids))
     if plan.latest and (tickers or forms):
-        latest_subquery = (
-            select(func.max(models.Document.filing_date))
-            .where(models.Document.dataset_id == dataset_id)
-            .scalar_subquery()
-        )
+        # Build the "latest filing_date" subquery scoped to whatever dimensions the
+        # caller asked about. Previously, a forms-only "latest" query (e.g. "latest
+        # 10-K") used the dataset-wide max filing_date — almost certainly wrong on
+        # corpora where 10-Ks lag 10-Qs.
+        latest_conditions = [models.Document.dataset_id == dataset_id]
         if tickers:
-            latest_subquery = (
-                select(func.max(models.Document.filing_date))
-                .where(
-                    models.Document.dataset_id == dataset_id,
-                    models.Document.ticker.in_([t.upper() for t in tickers]),
-                )
-                .scalar_subquery()
-            )
+            latest_conditions.append(models.Document.ticker.in_([t.upper() for t in tickers]))
+        if forms:
+            latest_conditions.append(models.Document.form_type.in_([form.upper() for form in forms]))
+        latest_subquery = select(func.max(models.Document.filing_date)).where(*latest_conditions).scalar_subquery()
         statement = statement.where(
             or_(models.Document.filing_date == latest_subquery, models.Document.filing_date.is_(None))
         )

@@ -4,6 +4,7 @@ from typing import Literal, TypedDict, cast
 
 import httpx
 from rag_common.config import Settings, get_settings
+from rag_common.enums import ParserType
 from rag_common.json_types import JsonObject, JsonValue
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -144,10 +145,13 @@ class MistralOcrClient:
     )
     def parse_pdf(self, pdf_bytes: bytes) -> OcrResult:
         if not self.enabled:
-            raise OcrProviderError("Mistral OCR is disabled in mock provider mode")
+            # Configuration issue, not a transient failure — surface as Permanent so the
+            # parsing-layer fallback can log at ERROR and operators notice that prod is
+            # running on the docling fallback instead of the intended OCR provider.
+            raise PermanentOcrProviderError("Mistral OCR is disabled in mock provider mode")
         api_key = self.settings.mistral_api_key
         if api_key is None:
-            raise OcrProviderError("MISTRAL_API_KEY is not configured")
+            raise PermanentOcrProviderError("MISTRAL_API_KEY is not configured")
         encoded = base64.b64encode(pdf_bytes).decode("ascii")
         payload: MistralOcrRequest = {
             "model": self.settings.mistral_ocr_model,
@@ -173,7 +177,7 @@ class MistralOcrClient:
         return OcrResult(
             pages=_parse_pages(data),
             raw=data,
-            provider="mistral-ocr",
+            provider=ParserType.MISTRAL_OCR,
             model=model,
         )
 

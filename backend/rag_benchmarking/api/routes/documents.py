@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from rag_common.db import models
+from rag_common.enums import IngestionRunStatus
 from rag_common.schemas import (
     DocumentRead,
     DocumentUpdate,
@@ -41,7 +42,7 @@ def _resolve_active_run_id(session: Session, document: models.Document) -> str |
         select(models.IngestionRun.id)
         .where(
             models.IngestionRun.document_id == document.id,
-            models.IngestionRun.status == "completed",
+            models.IngestionRun.status == IngestionRunStatus.COMPLETED,
         )
         .order_by(models.IngestionRun.created_at.desc())
         .limit(1)
@@ -82,6 +83,7 @@ def register_local_corpus_endpoint(
         job_ids=queue_result.job_ids,
         queued_document_ids=queue_result.queued_document_ids,
         skipped_document_ids=queue_result.skipped_document_ids,
+        broker_unavailable_document_ids=queue_result.broker_unavailable_document_ids,
     )
 
 
@@ -118,6 +120,7 @@ def upload_documents(
         job_ids=queue_result.job_ids,
         queued_document_ids=queue_result.queued_document_ids,
         skipped_document_ids=queue_result.skipped_document_ids,
+        broker_unavailable_document_ids=queue_result.broker_unavailable_document_ids,
     )
 
 
@@ -175,9 +178,11 @@ def update_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
     updates = payload.model_dump(exclude_unset=True)
-    nullable_fields = {"company_name", "filing_date", "report_period", "fiscal_year", "fiscal_quarter"}
+    # Pydantic already coerces `""` to a ValidationError for date / int fields, so only
+    # the string-typed company_name can reach this branch with an empty-string value.
+    # Normalize the UX shortcut "" → None just for that one field.
     for field, value in updates.items():
-        if field in nullable_fields and value == "":
+        if field == "company_name" and value == "":
             value = None
         setattr(document, field, value)
     session.commit()

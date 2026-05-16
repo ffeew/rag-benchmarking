@@ -10,7 +10,7 @@ import {
   Search,
   Sparkles,
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -97,10 +97,11 @@ function QueryWorkspace() {
     [docs],
   )
 
-  const placeholder = useMemo(
-    () =>
-      EXAMPLE_QUESTIONS[Math.floor(Math.random() * EXAMPLE_QUESTIONS.length)],
-    [],
+  // Pick a stable random placeholder once per mount. useMemo bodies are treated as
+  // pure by React Compiler, so Math.random() inside useMemo is unsafe; useState's
+  // lazy initializer is the correct primitive for "compute once on mount".
+  const [placeholder] = useState(
+    () => EXAMPLE_QUESTIONS[Math.floor(Math.random() * EXAMPLE_QUESTIONS.length)],
   )
 
   const [question, setQuestion] = useState('')
@@ -116,6 +117,33 @@ function QueryWorkspace() {
   const [elapsed, setElapsed] = useState<number | null>(null)
   const [highlighted, setHighlighted] = useState<number | null>(null)
   const historyRef = useRef<Array<HistoryEntry>>(readHistory())
+
+  // Hydrate from the trace-view "Reproduce" handoff: traces.$traceId.tsx writes
+  // {question, retrieval_mode} to sessionStorage['rag.queryDraft'] then navigates
+  // here. Without this effect, that handoff silently dropped the question.
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem('rag.queryDraft')
+      if (!raw) return
+      window.sessionStorage.removeItem('rag.queryDraft')
+      const draft = JSON.parse(raw) as {
+        question?: string
+        retrieval_mode?: string
+      }
+      if (typeof draft.question === 'string' && draft.question.trim()) {
+        setQuestion(draft.question)
+      }
+      if (
+        draft.retrieval_mode === 'full_agentic' ||
+        draft.retrieval_mode === 'single_pass' ||
+        draft.retrieval_mode === 'llm_only'
+      ) {
+        setMode(draft.retrieval_mode)
+      }
+    } catch {
+      /* ignore malformed draft payload */
+    }
+  }, [])
 
   const askMutation = useMutation({
     mutationFn: async (q: string) => {

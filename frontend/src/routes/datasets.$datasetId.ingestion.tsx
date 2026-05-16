@@ -26,11 +26,12 @@ export const Route = createFileRoute('/datasets/$datasetId/ingestion')({
 
 function IngestionPage() {
   const { datasetId } = Route.useParams()
-  const { token } = useToken()
+  const { token, isAuthed } = useToken()
 
   const runsQuery = useQuery({
     queryKey: qk.datasets.ingestionRuns(datasetId),
     queryFn: () => api.ingestionRuns(token, datasetId).catch(() => []),
+    enabled: isAuthed,
     refetchInterval: 6000,
   })
 

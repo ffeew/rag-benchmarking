@@ -3,11 +3,11 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from functools import lru_cache
-from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider, QueryType
 from rag_common.schemas import QueryFilters
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 from sqlalchemy.orm import Session
@@ -27,24 +27,7 @@ from rag_retrieval.dataset_config import (
 logger = logging.getLogger(__name__)
 
 
-VALID_QUERY_TYPES = (
-    "fact_lookup",
-    "table_lookup",
-    "comparison",
-    "trend",
-    "thematic_synthesis",
-    "latest_filing",
-    "insufficient_evidence",
-)
-QueryType = Literal[
-    "fact_lookup",
-    "table_lookup",
-    "comparison",
-    "trend",
-    "thematic_synthesis",
-    "latest_filing",
-    "insufficient_evidence",
-]
+VALID_QUERY_TYPES: tuple[QueryType, ...] = tuple(QueryType)
 # Back-compat re-exports; downstream code should prefer ``DatasetConfig.valid_forms`` /
 # ``metric_terms``. Kept here so existing imports do not break.
 VALID_FORMS = DEFAULT_VALID_FORMS
@@ -56,9 +39,12 @@ class RetrievalPlan:
     forms: list[str] = field(default_factory=list)
     filing_date_start: date | None = None
     filing_date_end: date | None = None
+    report_period_start: date | None = None
+    report_period_end: date | None = None
+    document_ids: list[str] = field(default_factory=list)
     metrics: list[str] = field(default_factory=list)
     subquestions: list[str] = field(default_factory=list)
-    query_type: str = "fact_lookup"
+    query_type: QueryType = QueryType.FACT_LOOKUP
     latest: bool = False
     ambiguity: str | None = None
     reasoning: str | None = None
@@ -69,6 +55,9 @@ class RetrievalPlan:
             "forms": self.forms,
             "filing_date_start": self.filing_date_start.isoformat() if self.filing_date_start else None,
             "filing_date_end": self.filing_date_end.isoformat() if self.filing_date_end else None,
+            "report_period_start": (self.report_period_start.isoformat() if self.report_period_start else None),
+            "report_period_end": (self.report_period_end.isoformat() if self.report_period_end else None),
+            "document_ids": self.document_ids,
             "metrics": self.metrics,
             "subquestions": self.subquestions,
             "query_type": self.query_type,
@@ -104,7 +93,7 @@ class PlannerOutput(BaseModel):
         description="Decomposition into independently-answerable subquestions.",
     )
     query_type: QueryType = Field(
-        default="fact_lookup",
+        default=QueryType.FACT_LOOKUP,
         description=(
             "One of: fact_lookup, table_lookup, comparison, trend, "
             "thematic_synthesis, latest_filing, insufficient_evidence."
@@ -247,15 +236,19 @@ def _normalize_planner_output(
         {form.upper() for form in output.forms if form.upper() in valid_form_set}
         | {form.upper() for form in (filters.form_type or [])}
     )
-    query_type = output.query_type if output.query_type in VALID_QUERY_TYPES else "fact_lookup"
+    # output.query_type is typed Literal[QueryType] by Pydantic so the closed set is
+    # already enforced at parse time. No runtime re-coercion needed.
     return RetrievalPlan(
         target_tickers=safe_tickers,
         forms=valid_forms,
         filing_date_start=_coerce_date(output.filing_date_start) or filters.filing_date_start,
         filing_date_end=_coerce_date(output.filing_date_end) or filters.filing_date_end,
+        report_period_start=filters.report_period_start,
+        report_period_end=filters.report_period_end,
+        document_ids=list(filters.document_ids or []),
         metrics=[metric.strip() for metric in output.metrics if metric.strip()],
         subquestions=[item.strip() for item in output.subquestions if item.strip()],
-        query_type=query_type,
+        query_type=output.query_type,
         latest=bool(output.latest),
         ambiguity=output.ambiguity,
         reasoning=output.reasoning or None,
@@ -291,25 +284,32 @@ def infer_query_plan(
     lowered_question = question.lower()
     metrics = [term for term in config.metric_terms if term in lowered_question]
     latest = any(term in lowered_question for term in ("latest", "last reported", "most recent", "current"))
-    query_type: QueryType = (
-        "table_lookup"
-        if any(term in lowered_question for term in ("break down", "table", "segment"))
-        else "fact_lookup"
+    # Explicit precedence: scan in priority order so the first match wins.
+    # Previously a cascade of `if` statements meant the LAST match silently won
+    # (e.g. "compare … trend" routed as "trend", not "comparison"), making the
+    # precedence invisible to readers.
+    _query_type_rules: tuple[tuple[QueryType, tuple[str, ...]], ...] = (
+        (QueryType.COMPARISON, ("compare", "between", "versus", "vs.")),
+        (QueryType.TREND, ("trend", "over the past", "three-year", "3 year")),
+        (QueryType.THEMATIC_SYNTHESIS, ("summarize", "overview", "discussing")),
+        (QueryType.TABLE_LOOKUP, ("break down", "table", "segment")),
     )
-    if any(term in lowered_question for term in ("compare", "between", "versus", "vs.")):
-        query_type = "comparison"
-    if any(term in lowered_question for term in ("trend", "over the past", "three-year", "3 year")):
-        query_type = "trend"
-    if any(term in lowered_question for term in ("summarize", "overview", "discussing")):
-        query_type = "thematic_synthesis"
+    query_type: QueryType = QueryType.FACT_LOOKUP
+    for candidate, terms in _query_type_rules:
+        if any(term in lowered_question for term in terms):
+            query_type = candidate
+            break
     ambiguity = None
-    if not target_tickers and query_type in {"fact_lookup", "table_lookup", "trend"}:
+    if not target_tickers and query_type in {QueryType.FACT_LOOKUP, QueryType.TABLE_LOOKUP, QueryType.TREND}:
         ambiguity = "No ticker was inferred; retrieval will search the whole dataset."
     return RetrievalPlan(
         target_tickers=[ticker.upper() for ticker in target_tickers],
         forms=forms,
         filing_date_start=filters.filing_date_start,
         filing_date_end=filters.filing_date_end,
+        report_period_start=filters.report_period_start,
+        report_period_end=filters.report_period_end,
+        document_ids=list(filters.document_ids or []),
         metrics=metrics,
         subquestions=[],
         query_type=query_type,
@@ -364,7 +364,7 @@ def plan_query(
         result = agent.run_sync(_build_planner_prompt(question), deps=deps)
         usage = safe_pydantic_ai_usage(
             result,
-            provider="zai",
+            provider=Provider.ZAI,
             model=resolved.zai_chat_model,
         )
         return _normalize_planner_output(result.output, config, filters), usage

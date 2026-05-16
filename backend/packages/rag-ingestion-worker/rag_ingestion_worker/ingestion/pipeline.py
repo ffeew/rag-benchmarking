@@ -5,6 +5,7 @@ import structlog
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
+from rag_common.enums import ChunkerType, IngestionRunStatus, JobStatus, ParserType
 from rag_common.ingestion_run_state import record_ingestion_run_failure
 from rag_common.job_state import commit_job_progress
 from rag_common.providers.openrouter import OpenRouterClient
@@ -23,10 +24,14 @@ def artifact_prefix(dataset_id: str, document_id: str, run_id: str) -> str:
 
 
 def parser_config(settings: Settings) -> dict[str, Any]:
+    # When mocks are on, Mistral OCR is bypassed entirely (see parse_pdf in
+    # ingestion/parsing.py). Reflect that in the dedup key so a mock-mode run does
+    # NOT collide with a real OCR run and silently re-use its chunks.
+    primary = ParserType.DOCLING if settings.allow_mock_providers else ParserType.MISTRAL_OCR
     return {
-        "primary": "mistral-ocr",
-        "fallback": "docling",
-        "last_resort": "pypdf-local",
+        "primary": primary,
+        "fallback": ParserType.DOCLING,
+        "last_resort": ParserType.PYPDF_LOCAL,
         "ocr_model": settings.mistral_ocr_model,
         "ocr_transport": "base64_data_uri",
         "table_format": "inline_markdown",
@@ -36,12 +41,18 @@ def parser_config(settings: Settings) -> dict[str, Any]:
 
 
 def chunking_config(settings: Settings) -> dict[str, Any]:
+    # Surface the tokenizer the recursive chunker actually loaded so a character-mode
+    # fallback (offline boot, tiktoken cache miss) does NOT collide with a real
+    # cl100k_base run in the IngestionRun dedup key.
+    from rag_ingestion_worker.ingestion.chunking import active_tokenizer_mode
+
     return {
-        "chunker": "chonkie",
+        "chunker": ChunkerType.CHONKIE,
         "target_tokens": settings.chunk_target_tokens,
         "max_tokens": settings.chunk_max_tokens,
         "overlap_tokens": settings.chunk_overlap_tokens,
         "table_max_rows": settings.table_max_rows,
+        "tokenizer_mode": active_tokenizer_mode(settings.chunk_target_tokens),
     }
 
 
@@ -64,7 +75,7 @@ def get_or_create_ingestion_run(
                 models.IngestionRun.parser_config == config,
                 models.IngestionRun.chunking_config == chunks,
                 models.IngestionRun.embedding_model == embedding_model,
-                models.IngestionRun.status == "completed",
+                models.IngestionRun.status == IngestionRunStatus.COMPLETED,
             )
             .order_by(models.IngestionRun.created_at.desc())
         )
@@ -85,7 +96,7 @@ def get_or_create_ingestion_run(
             parser_config=config,
             chunking_config=chunks,
             embedding_model=embedding_model,
-            status="queued",
+            status=IngestionRunStatus.QUEUED,
         )
         bootstrap.add(run)
         bootstrap.commit()
@@ -155,15 +166,15 @@ def run_document_ingestion(
     log = log.bind(run_id=run.id, dataset_id=document.dataset_id)
     log.debug("pipeline_run_resolved", should_ingest=should_ingest)
     if not should_ingest:
-        mark_job(session, job, status="skipped", progress=100, step="already indexed")
+        mark_job(session, job, status=JobStatus.SKIPPED, progress=100, step="already indexed")
         log.info("pipeline_skipped_already_indexed")
         return run
 
     store = ObjectStore(resolved)
     provider = OpenRouterClient(resolved)
     try:
-        mark_job(session, job, status="running", progress=5, step="reading raw PDF")
-        run.status = "running"
+        mark_job(session, job, status=JobStatus.RUNNING, progress=5, step="reading raw PDF")
+        run.status = IngestionRunStatus.RUNNING
         log.debug(
             "pipeline_stage_minio_get_start",
             bucket=document.minio_bucket,
@@ -182,7 +193,7 @@ def run_document_ingestion(
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
 
-        mark_job(session, job, status="running", progress=20, step="parsing document")
+        mark_job(session, job, status=JobStatus.RUNNING, progress=20, step="parsing document")
         log.debug("pipeline_stage_parse_start")
         stage_started = time.perf_counter()
         parsed = parse_pdf(pdf_bytes, resolved)
@@ -224,7 +235,7 @@ def run_document_ingestion(
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
 
-        mark_job(session, job, status="running", progress=50, step="chunking parsed pages")
+        mark_job(session, job, status=JobStatus.RUNNING, progress=50, step="chunking parsed pages")
         log.debug("pipeline_stage_chunk_start")
         stage_started = time.perf_counter()
         pages = list(
@@ -271,7 +282,7 @@ def run_document_ingestion(
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
 
-        mark_job(session, job, status="running", progress=75, step="embedding chunks")
+        mark_job(session, job, status=JobStatus.RUNNING, progress=75, step="embedding chunks")
         batch_size = 32
         embedding_model = resolved.openrouter_embedding_model or "mock-embedding"
         log.debug(
@@ -316,7 +327,7 @@ def run_document_ingestion(
             "pipeline_stage_embed_done",
             elapsed_seconds=round(time.perf_counter() - stage_started, 3),
         )
-        run.status = "completed"
+        run.status = IngestionRunStatus.COMPLETED
         run.timings = {"total_seconds": round(time.perf_counter() - pipeline_start, 3)}
         run.counts = {
             "pages": len(pages),
@@ -324,7 +335,7 @@ def run_document_ingestion(
             "table_chunks": sum(1 for chunk in db_chunks if chunk.contains_table),
         }
         document.active_ingestion_run_id = run.id
-        mark_job(session, job, status="completed", progress=100, step="completed")
+        mark_job(session, job, status=JobStatus.COMPLETED, progress=100, step="completed")
         session.flush()
         log.info(
             "pipeline_completed",
@@ -334,13 +345,16 @@ def run_document_ingestion(
         )
         return run
     except Exception as exc:
-        # The main session is about to roll back, so any mutation of `run`
-        # would be discarded. Mark the run and job failed via separate
-        # transactions instead. Both helpers refuse to clobber terminal
-        # statuses, so a follow-up call from the task-level except is a
-        # safe no-op.
+        # Roll back the main session explicitly so partial chunk/embedding inserts
+        # are discarded before we touch any external state. The context manager
+        # exit would also roll back, but doing it here makes the cleanup ordering
+        # obvious and avoids relying on implicit teardown semantics.
+        session.rollback()
+        # Mark the run and job failed via separate transactions. Both helpers
+        # refuse to clobber terminal statuses, so a follow-up call from the
+        # task-level except is a safe no-op.
         record_ingestion_run_failure(run.id, str(exc))
-        mark_job(session, job, status="failed", progress=100, step="failed", error=str(exc))
+        mark_job(session, job, status=JobStatus.FAILED, progress=100, step="failed", error=str(exc))
         log.exception(
             "pipeline_failed",
             exception_type=exc.__class__.__name__,

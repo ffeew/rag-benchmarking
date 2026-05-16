@@ -41,6 +41,7 @@ from typing import Any, Literal, cast
 
 import httpx
 from rag_common.config import get_settings
+from rag_common.enums import BenchmarkProfile
 from rag_common.eval_variants import ABLATION_PRESETS
 from rag_common.schemas import RetrievalVariantSpec
 
@@ -92,7 +93,7 @@ def _post_evaluation(
 ) -> dict[str, str]:
     payload: dict[str, Any] = {
         "dataset_id": dataset_id,
-        "benchmark_profile": "scientific",
+        "benchmark_profile": BenchmarkProfile.SCIENTIFIC,
     }
     if variant_specs is not None:
         payload["variants"] = [spec.model_dump(mode="json") for spec in variant_specs]

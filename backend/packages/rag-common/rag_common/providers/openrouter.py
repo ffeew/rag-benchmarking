@@ -7,6 +7,7 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider
 
 
 class ProviderError(RuntimeError):
@@ -118,7 +119,7 @@ class OpenRouterClient:
         if self.mock_mode:
             return EmbeddingResult(
                 vectors=[deterministic_embedding(text, requested_dimension) for text in texts],
-                metadata=ProviderMetadata(provider="mock-openrouter", model=selected_model),
+                metadata=ProviderMetadata(provider=Provider.MOCK_OPENROUTER, model=selected_model),
             )
         if self.settings.openrouter_api_key is None:
             raise ProviderError(
@@ -147,7 +148,7 @@ class OpenRouterClient:
         return EmbeddingResult(
             vectors=vectors,
             metadata=ProviderMetadata(
-                provider="openrouter",
+                provider=Provider.OPENROUTER,
                 model=data.get("model", selected_model),
                 raw={"id": data.get("id")},
                 usage=data.get("usage") or {},
@@ -163,7 +164,7 @@ class OpenRouterClient:
             return RerankResult(
                 ranked_indices=list(range(len(documents))),
                 scores=[1.0 / (index + 1) for index in range(len(documents))],
-                metadata=ProviderMetadata(provider="mock-openrouter", model=selected_model),
+                metadata=ProviderMetadata(provider=Provider.MOCK_OPENROUTER, model=selected_model),
             )
         if self.settings.openrouter_api_key is None:
             raise ProviderError(
@@ -183,7 +184,7 @@ class OpenRouterClient:
             ranked_indices=[int(item["index"]) for item in results],
             scores=[float(item.get("relevance_score", 0.0)) for item in results],
             metadata=ProviderMetadata(
-                provider="openrouter",
+                provider=Provider.OPENROUTER,
                 model=data.get("model", selected_model),
                 raw={"id": data.get("id")},
                 usage=data.get("usage") or {},

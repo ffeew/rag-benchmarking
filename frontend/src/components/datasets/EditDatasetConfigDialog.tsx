@@ -1,7 +1,7 @@
 import { zodResolver } from '#/lib/zodResolver'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings as SettingsIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -18,6 +18,7 @@ import { Field } from '#/components/ui/field'
 import { Input, Textarea } from '#/components/ui/input'
 import { api } from '#/lib/api'
 import type { Dataset } from '#/lib/api'
+import { joinCsv, splitCsv } from '#/lib/filters'
 import { qk } from '#/lib/queryKeys'
 import { toast, toastApiError } from '#/providers/ToastProvider'
 import { useToken } from '#/providers/TokenProvider'
@@ -42,22 +43,18 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
-function splitCsv(value: string): string[] | null {
-  const trimmed = value.trim()
-  if (!trimmed) return null
-  return trimmed
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
+// PATCH semantics: the backend distinguishes "field absent from payload" (leave
+// alone) from "field present and null" (clear the override). The shared
+// ``splitCsv`` in #/lib/filters returns ``undefined`` for empty input — we coerce
+// to ``null`` here so the field is actually serialized in the PATCH body and clears
+// the override on the server side.
+function splitCsvOrNull(value: string): string[] | null {
+  return splitCsv(value) ?? null
 }
 
 function blankToNull(value: string): string | null {
   const trimmed = value.trim()
   return trimmed ? trimmed : null
-}
-
-function listToCsv(value: string[] | null | undefined): string {
-  return value ? value.join(', ') : ''
 }
 
 export function EditDatasetConfigDialog({
@@ -76,20 +73,35 @@ export function EditDatasetConfigDialog({
     defaultValues: {
       domain_label: dataset.domain_label ?? '',
       entity_label: dataset.entity_label ?? '',
-      valid_forms: listToCsv(dataset.valid_forms),
-      metric_terms: listToCsv(dataset.metric_terms),
+      valid_forms: joinCsv(dataset.valid_forms),
+      metric_terms: joinCsv(dataset.metric_terms),
       hyde_style_hint: dataset.hyde_style_hint ?? '',
       citation_label_template: dataset.citation_label_template ?? '',
     },
   })
+
+  // Re-seed the form from server state whenever the dataset prop changes (after a
+  // successful save invalidates and refetches, or another tab edits the row).
+  // Without this, defaultValues are captured once on mount and the dialog shows
+  // stale typed values the next time it opens.
+  useEffect(() => {
+    form.reset({
+      domain_label: dataset.domain_label ?? '',
+      entity_label: dataset.entity_label ?? '',
+      valid_forms: joinCsv(dataset.valid_forms),
+      metric_terms: joinCsv(dataset.metric_terms),
+      hyde_style_hint: dataset.hyde_style_hint ?? '',
+      citation_label_template: dataset.citation_label_template ?? '',
+    })
+  }, [dataset, form])
 
   const updateMutation = useMutation({
     mutationFn: async (values: FormValues) => {
       return await api.patchDataset(token, dataset.id, {
         domain_label: blankToNull(values.domain_label),
         entity_label: blankToNull(values.entity_label),
-        valid_forms: splitCsv(values.valid_forms),
-        metric_terms: splitCsv(values.metric_terms),
+        valid_forms: splitCsvOrNull(values.valid_forms),
+        metric_terms: splitCsvOrNull(values.metric_terms),
         hyde_style_hint: blankToNull(values.hyde_style_hint),
         citation_label_template: blankToNull(values.citation_label_template),
       })

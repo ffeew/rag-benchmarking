@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 from rag_common.config import Settings
+from rag_common.enums import QueryType
 from rag_common.schemas import QueryFilters
 from rag_common.usage import TokenUsage
 from rag_retrieval import retrieval_tool
@@ -42,7 +43,7 @@ def _settings(*, hyde_enabled: bool = False, embedding_dim: int = 1024) -> Setti
 
 
 def _base_plan() -> RetrievalPlan:
-    return RetrievalPlan(query_type="fact_lookup")
+    return RetrievalPlan(query_type=QueryType.FACT_LOOKUP)
 
 
 def _deps(*, known_tickers: set[str], settings: Settings | None = None) -> RetrievalAgentDeps:

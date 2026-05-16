@@ -3,6 +3,7 @@ import time
 import structlog
 from rag_common.constants import TASK_INGEST_DOCUMENT
 from rag_common.db.session import get_sessionmaker
+from rag_common.enums import JobStatus
 from rag_common.ingestion_run_state import record_ingestion_run_failure
 from rag_common.job_state import (
     commit_job_progress,
@@ -33,7 +34,7 @@ def ingest_document_task(self: object, *, document_id: str, job_id: str, force: 
         log.debug("ingest_task_commit_running_start")
         commit_job_progress(
             job_id,
-            status="running",
+            status=JobStatus.RUNNING,
             progress=1,
             current_step="worker picked up",
         )

@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider, RetrievalMode
 from rag_common.providers.openrouter import ProviderError
 from rag_common.providers.zai import ZaiClient
 from rag_common.usage import TokenUsage, from_openrouter_usage, safe_pydantic_ai_usage
@@ -140,9 +141,12 @@ def local_grounded_answer(
     lines = ["Based on the ingested corpus, the strongest retrieved evidence is:"]
     for item in evidence[:5]:
         lines.append(f"{citation_label(item, citation_template)} {snippet(item.chunk.text, 320)}")
+    # Cap fallback confidence at 0.4 so callers can distinguish extractive-fallback
+    # answers from calibrated agent answers. The previous 0.75-for-5-chunks heuristic
+    # was indistinguishable from a real generator output.
     return AnswerDraft(
         answer="\n".join(lines),
-        confidence=min(0.9, 0.35 + len(evidence) * 0.08),
+        confidence=min(0.4, 0.1 + len(evidence) * 0.05),
         insufficiency_reason=insufficiency_reason,
         metadata={"generator": generator},
     )
@@ -347,7 +351,7 @@ def generate_answer_with_agent(
             TokenUsage(),
         )
 
-    accumulated_usage = safe_pydantic_ai_usage(result, provider="zai", model=settings.zai_chat_model)
+    accumulated_usage = safe_pydantic_ai_usage(result, provider=Provider.ZAI, model=settings.zai_chat_model)
     repair_used = _request_count(result) > 1
     final_output: GeneratorOutput = result.output
 
@@ -431,7 +435,7 @@ def generate_answer(
     resolved = settings or get_settings()
     config = dataset_config or DatasetConfig.default_sec()
     template = config.citation_label_template
-    if retrieval_mode == "llm_only":
+    if retrieval_mode == RetrievalMode.LLM_ONLY:
         return _llm_only_answer(question, resolved)
 
     if not evidence:

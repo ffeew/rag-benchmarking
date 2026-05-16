@@ -9,42 +9,43 @@ Pre-registration: ``docs/eval/ablation_v1_plan.md``.
 """
 
 from rag_common.config import Settings
+from rag_common.enums import RetrievalMode
 from rag_common.schemas import RetrievalOverrides, RetrievalVariantSpec
 
 LOCKED_ABLATION_VARIANTS: list[RetrievalVariantSpec] = [
-    RetrievalVariantSpec(name="full_agentic", retrieval_mode="full_agentic"),
+    RetrievalVariantSpec(name="full_agentic", retrieval_mode=RetrievalMode.FULL_AGENTIC),
     RetrievalVariantSpec(
         name="full_agentic_no_hyde",
-        retrieval_mode="full_agentic",
+        retrieval_mode=RetrievalMode.FULL_AGENTIC,
         overrides=RetrievalOverrides(hyde_enabled=False),
     ),
     RetrievalVariantSpec(
         name="full_agentic_no_reranker",
-        retrieval_mode="full_agentic",
+        retrieval_mode=RetrievalMode.FULL_AGENTIC,
         overrides=RetrievalOverrides(reranker_enabled=False),
     ),
     RetrievalVariantSpec(
         name="full_agentic_no_hyde_no_reranker",
-        retrieval_mode="full_agentic",
+        retrieval_mode=RetrievalMode.FULL_AGENTIC,
         overrides=RetrievalOverrides(hyde_enabled=False, reranker_enabled=False),
     ),
-    RetrievalVariantSpec(name="single_pass", retrieval_mode="single_pass"),
+    RetrievalVariantSpec(name="single_pass", retrieval_mode=RetrievalMode.SINGLE_PASS),
     RetrievalVariantSpec(
         name="single_pass_semantic_only",
-        retrieval_mode="single_pass",
+        retrieval_mode=RetrievalMode.SINGLE_PASS,
         overrides=RetrievalOverrides(full_text_candidates=0),
     ),
     RetrievalVariantSpec(
         name="single_pass_lexical_only",
-        retrieval_mode="single_pass",
+        retrieval_mode=RetrievalMode.SINGLE_PASS,
         overrides=RetrievalOverrides(semantic_candidates=0),
     ),
     RetrievalVariantSpec(
         name="single_pass_no_reranker",
-        retrieval_mode="single_pass",
+        retrieval_mode=RetrievalMode.SINGLE_PASS,
         overrides=RetrievalOverrides(reranker_enabled=False),
     ),
-    RetrievalVariantSpec(name="llm_only", retrieval_mode="llm_only"),
+    RetrievalVariantSpec(name="llm_only", retrieval_mode=RetrievalMode.LLM_ONLY),
 ]
 
 

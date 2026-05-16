@@ -23,8 +23,10 @@ import structlog
 
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
+from rag_common.enums import INGESTION_RUN_TERMINAL_STATUSES as TERMINAL_RUN_STATUSES
+from rag_common.enums import IngestionRunStatus
 
-TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "skipped"})
+__all__ = ["TERMINAL_RUN_STATUSES", "record_ingestion_run_failure"]
 
 logger = structlog.get_logger(__name__)
 
@@ -52,7 +54,7 @@ def record_ingestion_run_failure(run_id: str | None, error: str) -> None:
             if run.status in TERMINAL_RUN_STATUSES:
                 log.info("record_ingestion_run_failure_skipped_terminal", existing_status=run.status)
                 return
-            run.status = "failed"
+            run.status = IngestionRunStatus.FAILED
             run.error_summary = error[:8000]
             run.timings = {**(run.timings or {}), "failed_at": datetime.now(UTC).isoformat()}
             session.commit()

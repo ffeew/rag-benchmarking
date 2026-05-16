@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import structlog
 from pypdf import PdfReader
 from rag_common.config import Settings, get_settings
+from rag_common.enums import ParserType
 from rag_common.json_types import JsonObject
 
 from rag_ingestion_worker.ingestion.chunking import (
@@ -13,7 +14,7 @@ from rag_ingestion_worker.ingestion.chunking import (
     has_malformed_markdown_table,
     markdown_table_count,
 )
-from rag_ingestion_worker.providers.mistral import MistralOcrClient, OcrProviderError
+from rag_ingestion_worker.providers.mistral import MistralOcrClient, OcrProviderError, PermanentOcrProviderError
 
 if TYPE_CHECKING:
     from docling.document_converter import DocumentConverter
@@ -126,7 +127,7 @@ def parse_with_docling(pdf_bytes: bytes) -> ParsedDocumentDraft:
             ParsedPageDraft(
                 page_number=page_no,
                 text=page_md,
-                parser="docling",
+                parser=ParserType.DOCLING,
                 table_count=table_count,
                 tables=tables,
                 quality_flags=quality_flags_for_text(page_md, table_count, page_no),
@@ -135,8 +136,8 @@ def parse_with_docling(pdf_bytes: bytes) -> ParsedDocumentDraft:
         )
     return ParsedDocumentDraft(
         pages=pages,
-        raw_ocr={"parser": "docling", "page_count": len(pages)},
-        parser="docling",
+        raw_ocr={"parser": ParserType.DOCLING, "page_count": len(pages)},
+        parser=ParserType.DOCLING,
         model="docling-default",
     )
 
@@ -152,7 +153,7 @@ def parse_with_local_pdf(pdf_bytes: bytes) -> ParsedDocumentDraft:
             ParsedPageDraft(
                 page_number=index,
                 text=text.strip(),
-                parser="pypdf-local",
+                parser=ParserType.PYPDF_LOCAL,
                 table_count=table_count,
                 tables=tables,
                 quality_flags=quality_flags_for_text(text, table_count, index),
@@ -161,8 +162,8 @@ def parse_with_local_pdf(pdf_bytes: bytes) -> ParsedDocumentDraft:
         )
     return ParsedDocumentDraft(
         pages=pages,
-        raw_ocr={"parser": "pypdf-local", "page_count": len(pages)},
-        parser="pypdf-local",
+        raw_ocr={"parser": ParserType.PYPDF_LOCAL, "page_count": len(pages)},
+        parser=ParserType.PYPDF_LOCAL,
         model="pypdf",
     )
 
@@ -208,11 +209,22 @@ def parse_pdf(pdf_bytes: bytes, settings: Settings | None = None) -> ParsedDocum
                     parser=ocr.provider,
                     model=ocr.model,
                 )
+        except PermanentOcrProviderError as exc:
+            # Configuration/setup issue — log at ERROR so monitoring catches the
+            # "prod is silently running on docling" case in seconds, not days.
+            logger.error(
+                "parse_pdf_ocr_misconfigured_falling_back",
+                parser=ParserType.MISTRAL_OCR,
+                fallback=ParserType.DOCLING,
+                exception_type=exc.__class__.__name__,
+                exception_message=str(exc),
+            )
         except OcrProviderError as exc:
+            # Transient / runtime failure — expected occasionally, log at WARNING.
             logger.warning(
                 "parse_pdf_ocr_failed_falling_back",
-                parser="mistral-ocr",
-                fallback="docling",
+                parser=ParserType.MISTRAL_OCR,
+                fallback=ParserType.DOCLING,
                 exception_type=exc.__class__.__name__,
                 exception_message=str(exc),
             )
@@ -222,8 +234,8 @@ def parse_pdf(pdf_bytes: bytes, settings: Settings | None = None) -> ParsedDocum
     except Exception as exc:  # noqa: BLE001 - any docling failure should fall through to pypdf
         logger.warning(
             "parse_pdf_docling_failed_falling_back",
-            parser="docling",
-            fallback="pypdf-local",
+            parser=ParserType.DOCLING,
+            fallback=ParserType.PYPDF_LOCAL,
             exception_type=exc.__class__.__name__,
             exception_message=str(exc),
         )

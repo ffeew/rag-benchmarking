@@ -36,6 +36,7 @@ from typing import Any
 
 import pypdf
 import yaml
+from rag_common.enums import ExpectedAnswerType
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
 
     # Refusals: must have no citations and no expected values, but the question
     # itself does not need PDF backing.
-    if answer_type == "refusal":
+    if answer_type == ExpectedAnswerType.REFUSAL:
         if expected_values:
             failures.append("refusal case has expected_values; expected []")
         if expected_evidence:
@@ -283,7 +284,7 @@ def verify_case(case: dict[str, Any], pdf_root: Path) -> CaseResult:
     # Insufficient evidence: citations are optional (e.g., partial-disclosure).
     # If citations exist we still verify the cited page is real, but the
     # expected_values list should be empty.
-    if answer_type == "insufficient" and expected_values:
+    if answer_type == ExpectedAnswerType.INSUFFICIENT and expected_values:
         failures.append("insufficient case has non-empty expected_values")
         # Negative coverage: assert the corpus genuinely lacks the asked-about
         # ticker/period when the tags suggest it (best-effort).

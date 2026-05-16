@@ -78,7 +78,16 @@ export function DocumentDrawer({
     },
     onSuccess: () => {
       toast.success('Document updated')
-      void queryClient.invalidateQueries({ queryKey: qk.datasets.all() })
+      // Scope the invalidation to this dataset's documents/jobs instead of the
+      // entire `datasets` tree (which would refetch every other dataset's data).
+      if (document) {
+        void queryClient.invalidateQueries({
+          queryKey: qk.datasets.documentsAll(document.dataset_id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: qk.datasets.detail(document.dataset_id),
+        })
+      }
       onOpenChange(false)
     },
     onError: (err) => toastApiError(err, 'Update failed'),
@@ -91,7 +100,14 @@ export function DocumentDrawer({
     },
     onSuccess: () => {
       toast.success('Document deleted')
-      void queryClient.invalidateQueries({ queryKey: qk.datasets.all() })
+      if (document) {
+        void queryClient.invalidateQueries({
+          queryKey: qk.datasets.documentsAll(document.dataset_id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: qk.datasets.detail(document.dataset_id),
+        })
+      }
       onOpenChange(false)
     },
     onError: (err) => toastApiError(err, 'Delete failed'),

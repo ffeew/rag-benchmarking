@@ -1,4 +1,5 @@
 from rag_common.db import models
+from rag_common.enums import IngestionRunStatus, JobStatus, JobType
 from rag_common.schemas import (
     CitationRead,
     DatasetRead,
@@ -10,7 +11,7 @@ from rag_common.schemas import (
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-ACTIVE_INGESTION_JOB_STATUSES = frozenset({"queued", "running"})
+ACTIVE_INGESTION_JOB_STATUSES = frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
 
 
 def dataset_to_read(session: Session, dataset: models.Dataset) -> DatasetRead:
@@ -26,7 +27,7 @@ def dataset_to_read(session: Session, dataset: models.Dataset) -> DatasetRead:
     completed_count = session.scalar(
         select(func.count())
         .select_from(models.IngestionRun)
-        .where(models.IngestionRun.dataset_id == dataset.id, models.IngestionRun.status == "completed")
+        .where(models.IngestionRun.dataset_id == dataset.id, models.IngestionRun.status == IngestionRunStatus.COMPLETED)
     )
     return DatasetRead(
         id=dataset.id,
@@ -50,7 +51,7 @@ def document_to_read(session: Session, document: models.Document) -> DocumentRea
     ingestion_status = session.scalar(
         select(models.Job.status)
         .where(
-            models.Job.job_type == "ingestion",
+            models.Job.job_type == JobType.INGESTION,
             models.Job.document_id == document.id,
             models.Job.status.in_(ACTIVE_INGESTION_JOB_STATUSES),
         )

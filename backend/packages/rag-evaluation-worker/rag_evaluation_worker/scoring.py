@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pydantic import ValidationError
+from rag_common.enums import ExpectedAnswerType
 from rag_common.schemas import ExpectedAnswerSpec, ExpectedEvidenceSpec
 
 
@@ -53,7 +54,7 @@ def score_answer(
     if spec.answer_type is None:
         return {"answer_scoreable": False, "answer_accuracy": None}
 
-    if spec.answer_type == "insufficient":
+    if spec.answer_type == ExpectedAnswerType.INSUFFICIENT:
         correct = _is_insufficient(answer, insufficiency_reason)
         keyword_rate = _keyword_hit_rate(answer, insufficiency_reason, spec.required_reason_keywords)
         return {
@@ -64,7 +65,7 @@ def score_answer(
             "reason_keyword_hit_rate": keyword_rate,
         }
 
-    if spec.answer_type == "refusal":
+    if spec.answer_type == ExpectedAnswerType.REFUSAL:
         correct = _is_refusal(answer, insufficiency_reason)
         keyword_rate = _keyword_hit_rate(answer, insufficiency_reason, spec.required_reason_keywords)
         return {

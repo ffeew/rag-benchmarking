@@ -92,6 +92,7 @@ class _FakeQueueSession:
     def __init__(self) -> None:
         self.added_jobs: list[models.Job] = []
         self.commits = 0
+        self.documents: dict[str, models.Document] = {}
 
     def add(self, item: object) -> None:
         if not isinstance(item, models.Job):
@@ -105,6 +106,21 @@ class _FakeQueueSession:
 
     def scalar(self, _statement: object) -> None:
         return None
+
+    def get(
+        self,
+        _model: object,
+        identifier: str,
+        *,
+        with_for_update: bool = False,  # noqa: ARG002 - matches Session.get signature; lock is a no-op in tests
+    ) -> models.Document | None:
+        """Honor the row-lock contract used by ``queue_ingestion_jobs`` in production.
+
+        The real call uses ``with_for_update=True`` to prevent racing duplicate
+        inserts; the stub doesn't model concurrency but does need to return the
+        document so the caller can proceed past the lookup.
+        """
+        return self.documents.get(identifier)
 
 
 class _FakeWorkerSession:
@@ -226,15 +242,18 @@ def test_queue_ingestion_jobs_dispatches_and_deduplicates(monkeypatch: pytest.Mo
     monkeypatch.setattr(queueing, "should_queue_ingestion", fake_should_queue)
     monkeypatch.setattr(queueing, "dispatch_job", fake_dispatch)
     session = _FakeQueueSession()
+    docs = [
+        _make_document(id="doc-queue"),
+        _make_document(id="doc-queue"),
+        _make_document(id="doc-skip"),
+    ]
+    for doc in docs:
+        session.documents[doc.id] = doc
 
     result = queueing.queue_ingestion_jobs(
         cast("Session", session),
         dataset_id="ds-1",
-        documents=[
-            _make_document(id="doc-queue"),
-            _make_document(id="doc-queue"),
-            _make_document(id="doc-skip"),
-        ],
+        documents=docs,
         force=False,
     )
 
@@ -251,16 +270,19 @@ def test_queue_ingestion_jobs_keeps_row_queued_when_dispatch_fails(monkeypatch: 
 
     monkeypatch.setattr(queueing, "dispatch_job", fake_dispatch)
     session = _FakeQueueSession()
+    doc = _make_document(id="doc-queue")
+    session.documents[doc.id] = doc
 
     result = queueing.queue_ingestion_jobs(
         cast("Session", session),
         dataset_id="ds-1",
-        documents=[_make_document(id="doc-queue")],
+        documents=[doc],
         force=False,
     )
 
     assert result.job_ids == ["job-1"]
     assert result.queued_document_ids == ["doc-queue"]
+    assert result.broker_unavailable_document_ids == ["doc-queue"]
     assert session.added_jobs[0].celery_task_id is None
     assert session.commits == 1
 

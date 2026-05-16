@@ -4,14 +4,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from chonkie import RecursiveChunker, TableChunker
+from chonkie import OverlapRefinery, RecursiveChunker, TableChunker
 from rag_common.config import Settings, get_settings
 from rag_common.db.models import ParsedPage
+from rag_common.enums import ChunkerType, ChunkType
 
 logger = logging.getLogger(__name__)
 
 
 TABLE_ROW_RE = re.compile(r"^\s*\|.+\|\s*$")
+TOKEN_ENCODING = "cl100k_base"  # noqa: S105 - tiktoken encoding name, not a credential
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,24 @@ class ChunkDraft:
     source_offsets: dict[str, Any]
 
 
+@lru_cache(maxsize=1)
+def _tiktoken_encoder() -> Any:
+    try:
+        import tiktoken
+
+        return tiktoken.get_encoding(TOKEN_ENCODING)
+    except Exception as exc:  # noqa: BLE001 - offline boot or missing model: fall back to char heuristic
+        logger.warning("tiktoken_encoder_fallback", extra={"error": str(exc)})
+        return None
+
+
 def estimate_tokens(text: str) -> int:
-    return max(1, int(len(re.findall(r"\S+", text)) * 1.25))
+    encoder = _tiktoken_encoder()
+    if encoder is None:
+        # cl100k averages ~4 chars/token on English prose; the fallback keeps
+        # assembly-loop budgeting roughly correct when tiktoken can't load.
+        return max(1, len(text) // 4)
+    return max(1, len(encoder.encode(text, disallowed_special=())))
 
 
 def normalize_text(text: str) -> str:
@@ -53,18 +71,13 @@ def has_malformed_markdown_table(text: str) -> bool:
     return max(widths) - min(widths) > 2
 
 
-def split_table_block(lines: list[str], max_rows: int) -> list[list[str]]:
-    if len(lines) <= max_rows:
-        return [lines]
-    header = lines[:2] if len(lines) > 2 and set(lines[1].replace("|", "").strip()) <= {"-", ":"} else lines[:1]
-    body = lines[len(header) :]
-    blocks: list[list[str]] = []
-    for offset in range(0, len(body), max_rows - len(header)):
-        blocks.append([*header, *body[offset : offset + max_rows - len(header)]])
-    return blocks
+def protected_blocks(text: str, settings: Settings | None = None) -> list[tuple[str, bool]]:  # noqa: ARG001 - settings retained for API stability
+    """Split a page into (text, is_table) blocks so prose and tables can be routed to different chunkers.
 
-
-def protected_blocks(text: str, settings: Settings) -> list[tuple[str, bool]]:
+    Tables are emitted whole. ``TableChunker`` (token-aware, header-repeating) splits them downstream
+    if they exceed the embedder window; below that threshold they stay as one chunk, which is what
+    you want for 10-K financial tables where the row-to-row relationship is the signal.
+    """
     blocks: list[tuple[str, bool]] = []
     table_buffer: list[str] = []
     narrative_buffer: list[str] = []
@@ -81,10 +94,9 @@ def protected_blocks(text: str, settings: Settings) -> list[tuple[str, bool]]:
         if not table_buffer:
             return
         flush_narrative()
-        for table_lines in split_table_block(table_buffer, settings.table_max_rows):
-            content = "\n".join(table_lines).strip()
-            if content:
-                blocks.append((content, True))
+        content = "\n".join(table_buffer).strip()
+        if content:
+            blocks.append((content, True))
         table_buffer = []
 
     for line in text.splitlines():
@@ -101,24 +113,76 @@ def protected_blocks(text: str, settings: Settings) -> list[tuple[str, bool]]:
 @lru_cache(maxsize=4)
 def _recursive_chunker(chunk_size: int) -> RecursiveChunker:
     try:
-        return RecursiveChunker(tokenizer="cl100k_base", chunk_size=chunk_size)
-    except Exception as exc:  # noqa: BLE001 - tokenizer load can fail offline
-        logger.warning("recursive_chunker_tokenizer_fallback", extra={"error": str(exc)})
+        return RecursiveChunker.from_recipe(
+            "markdown",
+            lang="en",
+            tokenizer=TOKEN_ENCODING,
+            chunk_size=chunk_size,
+        )
+    except Exception as exc:  # noqa: BLE001 - recipe fetch or tokenizer load can fail offline
+        logger.warning("recursive_chunker_recipe_fallback", extra={"error": str(exc)})
         return RecursiveChunker(tokenizer="character", chunk_size=chunk_size * 4)
 
 
 @lru_cache(maxsize=4)
-def _table_chunker(max_rows: int) -> TableChunker:
-    return TableChunker(chunk_size=max_rows)
+def _overlap_refinery(overlap_tokens: int) -> OverlapRefinery | None:
+    if overlap_tokens <= 0:
+        return None
+    try:
+        # prefix-mode prepends the trailing context of chunk N onto the start
+        # of chunk N+1, so the original text of each chunk is still findable
+        # in the source document (suffix-mode would mutate chunk N).
+        return OverlapRefinery(
+            tokenizer=TOKEN_ENCODING,
+            context_size=overlap_tokens,
+            mode="token",
+            method="prefix",
+            inplace=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - tokenizer load can fail offline; degrade to no-overlap
+        logger.warning("overlap_refinery_unavailable", extra={"error": str(exc)})
+        return None
 
 
-def _chunk_narrative(text: str, target_tokens: int) -> list[str]:
+def active_tokenizer_mode(chunk_size: int) -> str:
+    """Return the tokenizer the chunker actually loaded for ``chunk_size``.
+
+    Used by ``pipeline.chunking_config`` so the persisted run-dedup key reflects the
+    real chunking semantics. A character-mode fallback produces incompatible chunk
+    boundaries from a cl100k_base run; treating them as the same artifact would
+    silently let an offline-boot worker reuse production-quality chunks.
+    """
+    chunker = _recursive_chunker(chunk_size)
+    tokenizer = getattr(chunker, "tokenizer", None)
+    name = getattr(tokenizer, "model_name", None) or getattr(tokenizer, "name", None)
+    if isinstance(name, str):
+        return name
+    return "character" if "character" in repr(tokenizer).lower() else TOKEN_ENCODING
+
+
+@lru_cache(maxsize=4)
+def _table_chunker(chunk_size_tokens: int) -> TableChunker:
+    try:
+        return TableChunker(tokenizer=TOKEN_ENCODING, chunk_size=chunk_size_tokens)
+    except Exception as exc:  # noqa: BLE001 - tokenizer load can fail offline
+        logger.warning("table_chunker_tokenizer_fallback", extra={"error": str(exc)})
+        # Row-mode fallback keeps the pipeline working with rough sizing
+        # (assume ~20 tokens per typical financial row).
+        return TableChunker(tokenizer="row", chunk_size=max(3, chunk_size_tokens // 20))
+
+
+def _chunk_narrative(text: str, target_tokens: int, overlap_tokens: int) -> list[str]:
     chunker = _recursive_chunker(target_tokens)
-    return [chunk.text for chunk in chunker.chunk(text) if chunk.text.strip()]
+    chunks = chunker.chunk(text)
+    if len(chunks) > 1:
+        refinery = _overlap_refinery(overlap_tokens)
+        if refinery is not None:
+            chunks = refinery.refine(chunks)
+    return [chunk.text for chunk in chunks if chunk.text.strip()]
 
 
-def _chunk_table(text: str, max_rows: int) -> list[str]:
-    chunker = _table_chunker(max_rows)
+def _chunk_table(text: str, max_tokens: int) -> list[str]:
+    chunker = _table_chunker(max_tokens)
     pieces = [chunk.text for chunk in chunker.chunk(text) if chunk.text.strip()]
     return pieces if pieces else [text]
 
@@ -132,12 +196,12 @@ def chunk_pages(pages: list[ParsedPage], settings: Settings | None = None) -> li
     current_has_table = False
     block_index = 0
 
-    def chunk_type_for(parts: list[str], *, has_table: bool) -> str:
+    def chunk_type_for(parts: list[str], *, has_table: bool) -> ChunkType:
         if has_table and len(parts) > 1:
-            return "mixed"
+            return ChunkType.MIXED
         if has_table:
-            return "table"
-        return "narrative"
+            return ChunkType.TABLE
+        return ChunkType.NARRATIVE
 
     def flush() -> None:
         nonlocal current_parts, current_start, current_end, current_has_table
@@ -157,7 +221,7 @@ def chunk_pages(pages: list[ParsedPage], settings: Settings | None = None) -> li
                 token_count=estimate_tokens(text),
                 metadata={
                     "chunk_type": chunk_type_for(current_parts, has_table=current_has_table),
-                    "chunker": "chonkie",
+                    "chunker": ChunkerType.CHONKIE,
                 },
                 source_offsets={
                     "block_start": block_index - len(current_parts),
@@ -172,13 +236,14 @@ def chunk_pages(pages: list[ParsedPage], settings: Settings | None = None) -> li
 
     target_tokens = resolved.chunk_target_tokens
     max_tokens = resolved.chunk_max_tokens
+    overlap_tokens = resolved.chunk_overlap_tokens
 
     for page in sorted(pages, key=lambda item: item.page_number):
         for block, is_table in protected_blocks(page.text, resolved):
             if is_table:
-                pieces = _chunk_table(block, resolved.table_max_rows)
+                pieces = _chunk_table(block, max_tokens)
             else:
-                pieces = _chunk_narrative(block, target_tokens)
+                pieces = _chunk_narrative(block, target_tokens, overlap_tokens)
             for piece in pieces:
                 block_index += 1
                 piece_tokens = estimate_tokens(piece)
@@ -192,8 +257,8 @@ def chunk_pages(pages: list[ParsedPage], settings: Settings | None = None) -> li
                             contains_table=True,
                             token_count=piece_tokens,
                             metadata={
-                                "chunk_type": "table",
-                                "chunker": "chonkie",
+                                "chunk_type": ChunkType.TABLE,
+                                "chunker": ChunkerType.CHONKIE,
                                 "oversized": True,
                             },
                             source_offsets={"block_start": block_index, "block_end": block_index},

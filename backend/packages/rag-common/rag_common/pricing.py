@@ -6,7 +6,8 @@ from typing import cast
 import yaml
 from pydantic import BaseModel, Field, NonNegativeFloat
 
-from rag_common.usage import Role, TokenUsage
+from rag_common.enums import PipelineRole
+from rag_common.usage import TokenUsage
 
 
 class ModelPrice(BaseModel):
@@ -33,7 +34,7 @@ DEFAULT_PRICING: dict[str, ModelPrice] = {
 }
 
 
-def estimate_cost(model: str | None, usage: TokenUsage, role: Role) -> float:
+def estimate_cost(model: str | None, usage: TokenUsage, role: PipelineRole) -> float:
     """Estimate USD cost for a single provider call given the model, usage, and role.
 
     Returns 0.0 when the model is unknown so unrecognised models don't silently inflate totals;
@@ -44,11 +45,11 @@ def estimate_cost(model: str | None, usage: TokenUsage, role: Role) -> float:
     price = DEFAULT_PRICING.get(model)
     if price is None:
         return 0.0
-    if role == "embedding":
+    if role == PipelineRole.EMBEDDING:
         if price.embedding_per_mtok is None:
             return 0.0
         return _per_mtok(price.embedding_per_mtok, usage.total_tokens or usage.prompt_tokens)
-    if role == "rerank":
+    if role == PipelineRole.RERANK:
         if price.rerank_per_search_unit is None:
             return 0.0
         return float(price.rerank_per_search_unit)
@@ -95,17 +96,17 @@ class PricingResolver(BaseModel):
 
     table: dict[str, ModelPrice] = Field(default_factory=lambda: dict(DEFAULT_PRICING))
 
-    def estimate(self, model: str | None, usage: TokenUsage, role: Role) -> float:
+    def estimate(self, model: str | None, usage: TokenUsage, role: PipelineRole) -> float:
         if not model or usage.is_empty():
             return 0.0
         price = self.table.get(model)
         if price is None:
             return 0.0
-        if role == "embedding":
+        if role == PipelineRole.EMBEDDING:
             if price.embedding_per_mtok is None:
                 return 0.0
             return _per_mtok(price.embedding_per_mtok, usage.total_tokens or usage.prompt_tokens)
-        if role == "rerank":
+        if role == PipelineRole.RERANK:
             if price.rerank_per_search_unit is None:
                 return 0.0
             return float(price.rerank_per_search_unit)

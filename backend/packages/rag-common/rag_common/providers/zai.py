@@ -4,6 +4,7 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider
 from rag_common.providers.openrouter import ChatResult, ProviderError, ProviderMetadata
 
 
@@ -39,7 +40,7 @@ class ZaiClient:
             content = "Mock provider mode is enabled; no upstream chat model was called."
             return ChatResult(
                 content=content,
-                metadata=ProviderMetadata(provider="mock-zai", model=selected_model),
+                metadata=ProviderMetadata(provider=Provider.MOCK_ZAI, model=selected_model),
             )
         payload: dict[str, Any] = {
             "model": selected_model,
@@ -55,7 +56,7 @@ class ZaiClient:
         return ChatResult(
             content=content,
             metadata=ProviderMetadata(
-                provider="zai",
+                provider=Provider.ZAI,
                 model=data.get("model", selected_model),
                 raw={"id": data.get("id")},
                 usage=data.get("usage") or {},

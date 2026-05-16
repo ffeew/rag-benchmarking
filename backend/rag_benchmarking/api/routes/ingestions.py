@@ -36,4 +36,5 @@ def create_ingestion(
         job_ids=result.job_ids,
         queued_document_ids=result.queued_document_ids,
         skipped_document_ids=result.skipped_document_ids,
+        broker_unavailable_document_ids=result.broker_unavailable_document_ids,
     )

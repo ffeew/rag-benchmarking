@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import * as RxDialog from '@radix-ui/react-dialog'
+
 import { Dialog, DialogContent } from '#/components/ui/dialog'
 import {
   Command,
@@ -48,6 +50,10 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent size="md" showClose={false} className="p-0">
+        <RxDialog.Title className="sr-only">Command palette</RxDialog.Title>
+        <RxDialog.Description className="sr-only">
+          Search and jump to routes, datasets, and actions.
+        </RxDialog.Description>
         <Command label="Command palette" className="bg-transparent">
           <CommandInput placeholder="Search routes, datasets, actions…" autoFocus />
           <CommandList>

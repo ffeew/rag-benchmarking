@@ -4,7 +4,20 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from rag_common.enums import (
+    BenchmarkProfile,
+    ExpectedAnswerType,
+    RetrievalMode,
+    VerificationStatus,
+)
 from rag_common.usage import RoleUsage
+
+__all__ = [
+    "BenchmarkProfile",
+    "ExpectedAnswerType",
+    "RetrievalMode",
+    "VerificationStatus",
+]
 
 _CITATION_TEMPLATE_PLACEHOLDERS = {"entity", "filing_date", "form_type", "page"}
 _CITATION_TEMPLATE_SUBSTITUTION = re.compile(r"\{([^{}]*)\}")
@@ -58,12 +71,12 @@ class DatasetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2048)
     default_query_settings: dict[str, Any] = Field(default_factory=dict)
-    domain_label: str | None = Field(default=None, max_length=512)
-    entity_label: str | None = Field(default=None, max_length=64)
-    valid_forms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
-    metric_terms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
-    hyde_style_hint: str | None = Field(default=None, max_length=2048)
-    citation_label_template: str | None = Field(default=None, max_length=256)
+    domain_label: str | None = Field(default=None, min_length=1, max_length=512)
+    entity_label: str | None = Field(default=None, min_length=1, max_length=64)
+    valid_forms: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=64)
+    metric_terms: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=64)
+    hyde_style_hint: str | None = Field(default=None, min_length=1, max_length=2048)
+    citation_label_template: str | None = Field(default=None, min_length=1, max_length=256)
 
     _validate_citation_template = field_validator("citation_label_template")(_validate_citation_label_template)
 
@@ -99,12 +112,12 @@ class DatasetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2048)
     default_query_settings: dict[str, Any] | None = None
-    domain_label: str | None = Field(default=None, max_length=512)
-    entity_label: str | None = Field(default=None, max_length=64)
-    valid_forms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
-    metric_terms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
-    hyde_style_hint: str | None = Field(default=None, max_length=2048)
-    citation_label_template: str | None = Field(default=None, max_length=256)
+    domain_label: str | None = Field(default=None, min_length=1, max_length=512)
+    entity_label: str | None = Field(default=None, min_length=1, max_length=64)
+    valid_forms: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=64)
+    metric_terms: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=64)
+    hyde_style_hint: str | None = Field(default=None, min_length=1, max_length=2048)
+    citation_label_template: str | None = Field(default=None, min_length=1, max_length=256)
 
     _validate_citation_template = field_validator("citation_label_template")(_validate_citation_label_template)
 
@@ -152,12 +165,12 @@ class RegisterLocalCorpusRequest(BaseModel):
     dataset_name: str = Field(default="sec-filings", min_length=1, max_length=200)
     description: str | None = Field(default="SEC filing PDFs registered from the local corpus.", max_length=2048)
     path: str | None = None
-    domain_label: str | None = Field(default=None, max_length=512)
-    entity_label: str | None = Field(default=None, max_length=64)
-    valid_forms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
-    metric_terms: list[Annotated[str, Field(max_length=64)]] | None = Field(default=None, max_length=64)
-    hyde_style_hint: str | None = Field(default=None, max_length=2048)
-    citation_label_template: str | None = Field(default=None, max_length=256)
+    domain_label: str | None = Field(default=None, min_length=1, max_length=512)
+    entity_label: str | None = Field(default=None, min_length=1, max_length=64)
+    valid_forms: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=64)
+    metric_terms: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=64)
+    hyde_style_hint: str | None = Field(default=None, min_length=1, max_length=2048)
+    citation_label_template: str | None = Field(default=None, min_length=1, max_length=256)
 
     _validate_citation_template = field_validator("citation_label_template")(_validate_citation_label_template)
 
@@ -170,6 +183,7 @@ class RegisterDocumentsResponse(BaseModel):
     job_ids: list[str] = Field(default_factory=list)
     queued_document_ids: list[str] = Field(default_factory=list)
     skipped_document_ids: list[str] = Field(default_factory=list)
+    broker_unavailable_document_ids: list[str] = Field(default_factory=list)
 
 
 class DocumentUploadResponse(BaseModel):
@@ -177,6 +191,7 @@ class DocumentUploadResponse(BaseModel):
     job_ids: list[str] = Field(default_factory=list)
     queued_document_ids: list[str] = Field(default_factory=list)
     skipped_document_ids: list[str] = Field(default_factory=list)
+    broker_unavailable_document_ids: list[str] = Field(default_factory=list)
 
 
 class IngestionCreate(BaseModel):
@@ -189,6 +204,7 @@ class IngestionCreateResponse(BaseModel):
     job_ids: list[str]
     queued_document_ids: list[str]
     skipped_document_ids: list[str]
+    broker_unavailable_document_ids: list[str] = Field(default_factory=list)
 
 
 class JobRead(BaseModel):
@@ -225,14 +241,8 @@ class QueryFilters(BaseModel):
     document_ids: list[str] | None = None
 
 
-RetrievalMode = Literal["full_agentic", "single_pass", "llm_only"]
-BenchmarkProfile = Literal["scientific", "diagnostic"]
-VerificationStatus = Literal["draft", "verified", "deprecated"]
-ExpectedAnswerType = Literal["numeric", "text", "multi_part", "insufficient", "refusal"]
-
-
 def default_eval_variants() -> list[RetrievalMode]:
-    return ["full_agentic", "single_pass", "llm_only"]
+    return [RetrievalMode.FULL_AGENTIC, RetrievalMode.SINGLE_PASS, RetrievalMode.LLM_ONLY]
 
 
 class RetrievalOverrides(BaseModel):
@@ -275,7 +285,7 @@ class QueryRequest(BaseModel):
     filters: QueryFilters = Field(default_factory=QueryFilters)
     top_k: int | None = Field(default=None, ge=1, le=20)
     include_trace: bool = True
-    retrieval_mode: RetrievalMode = "full_agentic"
+    retrieval_mode: RetrievalMode = RetrievalMode.FULL_AGENTIC
     include_full_retrieval: bool = False
 
 
@@ -330,6 +340,8 @@ class QueryResponse(BaseModel):
     cost_estimate_usd: float | None = None
     generator_metadata: dict[str, Any] | None = None
     full_retrieval: list[RetrievedChunkRef] | None = None
+    degraded: bool = False
+    degraded_reasons: list[str] = Field(default_factory=list)
 
 
 class TraceRead(BaseModel):
@@ -397,7 +409,7 @@ class EvalCaseCreate(BaseModel):
     expected_citations: list[dict[str, Any]] = Field(default_factory=list)
     expected_answer_spec: ExpectedAnswerSpec = Field(default_factory=ExpectedAnswerSpec)
     expected_evidence: list[ExpectedEvidenceSpec] = Field(default_factory=list)
-    verification_status: VerificationStatus = "draft"
+    verification_status: VerificationStatus = VerificationStatus.DRAFT
     verified_by: str | None = Field(default=None, max_length=128)
     verified_at: datetime | None = None
     gold_version: str = Field(default="v1", max_length=32)
@@ -414,7 +426,7 @@ class EvalCaseCreateRequest(BaseModel):
     expected_citations: list[dict[str, Any]] = Field(default_factory=list)
     expected_answer_spec: ExpectedAnswerSpec = Field(default_factory=ExpectedAnswerSpec)
     expected_evidence: list[ExpectedEvidenceSpec] = Field(default_factory=list)
-    verification_status: VerificationStatus = "draft"
+    verification_status: VerificationStatus = VerificationStatus.DRAFT
     verified_by: str | None = Field(default=None, max_length=128)
     verified_at: datetime | None = None
     gold_version: str = Field(default="v1", max_length=32)
@@ -463,7 +475,7 @@ class EvaluationCreate(BaseModel):
     case_ids: list[str] | None = None
     system_variants: list[RetrievalMode] = Field(default_factory=default_eval_variants)
     variants: list[RetrievalVariantSpec] | None = None
-    benchmark_profile: BenchmarkProfile = "scientific"
+    benchmark_profile: BenchmarkProfile = BenchmarkProfile.SCIENTIFIC
 
     @model_validator(mode="after")
     def coerce_variants(self) -> Self:

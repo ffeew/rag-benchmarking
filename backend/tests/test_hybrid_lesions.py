@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import SecretStr
 from rag_common.config import Settings
+from rag_common.enums import QueryType
 from rag_common.providers.openrouter import EmbeddingResult, ProviderMetadata
 from rag_common.schemas import QueryFilters
 from rag_retrieval.hybrid import hybrid_retrieve
@@ -39,7 +40,7 @@ def _empty_plan() -> RetrievalPlan:
         filing_date_end=None,
         metrics=[],
         subquestions=[],
-        query_type="fact_lookup",
+        query_type=QueryType.FACT_LOOKUP,
         latest=False,
         ambiguity=None,
         reasoning=None,

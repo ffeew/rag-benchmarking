@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider
 from rag_common.usage import TokenUsage, safe_pydantic_ai_usage
 
 from rag_retrieval.agents import (
@@ -128,7 +129,10 @@ def keyword_verify_evidence(question: str, retrieved: list[RetrievedChunk]) -> V
         overlap = question_terms & keywords(item.chunk.text)
         if overlap or item.semantic_rank is not None:
             supported.append(item.chunk.id)
-    confidence = min(0.95, 0.25 + len(supported) * 0.1)
+    # Cap heuristic verifier confidence at 0.5 so callers can distinguish keyword-based
+    # support from LLM-calibrated support. Previously this returned 0.95 for ≥7 chunks
+    # with any lexical overlap — indistinguishable from real verifier output.
+    confidence = min(0.5, 0.1 + len(supported) * 0.05)
     missing: list[str] = []
     if not supported:
         missing.append("No retrieved chunk had enough lexical or semantic support for the question.")
@@ -274,7 +278,7 @@ def verify_evidence(
         )
         usage = safe_pydantic_ai_usage(
             result,
-            provider="zai",
+            provider=Provider.ZAI,
             model=resolved.zai_chat_model,
         )
         return _normalize_verifier_output(result.output, retrieved), usage

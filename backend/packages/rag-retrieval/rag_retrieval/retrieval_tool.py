@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.usage import UsageLimits
 from rag_common.config import Settings, get_settings
+from rag_common.enums import Provider, QueryType
 from rag_common.schemas import QueryFilters
 from rag_common.usage import TokenUsage, merge, safe_pydantic_ai_usage
 
@@ -108,8 +109,8 @@ class RetrievalAgentOutput(BaseModel):
         default_factory=list,
         description="Specific metrics or topics the question asks about (e.g. revenue, R&D).",
     )
-    query_type: str = Field(
-        default="fact_lookup",
+    query_type: QueryType = Field(
+        default=QueryType.FACT_LOOKUP,
         description=(
             "One of: fact_lookup, table_lookup, comparison, trend, thematic_synthesis, "
             "latest_filing, insufficient_evidence."
@@ -228,18 +229,42 @@ def _sum_usages(records: list[TokenUsage]) -> TokenUsage:
     return accumulator
 
 
+@dataclass(frozen=True)
+class _NormalizedFilters:
+    """Filter normalization result that surfaces what the safe-list dropped.
+
+    Previously the agent saw zero hits with no trace signal when the LLM picked a
+    near-miss form name ("Form 10-K" instead of "10-K") or an off-corpus ticker.
+    Returning the dropped values lets the tool wrapper surface them via ModelRetry
+    so the agent can self-correct on the next call.
+    """
+
+    safe_tickers: list[str]
+    safe_forms: list[str]
+    dropped_tickers: list[str]
+    dropped_forms: list[str]
+
+
 def _normalize_filters(
     *,
     tickers: list[str] | None,
     form_types: list[str] | None,
     known_tickers: frozenset[str],
     valid_forms: tuple[str, ...] | frozenset[str],
-) -> tuple[list[str], list[str]]:
+) -> _NormalizedFilters:
     proposed_tickers = {ticker.upper() for ticker in (tickers or [])}
     safe_tickers = sorted(proposed_tickers & known_tickers)
+    dropped_tickers = sorted(proposed_tickers - known_tickers)
     valid_form_set = {form.upper() for form in valid_forms}
-    safe_forms = sorted({form.upper() for form in (form_types or []) if form.upper() in valid_form_set})
-    return safe_tickers, safe_forms
+    proposed_forms = {form.upper() for form in (form_types or [])}
+    safe_forms = sorted(proposed_forms & valid_form_set)
+    dropped_forms = sorted(proposed_forms - valid_form_set)
+    return _NormalizedFilters(
+        safe_tickers=safe_tickers,
+        safe_forms=safe_forms,
+        dropped_tickers=dropped_tickers,
+        dropped_forms=dropped_forms,
+    )
 
 
 def _sub_plan(
@@ -278,8 +303,13 @@ def _materialize_selected(
         selected.append(item)
         seen.add(item.chunk.id)
     if not selected and chunk_lookup:
-        # Agent emitted no selected_chunk_ids - use everything it retrieved as a safety net,
-        # capped at evidence_top_k by best score so the generator still has material.
+        # The agent emitted an empty selection. Trust it when ``insufficient_evidence``
+        # is set — that is the explicit "I found nothing useful" signal and the previous
+        # top-K safety net silently overrode it, producing plausible-but-unsupported
+        # answers. Otherwise treat the empty selection as a forgotten-IDs slip and fall
+        # back to top-K of what the agent retrieved.
+        if output.insufficient_evidence:
+            return []
         ranked = sorted(
             chunk_lookup.values(),
             key=lambda item: item.rerank_score if item.rerank_score is not None else item.score,
@@ -289,8 +319,8 @@ def _materialize_selected(
     return selected[:evidence_top_k]
 
 
-def _validate_query_type(value: str) -> str:
-    return value if value in VALID_QUERY_TYPES else "fact_lookup"
+def _validate_query_type(value: str) -> QueryType:
+    return QueryType(value) if value in VALID_QUERY_TYPES else QueryType.FACT_LOOKUP
 
 
 # ---------------------------------------------------------------------------
@@ -353,12 +383,14 @@ def perform_retrieve_evidence(
     full ``Agent`` and ``RunContext``. The agent tool is a thin wrapper that just
     unpacks ``ctx.deps`` and forwards to this function.
     """
-    safe_tickers, safe_forms = _normalize_filters(
+    normalized = _normalize_filters(
         tickers=tickers,
         form_types=form_types,
         known_tickers=deps.known_tickers,
         valid_forms=deps.dataset_config.valid_forms,
     )
+    safe_tickers = normalized.safe_tickers
+    safe_forms = normalized.safe_forms
     safe_top_k = max(1, min(top_k, 12))
     sub_plan = _sub_plan(
         base=deps.base_plan,
@@ -367,6 +399,17 @@ def perform_retrieve_evidence(
         filing_date_start=_parse_iso_date(filing_date_start),
         filing_date_end=_parse_iso_date(filing_date_end),
     )
+    # Surface dropped filter values so the agent can see "FORM-X was rejected" instead
+    # of getting zero hits with no trace signal. If the LLM proposed any unknown values
+    # AND would now get zero results from the safe list, raise ModelRetry so the next
+    # turn includes the rejection info in the prompt.
+    if (normalized.dropped_tickers or normalized.dropped_forms) and not (safe_tickers or safe_forms):
+        raise ModelRetry(
+            "retrieve_evidence filters were entirely outside the dataset. "
+            f"dropped_tickers={normalized.dropped_tickers} (not in known_tickers); "
+            f"dropped_forms={normalized.dropped_forms} (not in valid_forms). "
+            "Retry with values from the system context, or call without ticker/form filters."
+        )
 
     semantic_query: str | None = None
     hyde_meta: dict[str, object] = {"agent_used": False}
@@ -382,6 +425,8 @@ def perform_retrieve_evidence(
         "semantic_query_preview": (semantic_query[:200] if semantic_query else None),
         "tickers": safe_tickers,
         "form_types": safe_forms,
+        "dropped_tickers": normalized.dropped_tickers,
+        "dropped_forms": normalized.dropped_forms,
         "filing_date_start": filing_date_start,
         "filing_date_end": filing_date_end,
         "top_k": safe_top_k,
@@ -400,12 +445,18 @@ def perform_retrieve_evidence(
             top_k=safe_top_k,
             settings=deps.settings,
         )
-    except Exception as exc:  # noqa: BLE001 - tool errors are converted to ModelRetry for the LLM
+    except Exception as exc:  # noqa: BLE001 - pgvector/SQLAlchemy/provider stack raises a wide variety
         # Surface the failure to the model via ModelRetry so it can retry with different
         # filters / wording. Empty-but-successful results stay as `[]` below (a legitimate
         # "nothing matched" signal that the agent should distinguish from "tool failed").
-        logger.warning("retrieval_tool_call_failed", extra={"error": str(exc)})
+        # Log at ERROR with error_class so operators can stratify "transient DB blip"
+        # from "config regression" in the trace dashboard.
+        logger.error(
+            "retrieval_tool_call_failed",
+            extra={"error_class": type(exc).__name__, "error": str(exc)},
+        )
         call_entry["error"] = f"{type(exc).__name__}: {exc}"
+        call_entry["error_class"] = type(exc).__name__
         call_entry["returned"] = 0
         deps.tool_calls.append(call_entry)
         raise ModelRetry(
@@ -571,8 +622,13 @@ def _heuristic_retrieval(
             top_k=settings.evidence_top_k,
             settings=settings,
         )
-    except Exception as exc:  # noqa: BLE001 - keep a structured failure result in the trace
-        logger.warning("heuristic_retrieval_failed", extra={"error": str(exc)})
+    except Exception as exc:  # noqa: BLE001 - heuristic is the last-resort path; surface all failures structurally
+        # Log at ERROR with error_class so dashboards can stratify hard failures (DB
+        # unreachable, programmer regressions) from "the corpus has nothing relevant".
+        logger.error(
+            "heuristic_retrieval_failed",
+            extra={"error_class": type(exc).__name__, "error": str(exc)},
+        )
         return AgentRetrievalResult(
             chunks=[],
             tool_calls=[
@@ -580,6 +636,7 @@ def _heuristic_retrieval(
                     "tool": "heuristic-hybrid_retrieve",
                     "query": question,
                     "error": f"{type(exc).__name__}: {exc}",
+                    "error_class": type(exc).__name__,
                     "returned": 0,
                 }
             ],
@@ -759,7 +816,7 @@ def run_retrieval_agent(
     chunks = _materialize_selected(normalized_output, deps.chunk_lookup, resolved.evidence_top_k)
     agent_chat_usage = safe_pydantic_ai_usage(
         result,
-        provider="zai",
+        provider=Provider.ZAI,
         model=resolved.zai_chat_model,
     )
     metadata["agent_used"] = True
