@@ -1,0 +1,41 @@
+# Build-context exclusions for backend/Dockerfile and the two worker Dockerfiles.
+# Without this file the .venv (~5.8 GB), caches, and the host .env all ship to the
+# Docker daemon on every build.
+
+# Virtualenvs and tool caches
+.venv/
+**/.venv/
+.mypy_cache/
+**/.mypy_cache/
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+**/.ruff_cache/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Secrets — keep .env.example which is the documented template.
+.env
+.env.*
+!.env.example
+
+# Host-only artifacts the API/workers do not need at build time.
+# Corpus is bind-mounted at runtime via docker-compose.
+sec_filings_pdf/
+eval_cases/
+celerybeat-schedule*
+
+# Tests and editor metadata
+tests/
+**/tests/
+.vscode/
+.idea/
+
+# VCS
+.git/
+.gitignore
+
+# Frontend tree (only relevant to the frontend image build context).
+frontend/

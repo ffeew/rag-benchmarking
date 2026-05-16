@@ -1,0 +1,26 @@
+# Build-context exclusions for frontend/Dockerfile.
+# Without this file node_modules (~339 MB) and .pnpm-store (~301 MB) ship to the
+# daemon on every build.
+
+node_modules/
+.pnpm-store/
+dist/
+.tanstack/
+.output/
+.vinxi/
+.wrangler/
+.nitro/
+
+# Secrets — keep nothing leaks into the SPA bundle.
+.env
+.env.*
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# VCS
+.git/
+.gitignore
