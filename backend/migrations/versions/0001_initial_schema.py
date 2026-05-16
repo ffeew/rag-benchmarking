@@ -1,8 +1,33 @@
-"""initial schema (squashed baseline)
+"""initial schema (squashed baseline 2026-05-17)
 
-Revision ID: 0001_initial_schema
+Final consolidated schema produced by squashing migrations
+0001_initial_schema, 0002_dataset_domain_overrides, 0003_dataset_override_lengths,
+and 0004_consolidate_chunk_embedding into a single baseline:
+
+- Dataset has the domain-adaptive override columns (``domain_label``,
+  ``entity_label``, ``valid_forms``, ``metric_terms``, ``hyde_style_hint``,
+  ``citation_label_template``) with the Pydantic-aligned VARCHAR sizes.
+- Chunk owns ``embedding_provider`` / ``embedding_model`` /
+  ``embedding_dimension`` / ``embedding_vector`` directly; the old
+  ``embeddings`` table no longer exists, and the HNSW index lives on
+  ``chunks.embedding_vector``.
+- Document, IngestionRun, ParsedPage, Job, QueryTrace, Citation, EvalCase,
+  EvalRun, EvalResult are unchanged from the pre-squash baseline.
+
+**Existing databases**: anyone whose ``alembic_version`` is one of
+``0001_initial_schema`` / ``0002_dataset_domain_overrides`` /
+``0003_dataset_override_lengths`` / ``0004_consolidate_chunk_embedding`` must
+re-stamp once::
+
+    alembic stamp 0001_baseline_2026_05_17 --purge
+
+The schema is already in its final shape on those databases, so no DDL
+needs to run. ``--purge`` clears the now-orphaned revision row before
+re-stamping.
+
+Revision ID: 0001_baseline_2026_05_17
 Revises:
-Create Date: 2026-05-16 00:00:00.000000
+Create Date: 2026-05-17 01:00:00.000000
 """
 
 import pgvector.sqlalchemy
@@ -10,7 +35,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0001_initial_schema"
+revision = "0001_baseline_2026_05_17"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -25,6 +50,12 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("default_query_settings", postgresql.JSONB(), nullable=False),
+        sa.Column("domain_label", sa.String(length=512), nullable=True),
+        sa.Column("entity_label", sa.String(length=64), nullable=True),
+        sa.Column("valid_forms", postgresql.JSONB(), nullable=True),
+        sa.Column("metric_terms", postgresql.JSONB(), nullable=True),
+        sa.Column("hyde_style_hint", sa.String(length=2048), nullable=True),
+        sa.Column("citation_label_template", sa.String(length=256), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -168,25 +199,20 @@ def upgrade() -> None:
         sa.Column("metadata", postgresql.JSONB(), nullable=False),
         sa.Column("source_offsets", postgresql.JSONB(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
+        # Embedding columns live on chunks directly; the old separate ``embeddings``
+        # table never used its (chunk_id, provider, model) 1:N capability because the
+        # ingestion pipeline keys IngestionRun dedup on the embedding model, so each
+        # model produced its own chunk set. Nullable: chunks commit before the
+        # embedding API call so retries don't waste chunk work.
+        sa.Column("embedding_provider", sa.String(length=64), nullable=True),
+        sa.Column("embedding_model", sa.String(length=255), nullable=True),
+        sa.Column("embedding_dimension", sa.Integer(), nullable=True),
+        sa.Column("embedding_vector", pgvector.sqlalchemy.vector.VECTOR(1024), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["document_id"], ["documents.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["ingestion_run_id"], ["ingestion_runs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_table(
-        "embeddings",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("chunk_id", sa.String(length=36), nullable=False),
-        sa.Column("provider", sa.String(length=64), nullable=False),
-        sa.Column("model", sa.String(length=255), nullable=False),
-        sa.Column("dimension", sa.Integer(), nullable=False),
-        sa.Column("vector", pgvector.sqlalchemy.vector.VECTOR(1024), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["chunk_id"], ["chunks.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("chunk_id", "provider", "model", name="uq_embeddings_chunk_provider_model"),
     )
     op.create_table(
         "query_traces",
@@ -261,8 +287,15 @@ def upgrade() -> None:
         "jobs": ["job_type", "status", "celery_task_id", "dataset_id", "document_id", "eval_run_id"],
         "ingestion_runs": ["dataset_id", "document_id", "job_id", "status"],
         "parsed_pages": ["ingestion_run_id", "document_id", "page_number", "parser"],
-        "chunks": ["ingestion_run_id", "document_id", "page_start", "page_end", "contains_table", "is_active"],
-        "embeddings": ["chunk_id", "model"],
+        "chunks": [
+            "ingestion_run_id",
+            "document_id",
+            "page_start",
+            "page_end",
+            "contains_table",
+            "is_active",
+            "embedding_model",
+        ],
         "query_traces": ["dataset_id"],
         "citations": ["trace_id", "chunk_id", "document_id"],
         "eval_cases": ["dataset_id", "category", "difficulty", "verification_status"],
@@ -285,14 +318,16 @@ def upgrade() -> None:
     op.execute(
         "CREATE INDEX ix_chunks_normalized_text_fts ON chunks USING gin (to_tsvector('english', normalized_text))"
     )
-    op.execute("CREATE INDEX ix_embeddings_vector_hnsw ON embeddings USING hnsw (vector vector_cosine_ops)")
+    op.execute(
+        "CREATE INDEX ix_chunks_embedding_vector_hnsw "
+        "ON chunks USING hnsw (embedding_vector vector_cosine_ops)"
+    )
 
 
 def downgrade() -> None:
     op.drop_table("eval_results")
     op.drop_table("citations")
     op.drop_table("query_traces")
-    op.drop_table("embeddings")
     op.drop_table("chunks")
     op.drop_table("parsed_pages")
     op.drop_table("ingestion_runs")
