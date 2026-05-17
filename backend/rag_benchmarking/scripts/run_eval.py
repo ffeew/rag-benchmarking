@@ -41,14 +41,18 @@ from typing import Any, Literal, cast
 
 import httpx
 from rag_common.config import get_settings
-from rag_common.enums import BenchmarkProfile
+from rag_common.enums import JOB_TERMINAL_STATUSES, BenchmarkProfile
 from rag_common.eval_variants import ABLATION_PRESETS
 from rag_common.schemas import RetrievalVariantSpec
 
 logger = logging.getLogger(__name__)
 
 OutputFormat = Literal["table", "json", "markdown"]
-TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+# Mirror the worker's canonical set so the CLI exits as soon as the run is
+# durably done. The previous hand-rolled ``{"succeeded", "failed", "cancelled"}``
+# silently dropped the actual terminal value (``completed`` /
+# ``completed_with_errors``), so successful runs left the poller spinning.
+TERMINAL_STATUSES = {status.value for status in JOB_TERMINAL_STATUSES}
 
 # Headline metric keys produced by the evaluation runner. Order is the order we
 # render in the table; missing keys are shown as "—". Keep in sync with
@@ -317,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("eval_artifact_written path=%s", artifact)
 
     _print_output(run, cast("OutputFormat", args.output))
-    return 0 if run.get("status") == "succeeded" else 1
+    return 0 if run.get("status") in {"completed", "completed_with_errors"} else 1
 
 
 if __name__ == "__main__":

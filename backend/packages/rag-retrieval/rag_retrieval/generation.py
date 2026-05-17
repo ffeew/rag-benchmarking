@@ -12,10 +12,14 @@ from rag_common.providers.openrouter import ProviderError
 from rag_common.providers.zai import ZaiClient
 from rag_common.usage import TokenUsage, from_openrouter_usage, safe_pydantic_ai_usage
 
+from pydantic_ai.exceptions import ModelHTTPError
+
 from rag_retrieval.agents import (
     AGENT_RETRYABLE_ERRORS,
     agent_available,
     build_agent,
+    build_openrouter_chat_model,
+    openrouter_chat_available,
 )
 from rag_retrieval.dataset_config import (
     DEFAULT_CITATION_LABEL_TEMPLATE,
@@ -172,15 +176,14 @@ class GeneratorDeps:
     dataset_config: DatasetConfig
 
 
-@lru_cache(maxsize=2)
-def _build_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorOutput]:  # noqa: ARG001
-    agent: Agent[GeneratorDeps, GeneratorOutput] = build_agent(
-        deps_type=GeneratorDeps,
-        output_type=GeneratorOutput,
-        instructions=_GENERATOR_INSTRUCTIONS,
-        name="rag-generator",
-        output_retries=2,
-    )
+def _attach_generator_decorators(agent: Agent[GeneratorDeps, GeneratorOutput]) -> None:
+    """Attach the corpus context and citation validator to a generator agent.
+
+    Shared between the Z.AI primary agent and the OpenRouter content-filter
+    fallback agent so both paths enforce the same invariants — the model
+    behind them is the only difference, the prompting and validation are
+    identical.
+    """
 
     @agent.instructions
     def generator_context(ctx: RunContext[GeneratorDeps]) -> str:
@@ -203,11 +206,59 @@ def _build_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorO
             )
         return output
 
+
+@lru_cache(maxsize=2)
+def _build_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorOutput]:  # noqa: ARG001
+    agent: Agent[GeneratorDeps, GeneratorOutput] = build_agent(
+        deps_type=GeneratorDeps,
+        output_type=GeneratorOutput,
+        instructions=_GENERATOR_INSTRUCTIONS,
+        name="rag-generator",
+        output_retries=2,
+    )
+    _attach_generator_decorators(agent)
+    return agent
+
+
+@lru_cache(maxsize=2)
+def _build_openrouter_generator_agent_for(model_id: str) -> Agent[GeneratorDeps, GeneratorOutput]:  # noqa: ARG001
+    """Generator agent backed by OpenRouter, used when Z.AI refuses on content policy."""
+    settings = get_settings()
+    agent: Agent[GeneratorDeps, GeneratorOutput] = build_agent(
+        deps_type=GeneratorDeps,
+        output_type=GeneratorOutput,
+        instructions=_GENERATOR_INSTRUCTIONS,
+        name="rag-generator-openrouter",
+        output_retries=2,
+        model=build_openrouter_chat_model(settings),
+    )
+    _attach_generator_decorators(agent)
     return agent
 
 
 def _generator_agent(settings: Settings) -> Agent[GeneratorDeps, GeneratorOutput]:
     return _build_generator_agent_for(settings.zai_chat_model or "")
+
+
+def _openrouter_generator_agent(settings: Settings) -> Agent[GeneratorDeps, GeneratorOutput]:
+    return _build_openrouter_generator_agent_for(settings.openrouter_chat_model or "")
+
+
+def _is_zai_content_filter_refusal(exc: BaseException) -> bool:
+    """True when the exception is Z.AI's PRC content-policy refusal (HTTP 400 code 1301).
+
+    The signal is intentionally narrow: only this specific class of refusal
+    routes to OpenRouter. Other ``ModelHTTPError`` cases (network, malformed
+    request) keep the existing extractive fallback so we don't silently shift
+    traffic onto a more expensive provider for unrelated failure modes.
+    """
+    if not isinstance(exc, ModelHTTPError):
+        return False
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    body = getattr(exc, "body", None)
+    text = str(body) if body is not None else str(exc)
+    return "1301" in text or "unsafe or sensitive content" in text.lower()
 
 
 def _build_evidence_context(
@@ -284,7 +335,7 @@ def _build_generator_prompt(
         f"{verifier_block}"
         f"VALID CITATION TAGS: {', '.join(valid_tags)}\n\n"
         f"QUESTION:\n{question}\n\n"
-        f"EVIDENCE:\n{evidence_text}"
+        f"EVIDENCE (verbatim excerpts from the corpus, quoted as supplied):\n{evidence_text}"
     )
 
 
@@ -334,23 +385,61 @@ def generate_answer_with_agent(
     # The citation validator (registered on the agent) raises ModelRetry when the model
     # invents a tag - pydantic-ai performs one bounded repair turn automatically and only
     # raises UnexpectedModelBehavior if the retry budget (output_retries=1) is exhausted.
+    fallback_provider: Provider | None = None
+    fallback_model: str | None = None
     try:
         result = agent.run_sync(prompt, deps=deps)
     except AGENT_RETRYABLE_ERRORS as exc:
-        logger.warning("generator_failed", extra={"error": str(exc)})
-        # An UnexpectedModelBehavior here usually means citation_validator never converged.
-        return (
-            local_grounded_answer(
-                question,
-                evidence,
-                insufficiency_reason="Generator agent failed or could not produce valid citations.",
-                generator="local-extractive-after-agent-error",
-                citation_template=template,
-            ),
-            TokenUsage(),
-        )
+        # PRC content-policy refusal (HTTP 400 code 1301) is a real, recoverable
+        # failure mode: the prompt was fine, the upstream provider just won't
+        # generate against it. When OpenRouter is configured, route the same
+        # prompt + deps through a non-PRC model so eligible cases produce a real
+        # answer instead of degrading to the extractive last resort. Other
+        # ``AGENT_RETRYABLE_ERRORS`` (network, validator non-convergence, etc.)
+        # still fall through to the extractive fallback unchanged.
+        if _is_zai_content_filter_refusal(exc) and openrouter_chat_available(settings):
+            logger.warning(
+                "generator_content_filter_refusal",
+                extra={"error": str(exc), "fallback": "openrouter"},
+            )
+            try:
+                or_agent = _openrouter_generator_agent(settings)
+                result = or_agent.run_sync(prompt, deps=deps)
+                fallback_provider = Provider.OPENROUTER
+                fallback_model = settings.openrouter_chat_model
+            except AGENT_RETRYABLE_ERRORS as fallback_exc:
+                logger.warning(
+                    "generator_openrouter_fallback_failed", extra={"error": str(fallback_exc)}
+                )
+                return (
+                    local_grounded_answer(
+                        question,
+                        evidence,
+                        insufficiency_reason=(
+                            "Z.AI refused on content policy and the OpenRouter fallback also failed."
+                        ),
+                        generator="local-extractive-after-openrouter-fallback-error",
+                        citation_template=template,
+                    ),
+                    TokenUsage(),
+                )
+        else:
+            logger.warning("generator_failed", extra={"error": str(exc)})
+            # An UnexpectedModelBehavior here usually means citation_validator never converged.
+            return (
+                local_grounded_answer(
+                    question,
+                    evidence,
+                    insufficiency_reason="Generator agent failed or could not produce valid citations.",
+                    generator="local-extractive-after-agent-error",
+                    citation_template=template,
+                ),
+                TokenUsage(),
+            )
 
-    accumulated_usage = safe_pydantic_ai_usage(result, provider=Provider.ZAI, model=settings.zai_chat_model)
+    provider_used = fallback_provider or Provider.ZAI
+    model_used = fallback_model or settings.zai_chat_model
+    accumulated_usage = safe_pydantic_ai_usage(result, provider=provider_used, model=model_used)
     repair_used = _request_count(result) > 1
     final_output: GeneratorOutput = result.output
 
@@ -358,8 +447,10 @@ def generate_answer_with_agent(
     base_confidence = min(0.95, 0.45 + len(evidence) * 0.06)
     confidence = _confidence_from_output(final_output, base_confidence)
     metadata: dict[str, Any] = {
-        "generator": "pydantic-ai-agent",
-        "model": settings.zai_chat_model,
+        # ``openrouter-fallback`` marks cases the eval analyst should know were
+        # answered by a different provider than the rest of the run.
+        "generator": "openrouter-fallback" if fallback_provider else "pydantic-ai-agent",
+        "model": model_used,
         "citation_validation": "repaired" if repair_used else "passed",
         "repair_used": repair_used,
         "citations_used": final_output.citations_used,

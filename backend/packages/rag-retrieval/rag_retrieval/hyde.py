@@ -33,10 +33,10 @@ formal disclosure register of that corpus that WOULD answer the question. The pa
 will be embedded for vector search; factual accuracy is NOT required - plausibility of
 wording, structure, and domain terminology is.
 
-Match the register the question implies: narrative discussion, tabular numeric data,
-or risk / uncertainty language as appropriate. Include concrete numbers, dates, and
-named entities (e.g. companies, products, segments) when the question implies them.
-Stay under 100 words.
+Match the register the question implies (e.g. narrative description or
+numeric/tabular reporting). Include concrete numbers, dates, and named entities
+(e.g. companies, products, segments) when the question implies them. Stay under
+100 words.
 
 Output the passage text only - no header, no label, no quotation marks.
 """

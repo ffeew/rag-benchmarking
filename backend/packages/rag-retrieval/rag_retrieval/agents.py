@@ -65,6 +65,11 @@ def _zai_provider(api_key: str, base_url: str) -> OpenAIProvider:
     return OpenAIProvider(api_key=api_key, base_url=base_url)
 
 
+@lru_cache(maxsize=4)
+def _openrouter_provider(api_key: str, base_url: str) -> OpenAIProvider:
+    return OpenAIProvider(api_key=api_key, base_url=base_url)
+
+
 def deterministic_model_settings(settings: Settings | None = None) -> ModelSettings | None:
     """Return ``ModelSettings(temperature=0)`` when the eval determinism knob is on.
 
@@ -97,6 +102,34 @@ def build_judge_model(settings: Settings | None = None) -> Model:
         raise ProviderError("ZAI_JUDGE_MODEL is not configured")
     provider = _zai_provider(resolved.zai_api_key.get_secret_value(), resolved.zai_base_url)
     return OpenAIChatModel(resolved.zai_judge_model, provider=provider)
+
+
+def build_openrouter_chat_model(settings: Settings | None = None) -> Model:
+    """Build a pydantic-ai chat model backed by OpenRouter.
+
+    Used by the generator's content-filter fallback path: when Z.AI refuses
+    a prompt with PRC content-policy code 1301, the generator retries
+    against this model instead of degrading to the extractive last resort.
+    """
+    resolved = settings or get_settings()
+    if resolved.openrouter_api_key is None:
+        raise ProviderError("OPENROUTER_API_KEY is not configured")
+    if not resolved.openrouter_chat_model:
+        raise ProviderError("OPENROUTER_CHAT_MODEL is not configured")
+    provider = _openrouter_provider(
+        resolved.openrouter_api_key.get_secret_value(), resolved.openrouter_base_url
+    )
+    return OpenAIChatModel(resolved.openrouter_chat_model, provider=provider)
+
+
+def openrouter_chat_available(settings: Settings | None = None) -> bool:
+    """Whether the OpenRouter generator fallback is configured for live use."""
+    resolved = settings or get_settings()
+    if resolved.allow_mock_providers:
+        return False
+    if resolved.openrouter_api_key is None:
+        return False
+    return bool(resolved.openrouter_chat_model)
 
 
 def run_with_fallback[T](
@@ -134,6 +167,7 @@ def build_agent[D, T](
     settings: Settings | None = None,
     name: str | None = None,
     output_retries: int | None = None,
+    model: Model | None = None,
 ) -> Agent[D, T]:
     """Construct a Pydantic AI agent bound to the configured chat model.
 
@@ -143,9 +177,12 @@ def build_agent[D, T](
     or ``@agent.output_validator`` callbacks that need ``ctx.deps``; defaults to
     ``None`` for context-free agents. ``output_retries`` opts the agent into
     ``ModelRetry``-driven repair from validators (pydantic-ai defaults to 1).
+    Pass ``model`` to override the default Z.AI chat model — used by the
+    generator's OpenRouter content-filter fallback so both paths share the
+    same instructions, validators, and capabilities.
     """
     return Agent(
-        model=build_chat_model(settings),
+        model=model or build_chat_model(settings),
         output_type=output_type,
         instructions=instructions,
         deps_type=deps_type,

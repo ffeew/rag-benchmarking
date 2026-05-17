@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_embedding_model: str | None = None
     openrouter_rerank_model: str | None = None
+    # Generator fallback model used when the primary Z.AI generator refuses a
+    # prompt with the PRC content-policy classifier (HTTP 400, code 1301).
+    # Optional: leave unset to keep the legacy extractive fallback only. When
+    # set (e.g. ``anthropic/claude-sonnet-4-6``), refused prompts are retried
+    # against OpenRouter so the eval still gets a real answer for content
+    # Z.AI declines to generate against.
+    openrouter_chat_model: str | None = None
     openrouter_site_url: AnyHttpUrl | None = None
     openrouter_app_name: str = "RAG Benchmark"
     openrouter_timeout_seconds: float = 60.0
@@ -103,6 +110,12 @@ class Settings(BaseSettings):
     # worker reap doesn't drop all metrics on the floor. Aggregation is cheap
     # relative to a single eval case, so a low N is fine.
     eval_partial_aggregate_every: Annotated[int, Field(gt=0)] = 5
+    # Whether to run the RAGAS judge phase after per-case scoring. RAGAS is
+    # informational-only (faithfulness / answer-relevancy / context-* metrics
+    # not under FDR control) and adds substantial latency — one LLM call per
+    # metric per case, sequential, on the slow judge model. Set to false for
+    # iteration / smoke tests to skip the trailing 4+ minute RAGAS phase.
+    eval_run_ragas: bool = True
 
     # Sweeper thresholds. The scheduled `sweep_stuck_jobs` task marks a RUNNING
     # job failed when no heartbeat has landed for ``running_heartbeat_seconds``.

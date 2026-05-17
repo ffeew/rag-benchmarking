@@ -593,6 +593,8 @@ def _attach_ragas_scores(
         metrics_config.append((RagasMetric.CONTEXT_RECALL, ContextRecall(llm=llm)))
 
     total_pending = len(pending)
+    total_steps = max(1, total_pending * len(metrics_config))
+    completed_steps = 0
     for idx, (entry, sample) in enumerate(pending):
         scores: dict[str, float] = {}
         for key, metric in metrics_config:
@@ -640,6 +642,19 @@ def _attach_ragas_scores(
                 continue
             if not math.isnan(value):
                 scores[key] = value
+            # Heartbeat per (case, metric) — a single RAGAS metric on a long
+            # answer can take 30s+ on glm-4.7, and gating heartbeats on
+            # per-case completion left the job sitting at progress=92 for
+            # tens of minutes. The 92→99 band is walked one step per metric
+            # so forward motion is visible to the UI and the sweeper's
+            # heartbeat window cannot expire mid-phase.
+            completed_steps += 1
+            commit_job_progress(
+                job_id,
+                status=JobStatus.RUNNING,
+                progress=92 + int((completed_steps / total_steps) * 7),
+                current_step=f"ragas case {idx + 1}/{total_pending} metric {key}",
+            )
         merged = dict(entry.metrics or {})
         if scores:
             diagnostics = _ensure_dict(merged.get("judge_diagnostics"))
@@ -648,16 +663,6 @@ def _attach_ragas_scores(
         else:
             merged["judge_diagnostics"] = {"ragas_error": "no metric scored"}
         entry.metrics = merged
-        # Heartbeat per case so a long ragas phase cannot exceed the sweeper's
-        # heartbeat grace. 92 is set by the caller before this loop runs; we
-        # walk the 92→99 band so the final ``progress=100`` transition still
-        # reads as forward motion.
-        commit_job_progress(
-            job_id,
-            status=JobStatus.RUNNING,
-            progress=92 + int(((idx + 1) / total_pending) * 7),
-            current_step=f"ragas {idx + 1}/{total_pending}",
-        )
 
     return {"case_count": total_pending, "metrics": [key for key, _ in metrics_config]}
 
@@ -925,17 +930,25 @@ def run_evaluation(
 
     pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
 
-    commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="computing ragas metrics")
-    # RAGAS is informational-only; setup-time failures (provider auth, import,
-    # client wiring) should not invalidate the per-case metrics already
-    # persisted. Per-metric failures are already swallowed inside the helper.
-    try:
-        ragas_summary = _attach_ragas_scores(pending_ragas, resolved, job_id=job_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "ragas_phase_failed", extra={"error_class": type(exc).__name__, "error": str(exc)[:500]}
-        )
-        ragas_summary = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    # RAGAS is informational-only and slow (judge-model latency × metrics ×
+    # cases, sequential). Skipping it via ``eval_run_ragas=false`` shaves
+    # minutes off small iteration runs without affecting the per-case
+    # ``passed`` gate or any aggregated metric the UI surfaces.
+    if resolved.eval_run_ragas:
+        commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="computing ragas metrics")
+        # Setup-time failures (provider auth, import, client wiring) should
+        # not invalidate per-case metrics already persisted. Per-metric
+        # failures are already swallowed inside the helper.
+        try:
+            ragas_summary = _attach_ragas_scores(pending_ragas, resolved, job_id=job_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ragas_phase_failed", extra={"error_class": type(exc).__name__, "error": str(exc)[:500]}
+            )
+            ragas_summary = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    else:
+        commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="ragas skipped")
+        ragas_summary = {"skipped": "eval_run_ragas=false"}
     session.flush()
 
     results = list(session.scalars(select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)))
