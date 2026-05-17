@@ -90,16 +90,15 @@ class Settings(BaseSettings):
 
     # Multi-criteria pass thresholds for the per-case ``passed`` flag and the
     # variant-level ``pass_rate`` aggregate. A case is considered passed when
-    # all three gates are met:
+    # both gates are met:
     #   answer_accuracy >= eval_pass_answer_accuracy_threshold
     #   citation_validity >= eval_pass_citation_validity_threshold
-    #   recall_at_5 > eval_pass_recall_at_5_threshold (strict; default 0.0
-    #     means at least one expected citation appeared in the top-5).
-    # ``llm_only`` variants auto-pass the recall gate because they have no
-    # retriever; pass/fail there reflects answer correctness only.
+    # Recall@5 is reported as a per-variant diagnostic but is intentionally
+    # not part of the gate: a correctly-answered case with chunk-grounded
+    # citations should pass even when the retriever surfaced different valid
+    # pages than the annotator picked.
     eval_pass_answer_accuracy_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
     eval_pass_citation_validity_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.5
-    eval_pass_recall_at_5_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
     # Persist a partial run-level aggregate every N completed cases so a
     # worker reap doesn't drop all metrics on the floor. Aggregation is cheap
     # relative to a single eval case, so a low N is fine.

@@ -4,12 +4,14 @@ from rag_evaluation_worker.metrics import (
     ExpectedCitation,
     PlanFilters,
     RetrievedChunkRef,
+    chunk_evidence_f1,
     citation_coverage,
     citation_validity,
     mean_reciprocal_rank,
     metadata_filter_correctness,
     page_evidence_f1,
     recall_at_k,
+    strict_chunk_evidence_f1,
     strict_mean_reciprocal_rank,
     strict_recall_at_k,
 )
@@ -133,6 +135,62 @@ def test_page_f1_both_empty_returns_one() -> None:
 def test_page_f1_one_empty_returns_zero() -> None:
     assert page_evidence_f1({("AAPL", 10)}, set()) == 0.0
     assert page_evidence_f1(set(), {("AAPL", 10)}) == 0.0
+
+
+# ---------- chunk_evidence_f1 ----------
+
+
+def test_chunk_f1_both_empty_returns_one() -> None:
+    assert chunk_evidence_f1([], []) == 1.0
+
+
+def test_chunk_f1_one_empty_returns_zero() -> None:
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    assert chunk_evidence_f1(expected, []) == 0.0
+    assert chunk_evidence_f1([], [_chunk(1)]) == 0.0
+
+
+def test_chunk_f1_perfect_match() -> None:
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    retrieved = [_chunk(1)]
+    assert chunk_evidence_f1(expected, retrieved) == 1.0
+
+
+def test_chunk_f1_penalises_irrelevant_chunks() -> None:
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    retrieved = [_chunk(1), _chunk(2, ticker="MSFT")]  # one relevant, one not
+    # precision 1/2 = 0.5, recall 1/1 = 1.0 -> F1 = 2*0.5*1.0/(0.5+1.0) ≈ 0.6667
+    score = chunk_evidence_f1(expected, retrieved)
+    assert score == 2 * 0.5 * 1.0 / (0.5 + 1.0)
+
+
+def test_chunk_f1_penalises_missing_coverage() -> None:
+    expected = [
+        ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10),
+        ExpectedCitation(ticker="MSFT", form_type="10-K", page_number=20),
+    ]
+    retrieved = [_chunk(1)]  # covers AAPL only
+    # precision 1/1 = 1.0, recall 1/2 = 0.5 -> F1 = 2*1.0*0.5/(1.0+0.5) ≈ 0.6667
+    score = chunk_evidence_f1(expected, retrieved)
+    assert score == 2 * 1.0 * 0.5 / (1.0 + 0.5)
+
+
+def test_chunk_f1_no_overlap_returns_zero() -> None:
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=99)]
+    retrieved = [_chunk(1)]  # pages 10-11, not 99
+    assert chunk_evidence_f1(expected, retrieved) == 0.0
+
+
+def test_strict_chunk_f1_skips_ticker_only_hint() -> None:
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K")]  # no page
+    retrieved = [_chunk(1)]
+    assert strict_chunk_evidence_f1(expected, retrieved) == 0.0
+
+
+def test_strict_chunk_f1_full_match_when_page_present() -> None:
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    retrieved = [_chunk(1)]
+    assert strict_chunk_evidence_f1(expected, retrieved) == 1.0
 
 
 # ---------- metadata_filter_correctness ----------

@@ -222,12 +222,18 @@ def _is_refusal(answer: str, insufficiency_reason: str | None) -> bool:
     return any(phrase in text for phrase in ("refusal", "cannot provide", "personalized", "investment advice"))
 
 
-def answer_declined_to_respond(answer: str, insufficiency_reason: str | None) -> bool:
+def answer_declined_to_respond(answer: str) -> bool:
     """True when the generator produced a non-answer — either an insufficiency
     note or an outright refusal. Used as the per-result ``insufficient`` metric
     so the rate reflects what the model actually emitted, not what the planner
-    upstream flagged."""
-    return _is_insufficient(answer, insufficiency_reason) or _is_refusal(answer, insufficiency_reason)
+    upstream flagged.
+
+    Inspects only the rendered answer text. The helpers ``_is_insufficient``
+    and ``_is_refusal`` accept an ``insufficiency_reason`` for the gold-typed
+    INSUFFICIENT / REFUSAL scoring path, but this function deliberately does
+    not pass one — letting an upstream hedge reason vote here would inflate
+    the insufficient rate on substantively correct answers."""
+    return _is_insufficient(answer, None) or _is_refusal(answer, None)
 
 
 def _normalize(text: str) -> str:

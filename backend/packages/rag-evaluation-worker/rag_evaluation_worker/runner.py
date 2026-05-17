@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import math
 import time
@@ -33,12 +34,14 @@ from rag_evaluation_worker.metrics import (
     ExpectedCitation,
     PlanFilters,
     RetrievedChunkRef,
+    chunk_evidence_f1,
     citation_coverage,
     citation_validity,
     mean_reciprocal_rank,
     metadata_filter_correctness,
     page_evidence_f1,
     recall_at_k,
+    strict_chunk_evidence_f1,
     strict_mean_reciprocal_rank,
     strict_recall_at_k,
 )
@@ -287,32 +290,29 @@ def _compute_passed(
     *,
     metrics: dict[str, Any],
     settings: Settings,
-    retrieval_mode: str,
 ) -> bool | None:
     """Multi-criteria pass gate evaluated only when the case has gold answer data.
 
     Returns ``None`` for draft/unverified cases — surface those as "not
     applicable" in the UI rather than as a fail.
 
-    The recall gate is bypassed for ``llm_only`` variants because they have no
-    retriever; an llm_only pass reflects pure answer correctness against gold.
+    Gated on answer correctness and citation validity only. ``recall_at_5`` is
+    no longer part of the gate: a case where the model produced the correct
+    answer with citations grounded in real chunks should pass even if the
+    retriever surfaced different valid pages than the annotator picked.
+    ``avg_recall_at_5`` remains as a per-variant diagnostic.
     """
     if not metrics.get("answer_gold_eligible"):
         return None
     answer_accuracy = metrics.get("answer_accuracy")
     citation_validity = metrics.get("citation_validity")
-    recall_at_5 = metrics.get("recall_at_5")
     if not isinstance(answer_accuracy, (int, float)):
         return None
     if not isinstance(citation_validity, (int, float)):
         return None
-    if not isinstance(recall_at_5, (int, float)):
-        return None
     if answer_accuracy < settings.eval_pass_answer_accuracy_threshold:
         return False
     if citation_validity < settings.eval_pass_citation_validity_threshold:
-        return False
-    if retrieval_mode != "llm_only" and not (recall_at_5 > settings.eval_pass_recall_at_5_threshold):
         return False
     return True
 
@@ -324,7 +324,6 @@ def _compute_case_metrics(
     case: models.EvalCase,
     latency_ms: int,
     settings: Settings,
-    retrieval_mode: str,
 ) -> dict[str, Any]:
     expected = _coerce_expected_citations(case.expected_citations or [])
     expected_evidence = coerce_expected_evidence(case.expected_evidence or [])
@@ -365,12 +364,13 @@ def _compute_case_metrics(
         "citation_page_hit": citation_page_hit(response.citations, case.expected_citations or []),
         "citation_count": len(response.citations),
         "confidence": response.confidence,
-        "insufficient": 1.0 if answer_declined_to_respond(response.answer, response.insufficiency_reason) else 0.0,
+        "insufficient": 1.0 if answer_declined_to_respond(response.answer) else 0.0,
         "latency_ms": latency_ms,
         "recall_at_5": recall_at_k(expected, retrieved, k=5),
         "recall_at_10": recall_at_k(expected, retrieved, k=10),
         "mrr": mean_reciprocal_rank(expected, retrieved),
         "page_evidence_f1": page_evidence_f1(_expected_page_set(expected), _retrieved_page_set(retrieved)),
+        "chunk_evidence_f1": chunk_evidence_f1(expected, retrieved),
         "evidence_recall_at_5": strict_recall_at_k(strict_expected, retrieved, k=5) if evidence_gold_eligible else None,
         "evidence_recall_at_10": (
             strict_recall_at_k(strict_expected, retrieved, k=10) if evidence_gold_eligible else None
@@ -380,6 +380,9 @@ def _compute_case_metrics(
             page_evidence_f1(_strict_expected_page_set(strict_expected), _strict_retrieved_page_set(retrieved))
             if evidence_gold_eligible
             else None
+        ),
+        "evidence_chunk_f1": (
+            strict_chunk_evidence_f1(strict_expected, retrieved) if evidence_gold_eligible else None
         ),
         "metadata_filter_correctness": metadata_filter_correctness(plan_filters, expected),
         "citation_validity": citation_validity(citation_snapshots, chunks_by_id),
@@ -398,7 +401,6 @@ def _compute_case_metrics(
     metrics["passed"] = _compute_passed(
         metrics=metrics,
         settings=settings,
-        retrieval_mode=retrieval_mode,
     )
     return metrics
 
@@ -580,9 +582,11 @@ def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[st
         "avg_recall_at_10": _mean_metric(metrics, "recall_at_10"),
         "avg_mrr": _mean_metric(metrics, "mrr"),
         "avg_page_evidence_f1": _mean_metric(metrics, "page_evidence_f1"),
+        "avg_chunk_evidence_f1": _mean_metric(metrics, "chunk_evidence_f1"),
         "avg_evidence_recall_at_5": _mean_metric(metrics, "evidence_recall_at_5"),
         "avg_evidence_mrr": _mean_metric(metrics, "evidence_mrr"),
         "avg_evidence_page_f1": _mean_metric(metrics, "evidence_page_f1"),
+        "avg_evidence_chunk_f1": _mean_metric(metrics, "evidence_chunk_f1"),
         "metadata_filter_correctness_rate": _mean_metric(metrics, "metadata_filter_correctness"),
         "citation_reference_validity_rate": _mean_metric(metrics, "citation_reference_validity"),
         "citation_validity_rate": _mean_metric(metrics, "citation_validity"),
@@ -883,6 +887,81 @@ def _attach_ragas_scores(
     return {"case_count": total_pending, "metrics": [key for key, _ in metrics_config]}
 
 
+def _select_ablation_baseline(variant_names: list[str]) -> str | None:
+    if "full_agentic" in variant_names:
+        return "full_agentic"
+    non_llm = [name for name in variant_names if name != "llm_only"]
+    if non_llm:
+        return non_llm[0]
+    return None
+
+
+def _sanitise_for_jsonb(value: Any) -> Any:
+    """Recursively replace non-finite floats with ``None``.
+
+    PostgreSQL ``JSONB`` rejects ``NaN`` and ``Infinity`` (Python serialises them
+    as bare ``NaN`` / ``Infinity`` literals, which aren't valid JSON). The paired
+    stats code legitimately yields NaN for degenerate inputs (e.g. Cliff's delta
+    when both samples are constant), so we coerce them to ``None`` at the
+    persistence boundary rather than altering the analyser.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _sanitise_for_jsonb(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitise_for_jsonb(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitise_for_jsonb(item) for item in value]
+    return value
+
+
+def _attach_ablation_report(eval_run: models.EvalRun, results: list[models.EvalResult]) -> None:
+    """Run the paired ablation analyzer and write the report onto ``eval_run.metrics``.
+
+    Stores the full ``AblationReport`` (Wilcoxon/McNemar + BH-adjusted FDR + paired
+    bootstrap CIs across the standard endpoint families) at ``metrics['ablation']``
+    so the API and UI see numbers without invoking ``analyze_ablation.py`` by hand.
+    Skipped (with a structured marker) when fewer than two variants ran or no usable
+    baseline is present.
+    """
+    from rag_evaluation_worker.ablation_analysis import run_ablation_analysis
+
+    variant_names = sorted({r.variant_name or r.retrieval_mode for r in results if r.variant_name or r.retrieval_mode})
+    if len(variant_names) < 2:
+        eval_run.metrics["ablation"] = {"skipped": "single_variant", "variants": variant_names}
+        return
+    baseline = _select_ablation_baseline(variant_names)
+    if baseline is None:
+        eval_run.metrics["ablation"] = {"skipped": "no_baseline", "variants": variant_names}
+        return
+    artifact: dict[str, Any] = {
+        "id": eval_run.id,
+        "metrics": eval_run.metrics,
+        "results": [
+            {
+                "eval_case_id": r.eval_case_id,
+                "variant_name": r.variant_name,
+                "retrieval_mode": r.retrieval_mode,
+                "metrics": r.metrics or {},
+                "latency_ms": r.latency_ms,
+                "cost_estimate": r.cost_estimate,
+            }
+            for r in results
+        ],
+    }
+    try:
+        report = run_ablation_analysis(artifact, baseline=baseline)
+    except (ValueError, RuntimeError) as exc:
+        logger.warning(
+            "ablation_attach_failed",
+            extra={"eval_run_id": eval_run.id, "error": str(exc)},
+        )
+        eval_run.metrics["ablation"] = {"error": str(exc), "variants": variant_names, "baseline": baseline}
+        return
+    eval_run.metrics["ablation"] = _sanitise_for_jsonb(dataclasses.asdict(report))
+
+
 def run_evaluation(
     session: Session,
     *,
@@ -964,7 +1043,6 @@ def run_evaluation(
                         case=case,
                         latency_ms=latency_ms,
                         settings=effective,
-                        retrieval_mode=spec.retrieval_mode,
                     )
                     metrics["variant_name"] = spec.name
                     metrics["retrieval_mode"] = spec.retrieval_mode
@@ -1098,6 +1176,7 @@ def run_evaluation(
         )
     if ragas_summary:
         eval_run.metrics["ragas_run"] = ragas_summary
+    _attach_ablation_report(eval_run, results)
     eval_run.status = JobStatus.COMPLETED if not errors else JobStatus.COMPLETED_WITH_ERRORS
     commit_job_progress(job_id, status=eval_run.status, progress=100, current_step="completed")
     # Make the terminal EvalRun state durable here rather than relying on the

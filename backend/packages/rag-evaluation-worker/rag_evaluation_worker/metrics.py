@@ -152,6 +152,54 @@ def page_evidence_f1(
     return 2 * precision * recall / (precision + recall)
 
 
+def chunk_evidence_f1(
+    expected: list[ExpectedCitation],
+    retrieved: list[RetrievedChunkRef],
+) -> float:
+    """F1 measured at the retrieved-chunk granularity.
+
+    Precision penalises retrieving chunks that don't match any expected citation;
+    recall penalises missing an expected citation. Matching uses ``_single_match``
+    (document_id or ticker+form_type, with page in [page_start, page_end]).
+
+    Returns 1.0 when both inputs are empty (vacuous truth); 0.0 when only one is.
+    """
+    if not expected and not retrieved:
+        return 1.0
+    if not expected or not retrieved:
+        return 0.0
+    relevant_retrieved = sum(1 for item in retrieved if any(_single_match(exp, item) for exp in expected))
+    covered_expected = sum(1 for exp in expected if any(_single_match(exp, item) for item in retrieved))
+    if relevant_retrieved == 0 or covered_expected == 0:
+        return 0.0
+    precision = relevant_retrieved / len(retrieved)
+    recall = covered_expected / len(expected)
+    return 2 * precision * recall / (precision + recall)
+
+
+def strict_chunk_evidence_f1(
+    expected: Sequence[object],
+    retrieved: list[RetrievedChunkRef],
+) -> float:
+    """Strict chunk-level F1 for verified evidence only.
+
+    Like ``chunk_evidence_f1`` but requires the same page+(document_id or ticker+form_type)
+    coupling that the strict recall metric uses; ticker-only hints don't count.
+    """
+    eligible = [_as_strict_expected(item) for item in expected]
+    if not eligible and not retrieved:
+        return 1.0
+    if not eligible or not retrieved:
+        return 0.0
+    relevant_retrieved = sum(1 for item in retrieved if any(_strict_single_match(exp, item) for exp in eligible))
+    covered_expected = sum(1 for exp in eligible if any(_strict_single_match(exp, item) for item in retrieved))
+    if relevant_retrieved == 0 or covered_expected == 0:
+        return 0.0
+    precision = relevant_retrieved / len(retrieved)
+    recall = covered_expected / len(eligible)
+    return 2 * precision * recall / (precision + recall)
+
+
 def metadata_filter_correctness(plan_filters: PlanFilters, expected: list[ExpectedCitation]) -> float:
     """1.0 iff the planner's filters do not exclude any expected citation. 0.0 otherwise.
 

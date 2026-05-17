@@ -80,21 +80,33 @@ def test_aggregate_separates_scientific_from_diagnostic_cases() -> None:
 
 
 def test_answer_declined_to_respond_catches_insufficiency_phrases() -> None:
-    assert answer_declined_to_respond("The dataset does not contain enough evidence.", None) is True
+    assert answer_declined_to_respond("The dataset does not contain enough evidence.") is True
 
 
 def test_answer_declined_to_respond_catches_refusal_phrases() -> None:
-    assert answer_declined_to_respond("I cannot provide the requested figure.", None) is True
+    assert answer_declined_to_respond("I cannot provide the requested figure.") is True
 
 
 def test_answer_declined_to_respond_is_false_for_substantive_answers() -> None:
     assert (
         answer_declined_to_respond(
             "Total net sales were $416,161 million [AAPL 2025-10-31 10-K, p. 71].",
-            None,
         )
         is False
     )
+
+
+def test_answer_declined_to_respond_ignores_upstream_pipeline_signal() -> None:
+    # Regression: the helper used to accept ``insufficiency_reason`` and merge
+    # it into the keyword scan, so a correctly-answered case could be flagged
+    # ``insufficient=1.0`` whenever the upstream generator left a hedge note
+    # mentioning "does not contain" / "not enough evidence" / "insufficient".
+    # The signature was tightened so only the rendered answer text votes here.
+    correct_answer = (
+        "Apple's total net sales for fiscal 2025 were $416,161 million "
+        "[AAPL 2025-10-31 10-K, p. 70] [AAPL 2025-10-31 10-K, p. 71]."
+    )
+    assert answer_declined_to_respond(correct_answer) is False
 
 
 def _scoreable_result(*, retrieval_mode: str, passed: bool, **overrides: object) -> models.EvalResult:

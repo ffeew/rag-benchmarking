@@ -9,7 +9,7 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TBody, TD, TH, THead, TR } from '#/components/ui/table'
 import { ErrorState } from '#/components/data/ErrorState'
 import { MetricNumber } from '#/components/data/MetricNumber'
-import { api } from '#/lib/api'
+import { api, type AblationPair, type AblationReport } from '#/lib/api'
 import { formatDateTime, formatDuration, formatPercent, truncateId } from '#/lib/format'
 import { isTerminalJobStatus, nextJobInterval } from '#/lib/polling'
 import { qk } from '#/lib/queryKeys'
@@ -64,15 +64,36 @@ function EvalDetail() {
       value !== null &&
       !Array.isArray(value) &&
       key !== 'ragas_run' &&
+      key !== 'ablation' &&
       // Bucket dicts for per-variant summaries are the ones that carry
       // ``case_count`` — anything else is a meta block (ingestion_diagnostics,
-      // pairing_skew, etc.) we don't want to render as a variant card.
+      // pairing_skew, ablation report, etc.) we don't want to render as a variant card.
       typeof (value as Record<string, unknown>).case_count === 'number',
   ) as Array<[string, ModeMetrics]>
 
   function numericMetric(modeData: ModeMetrics, key: string): number | null {
     const v = modeData[key]
     return typeof v === 'number' ? v : null
+  }
+
+  function ragasScore(modeData: ModeMetrics, key: string): number | null {
+    const diag = modeData.judge_diagnostics
+    if (!diag || typeof diag !== 'object' || Array.isArray(diag)) return null
+    const ragas = (diag as Record<string, unknown>).ragas
+    if (!ragas || typeof ragas !== 'object' || Array.isArray(ragas)) return null
+    const value = (ragas as Record<string, unknown>)[key]
+    return typeof value === 'number' ? value : null
+  }
+
+  function ragasSkipReason(modeData: ModeMetrics): string | null {
+    const diag = modeData.judge_diagnostics
+    if (!diag || typeof diag !== 'object' || Array.isArray(diag)) return null
+    const dict = diag as Record<string, unknown>
+    const skipped = dict.ragas_skipped
+    if (typeof skipped === 'string') return skipped
+    const errored = dict.ragas_error
+    if (typeof errored === 'string') return errored
+    return null
   }
 
   function numericRunMetric(key: string): number | null {
@@ -105,6 +126,51 @@ function EvalDetail() {
     if (passed === false) return { label: 'FAIL', tone: 'bad', icon: X }
     return { label: '—', tone: 'neutral', icon: null }
   }
+
+  type AblationBlock =
+    | { kind: 'report'; report: AblationReport }
+    | { kind: 'skipped'; reason: string; baseline?: string; variants?: Array<string> }
+    | { kind: 'error'; error: string; baseline?: string; variants?: Array<string> }
+    | { kind: 'absent' }
+
+  function readAblation(): AblationBlock {
+    const raw = run.metrics.ablation
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { kind: 'absent' }
+    const dict = raw as Record<string, unknown>
+    if (typeof dict.error === 'string') {
+      return {
+        kind: 'error',
+        error: dict.error,
+        baseline: typeof dict.baseline === 'string' ? dict.baseline : undefined,
+        variants: Array.isArray(dict.variants) ? (dict.variants as Array<string>) : undefined,
+      }
+    }
+    if (typeof dict.skipped === 'string') {
+      return {
+        kind: 'skipped',
+        reason: dict.skipped,
+        baseline: typeof dict.baseline === 'string' ? dict.baseline : undefined,
+        variants: Array.isArray(dict.variants) ? (dict.variants as Array<string>) : undefined,
+      }
+    }
+    if (Array.isArray(dict.pair_results) && typeof dict.baseline === 'string') {
+      return { kind: 'report', report: raw as unknown as AblationReport }
+    }
+    return { kind: 'absent' }
+  }
+
+  function formatPair(value: number | null | undefined, digits = 3): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+    return value.toFixed(digits)
+  }
+
+  function formatSignedDiff(value: number | null | undefined, digits = 3): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+    const sign = value > 0 ? '+' : ''
+    return `${sign}${value.toFixed(digits)}`
+  }
+
+  const ablation = readAblation()
 
   const passRate = numericRunMetric('pass_rate')
   const passCount = numericRunMetric('pass_count')
@@ -225,7 +291,7 @@ function EvalDetail() {
                     <div className="mono-label text-[var(--ink-muted)] mb-2">
                       RETRIEVER
                     </div>
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
                       <MetricNumber
                         label="RECALL@5"
                         value={formatNumericMetric(numericMetric(modeData, 'avg_recall_at_5'))}
@@ -247,8 +313,45 @@ function EvalDetail() {
                         size="sm"
                       />
                       <MetricNumber
+                        label="CHUNK F1"
+                        value={formatNumericMetric(numericMetric(modeData, 'avg_chunk_evidence_f1'))}
+                        size="sm"
+                      />
+                      <MetricNumber
                         label="FILTER OK"
                         value={formatNumericMetric(numericMetric(modeData, 'metadata_filter_correctness_rate'))}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mono-label text-[var(--ink-muted)] mb-2 flex items-center gap-2">
+                      <span>GENERATOR</span>
+                      {ragasSkipReason(modeData) !== null && (
+                        <Badge tone="warn" size="sm">
+                          RAGAS {ragasSkipReason(modeData)}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <MetricNumber
+                        label="ANSWER ACC"
+                        value={formatNumericMetric(numericMetric(modeData, 'answer_accuracy_rate'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="FAITHFULNESS"
+                        value={formatNumericMetric(ragasScore(modeData, 'faithfulness'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="CTX PRECISION"
+                        value={formatNumericMetric(ragasScore(modeData, 'context_precision'))}
+                        size="sm"
+                      />
+                      <MetricNumber
+                        label="CTX RECALL"
+                        value={formatNumericMetric(ragasScore(modeData, 'context_recall'))}
                         size="sm"
                       />
                     </div>
@@ -316,6 +419,104 @@ function EvalDetail() {
             </Card>
           ))}
         </section>
+      )}
+
+      {ablation.kind !== 'absent' && (
+        <Card>
+          <CardHeader
+            title={
+              <span className="font-mono text-[12px] uppercase tracking-wide text-[var(--ink)]">
+                ABLATION (paired)
+              </span>
+            }
+          />
+          <CardBody padded={ablation.kind !== 'report'}>
+            {ablation.kind === 'skipped' && (
+              <div className="text-[12px] text-[var(--ink-muted)] font-mono">
+                Skipped: {ablation.reason}
+                {ablation.variants && ablation.variants.length > 0
+                  ? ` (variants: ${ablation.variants.join(', ')})`
+                  : ''}
+              </div>
+            )}
+            {ablation.kind === 'error' && (
+              <div className="text-[12px] text-[var(--bad)] font-mono">
+                Error: {ablation.error}
+              </div>
+            )}
+            {ablation.kind === 'report' && (
+              <>
+                <div className="px-4 pt-4 pb-3 text-[12px] text-[var(--ink-muted)] font-mono">
+                  baseline{' '}
+                  <span className="text-[var(--ink)]">{ablation.report.baseline}</span>{' '}
+                  vs{' '}
+                  <span className="text-[var(--ink)]">
+                    {ablation.report.variants
+                      .filter((v) => v !== ablation.report.baseline)
+                      .join(', ') || '—'}
+                  </span>{' '}
+                  · {ablation.report.case_count} paired cases
+                </div>
+                <Table>
+                  <THead>
+                    <tr>
+                      <TH>METRIC</TH>
+                      <TH>TREATMENT</TH>
+                      <TH className="text-right">BASELINE</TH>
+                      <TH className="text-right">TREATMENT</TH>
+                      <TH className="text-right">DIFF</TH>
+                      <TH className="text-right">95% CI</TH>
+                      <TH className="text-right">P</TH>
+                      <TH className="text-right">Q (FDR)</TH>
+                      <TH>FAMILY</TH>
+                    </tr>
+                  </THead>
+                  <TBody>
+                    {ablation.report.pair_results
+                      .slice()
+                      .sort((a: AblationPair, b: AblationPair) => {
+                        if (a.primary !== b.primary) return a.primary ? -1 : 1
+                        return a.metric.localeCompare(b.metric)
+                      })
+                      .map((pair: AblationPair, idx: number) => (
+                        <TR key={`${pair.metric}-${pair.treatment}-${idx}`}>
+                          <TD className="font-mono text-[11px] text-[var(--ink)]">
+                            {pair.metric}
+                          </TD>
+                          <TD className="font-mono text-[11px] text-[var(--ink-dim)]">
+                            {pair.treatment}
+                          </TD>
+                          <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                            {formatPair(pair.mean_baseline)}
+                          </TD>
+                          <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                            {formatPair(pair.mean_treatment)}
+                          </TD>
+                          <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                            {formatSignedDiff(pair.diff)}
+                          </TD>
+                          <TD className="text-right font-mono numeric text-[11px] text-[var(--ink-dim)]">
+                            [{formatPair(pair.ci_low)}, {formatPair(pair.ci_high)}]
+                          </TD>
+                          <TD className="text-right font-mono numeric text-[11px] text-[var(--ink-dim)]">
+                            {formatPair(pair.p_value, 4)}
+                          </TD>
+                          <TD className="text-right font-mono numeric text-[11px] text-[var(--ink-dim)]">
+                            {formatPair(pair.q_value, 4)}
+                          </TD>
+                          <TD>
+                            <Badge tone={pair.primary ? 'cite' : 'outline'} size="sm">
+                              {pair.primary ? 'primary' : 'secondary'}
+                            </Badge>
+                          </TD>
+                        </TR>
+                      ))}
+                  </TBody>
+                </Table>
+              </>
+            )}
+          </CardBody>
+        </Card>
       )}
 
       {run.errors.length > 0 && (

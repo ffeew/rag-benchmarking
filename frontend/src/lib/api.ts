@@ -293,6 +293,42 @@ export type EvalPackImportResponse = z.infer<
 export type IngestionRun = z.infer<typeof ingestionRunSchema>
 export type ReadyStatus = z.infer<typeof readySchema>
 
+export interface AblationPair {
+  metric: string
+  baseline: string
+  treatment: string
+  n_paired: number
+  mean_baseline: number
+  mean_treatment: number
+  diff: number
+  ci_low: number
+  ci_high: number
+  p_value: number | null
+  q_value: number | null
+  cliffs_delta: number | null
+  cohens_d: number | null
+  test: string
+  alternative: string
+  primary: boolean
+}
+
+export interface AblationReport {
+  run_id: string | null
+  baseline: string
+  variants: Array<string>
+  primary_endpoints: Array<string>
+  secondary_endpoints: Array<string>
+  pair_results: Array<AblationPair>
+  case_count: number
+}
+
+export interface AblationSkipped {
+  skipped?: string
+  error?: string
+  variants?: Array<string>
+  baseline?: string
+}
+
 export type RetrievalMode = 'full_agentic' | 'single_pass' | 'llm_only'
 
 export const RETRIEVAL_MODES = [
