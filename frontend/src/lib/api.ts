@@ -98,6 +98,16 @@ export const evidenceSchema = z.object({
   snippet: z.string(),
 })
 
+export const retrievedChunkRefSchema = z.object({
+  chunk_id: z.string(),
+  document_id: z.string(),
+  ticker: z.string(),
+  form_type: z.string(),
+  page_start: z.number(),
+  page_end: z.number(),
+  rank: z.number(),
+})
+
 export const queryResponseSchema = z.object({
   answer: z.string(),
   citations: z.array(citationSchema),
@@ -105,6 +115,12 @@ export const queryResponseSchema = z.object({
   trace_id: z.string(),
   confidence: z.number(),
   insufficiency_reason: z.string().nullable(),
+  usage_summary: z.record(z.string(), z.unknown()).nullable().optional(),
+  cost_estimate_usd: z.number().nullable().optional(),
+  generator_metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  full_retrieval: z.array(retrievedChunkRefSchema).nullable().optional(),
+  degraded: z.boolean().default(false),
+  degraded_reasons: z.array(z.string()).default([]),
 })
 
 export const traceSchema = z.object({
@@ -136,6 +152,7 @@ export const evalResultSchema = z.object({
   id: z.string(),
   eval_case_id: z.string().nullable(),
   retrieval_mode: z.string(),
+  variant_name: z.string().nullable().optional(),
   answer: z.string().nullable(),
   trace_id: z.string().nullable(),
   metrics: z.record(z.string(), z.unknown()),
@@ -403,6 +420,7 @@ const registerCorpusResponseSchema = z.object({
   job_ids: z.array(z.string()),
   queued_document_ids: z.array(z.string()),
   skipped_document_ids: z.array(z.string()),
+  broker_unavailable_document_ids: z.array(z.string()).default([]),
 })
 
 const uploadDocumentsResponseSchema = z.object({
@@ -410,12 +428,14 @@ const uploadDocumentsResponseSchema = z.object({
   job_ids: z.array(z.string()),
   queued_document_ids: z.array(z.string()),
   skipped_document_ids: z.array(z.string()),
+  broker_unavailable_document_ids: z.array(z.string()).default([]),
 })
 
 const ingestResponseSchema = z.object({
   job_ids: z.array(z.string()),
   queued_document_ids: z.array(z.string()),
   skipped_document_ids: z.array(z.string()),
+  broker_unavailable_document_ids: z.array(z.string()).default([]),
 })
 
 const evaluationCreateResponseSchema = z.object({
