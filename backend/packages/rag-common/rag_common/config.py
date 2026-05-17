@@ -88,6 +88,23 @@ class Settings(BaseSettings):
     eval_timeout_seconds: Annotated[int, Field(gt=0)] = 1800
     query_trace_retention_days: Annotated[int, Field(gt=0)] = 30
 
+    # Multi-criteria pass thresholds for the per-case ``passed`` flag and the
+    # variant-level ``pass_rate`` aggregate. A case is considered passed when
+    # all three gates are met:
+    #   answer_accuracy >= eval_pass_answer_accuracy_threshold
+    #   citation_validity >= eval_pass_citation_validity_threshold
+    #   recall_at_5 > eval_pass_recall_at_5_threshold (strict; default 0.0
+    #     means at least one expected citation appeared in the top-5).
+    # ``llm_only`` variants auto-pass the recall gate because they have no
+    # retriever; pass/fail there reflects answer correctness only.
+    eval_pass_answer_accuracy_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
+    eval_pass_citation_validity_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.5
+    eval_pass_recall_at_5_threshold: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    # Persist a partial run-level aggregate every N completed cases so a
+    # worker reap doesn't drop all metrics on the floor. Aggregation is cheap
+    # relative to a single eval case, so a low N is fine.
+    eval_partial_aggregate_every: Annotated[int, Field(gt=0)] = 5
+
     # Sweeper thresholds. The scheduled `sweep_stuck_jobs` task marks a RUNNING
     # job failed when no heartbeat has landed for ``running_heartbeat_seconds``.
     # Must comfortably exceed ``eval_timeout_seconds`` (per-case cap) so a

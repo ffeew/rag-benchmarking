@@ -15,7 +15,7 @@ import { ErrorState } from '#/components/data/ErrorState'
 import { LiveRelative } from '#/components/data/LiveTime'
 import { NewEvaluationDialog } from '#/components/eval/NewEvaluationDialog'
 import { api } from '#/lib/api'
-import { truncateId } from '#/lib/format'
+import { formatDuration, formatPercent, truncateId } from '#/lib/format'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
 import { useToken } from '#/providers/TokenProvider'
@@ -133,9 +133,15 @@ function EvaluationsList() {
                         <span className="font-mono text-[12.5px] text-[var(--ink)]">
                           {truncateId(run.id)}
                         </span>
-                        <Badge tone={toneForStatus(run.status)} size="sm">
-                          {run.status}
-                        </Badge>
+                        {run.status === 'failed' && run.results.length > 0 ? (
+                          <Badge tone={toneForStatus('partial')} size="sm">
+                            partial
+                          </Badge>
+                        ) : (
+                          <Badge tone={toneForStatus(run.status)} size="sm">
+                            {run.status}
+                          </Badge>
+                        )}
                         <span className="text-[11.5px] text-[var(--ink-muted)]">
                           variants {run.system_variant}
                         </span>
@@ -180,18 +186,19 @@ function computeAggregate(
   metrics: Record<string, unknown>,
 ): Array<{ key: string; value: string }> {
   const out: Array<{ key: string; value: string }> = []
-  for (const k of [
-    'answer_present_rate',
-    'expected_contains_rate',
-    'citation_hit_rate',
-  ]) {
-    const v = metrics[k]
-    if (typeof v === 'number') {
-      out.push({
-        key: k.replace(/_/g, ' ').replace(' rate', ''),
-        value: `${Math.round(v * 100)}%`,
-      })
-    }
+  const passRate = metrics.pass_rate
+  const passCount = metrics.pass_count
+  const passEligible = metrics.pass_eligible_count
+  if (typeof passRate === 'number') {
+    const suffix =
+      typeof passCount === 'number' && typeof passEligible === 'number'
+        ? ` ${passCount}/${passEligible}`
+        : ''
+    out.push({ key: 'pass', value: `${formatPercent(passRate)}${suffix}` })
   }
+  const recall = metrics.avg_recall_at_5
+  if (typeof recall === 'number') out.push({ key: 'recall@5', value: formatPercent(recall) })
+  const latency = metrics.avg_latency_ms
+  if (typeof latency === 'number') out.push({ key: 'latency', value: formatDuration(latency) })
   return out.slice(0, 3)
 }

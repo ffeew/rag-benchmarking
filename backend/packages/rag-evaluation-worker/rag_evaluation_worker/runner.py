@@ -43,6 +43,7 @@ from rag_evaluation_worker.metrics import (
     strict_recall_at_k,
 )
 from rag_evaluation_worker.scoring import (
+    answer_declined_to_respond,
     bootstrap_mean_ci,
     coerce_expected_evidence,
     score_answer,
@@ -282,12 +283,48 @@ def _ensure_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _compute_passed(
+    *,
+    metrics: dict[str, Any],
+    settings: Settings,
+    retrieval_mode: str,
+) -> bool | None:
+    """Multi-criteria pass gate evaluated only when the case has gold answer data.
+
+    Returns ``None`` for draft/unverified cases — surface those as "not
+    applicable" in the UI rather than as a fail.
+
+    The recall gate is bypassed for ``llm_only`` variants because they have no
+    retriever; an llm_only pass reflects pure answer correctness against gold.
+    """
+    if not metrics.get("answer_gold_eligible"):
+        return None
+    answer_accuracy = metrics.get("answer_accuracy")
+    citation_validity = metrics.get("citation_validity")
+    recall_at_5 = metrics.get("recall_at_5")
+    if not isinstance(answer_accuracy, (int, float)):
+        return None
+    if not isinstance(citation_validity, (int, float)):
+        return None
+    if not isinstance(recall_at_5, (int, float)):
+        return None
+    if answer_accuracy < settings.eval_pass_answer_accuracy_threshold:
+        return False
+    if citation_validity < settings.eval_pass_citation_validity_threshold:
+        return False
+    if retrieval_mode != "llm_only" and not (recall_at_5 > settings.eval_pass_recall_at_5_threshold):
+        return False
+    return True
+
+
 def _compute_case_metrics(
     *,
     session: Session,
     response: QueryResponse,
     case: models.EvalCase,
     latency_ms: int,
+    settings: Settings,
+    retrieval_mode: str,
 ) -> dict[str, Any]:
     expected = _coerce_expected_citations(case.expected_citations or [])
     expected_evidence = coerce_expected_evidence(case.expected_evidence or [])
@@ -328,7 +365,7 @@ def _compute_case_metrics(
         "citation_page_hit": citation_page_hit(response.citations, case.expected_citations or []),
         "citation_count": len(response.citations),
         "confidence": response.confidence,
-        "insufficient": 1.0 if response.insufficiency_reason else 0.0,
+        "insufficient": 1.0 if answer_declined_to_respond(response.answer, response.insufficiency_reason) else 0.0,
         "latency_ms": latency_ms,
         "recall_at_5": recall_at_k(expected, retrieved, k=5),
         "recall_at_10": recall_at_k(expected, retrieved, k=10),
@@ -356,6 +393,13 @@ def _compute_case_metrics(
         metrics.update(_parser_table_diagnostics(session, strict_expected))
     else:
         metrics.update({"citation_gold_precision": None, "citation_gold_recall": None})
+    # ``passed`` is the multi-criteria gate the UI surfaces as the per-case
+    # PASS/FAIL badge. Computed last so it can see the merged answer_metrics.
+    metrics["passed"] = _compute_passed(
+        metrics=metrics,
+        settings=settings,
+        retrieval_mode=retrieval_mode,
+    )
     return metrics
 
 
@@ -472,6 +516,26 @@ def aggregate_metrics(results: list[models.EvalResult], *, seed: int = 1729) -> 
         aggregate[mode] = per_mode
     if grand_total_cost > 0.0:
         aggregate["total_cost_usd"] = grand_total_cost
+    # Top-level pass/latency rollups for the UI's run-wide KPI tiles. These
+    # weight every eligible case equally regardless of variant, which is the
+    # right denominator for "did this run pass overall".
+    all_metrics: list[dict[str, Any]] = []
+    for bucket in by_mode.values():
+        all_metrics.extend(bucket)
+    all_pass_values = [
+        1.0 if metric.get("passed") is True else 0.0
+        for metric in all_metrics
+        if metric.get("answer_gold_eligible") is True and isinstance(metric.get("passed"), bool)
+    ]
+    if all_pass_values:
+        aggregate["pass_rate"] = sum(all_pass_values) / len(all_pass_values)
+        aggregate["pass_count"] = int(sum(all_pass_values))
+        aggregate["pass_eligible_count"] = len(all_pass_values)
+    all_latencies = [
+        metric["latency_ms"] for metric in all_metrics if isinstance(metric.get("latency_ms"), (int, float))
+    ]
+    if all_latencies:
+        aggregate["avg_latency_ms"] = sum(all_latencies) / len(all_latencies)
     return aggregate
 
 
@@ -483,6 +547,14 @@ def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[st
     citation_gold_recall_values = _eligible_values(
         metrics, key="citation_gold_recall", eligible_key="evidence_gold_eligible"
     )
+    # ``passed`` is a tri-valued field (True/False/None for non-eligible); we
+    # convert eligible bools to floats so the existing CI/mean helpers work.
+    pass_values = [
+        1.0 if metric.get("passed") is True else 0.0
+        for metric in metrics
+        if metric.get("answer_gold_eligible") is True and isinstance(metric.get("passed"), bool)
+    ]
+    pass_count = sum(1 for v in pass_values if v == 1.0)
     summary: dict[str, Any] = {
         "case_count": len(metrics),
         "diagnostic_case_count": len(metrics),
@@ -494,6 +566,9 @@ def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[st
         ),
         "answer_accuracy_rate": _mean_list(answer_values),
         "answer_accuracy_ci_95": bootstrap_mean_ci(answer_values, seed=seed),
+        "pass_rate": _mean_list(pass_values),
+        "pass_count": pass_count,
+        "pass_eligible_count": len(pass_values),
         "avg_evidence_recall_at_10": _mean_list(evidence_recall_values),
         "evidence_recall_at_10_ci_95": bootstrap_mean_ci(evidence_recall_values, seed=seed + 1),
         "citation_gold_recall_rate": _mean_list(citation_gold_recall_values),
@@ -888,6 +963,8 @@ def run_evaluation(
                         response=response,
                         case=case,
                         latency_ms=latency_ms,
+                        settings=effective,
+                        retrieval_mode=spec.retrieval_mode,
                     )
                     metrics["variant_name"] = spec.name
                     metrics["retrieval_mode"] = spec.retrieval_mode
@@ -966,6 +1043,21 @@ def run_evaluation(
             # whole eval, and the API can stream partial results while the
             # rest of the loop is still running.
             session.commit()
+            # Snapshot the run-level aggregate every N committed cases so a
+            # worker reap doesn't roll back to ``metrics={}``. The recompute is
+            # cheap relative to a single eval case (just stats over the in-DB
+            # results), and the API serializer also falls back to recomputing
+            # at read time, so this is belt-and-suspenders.
+            if completed % resolved.eval_partial_aggregate_every == 0:
+                partial = list(
+                    session.scalars(
+                        select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)
+                    )
+                )
+                eval_run.metrics = aggregate_metrics(partial, seed=bootstrap_seed)
+                eval_run.metrics["_partial"] = True
+                eval_run.errors = errors
+                session.commit()
             commit_job_progress(
                 job_id,
                 status=JobStatus.RUNNING,
@@ -982,6 +1074,8 @@ def run_evaluation(
     results = list(session.scalars(select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)))
     eval_run.errors = errors
     eval_run.metrics = aggregate_metrics(results, seed=bootstrap_seed)
+    # Drop the partial marker now that the final aggregate is in place.
+    eval_run.metrics.pop("_partial", None)
     eval_run.metrics["benchmark_profile"] = benchmark_profile
     eval_run.metrics["ingestion_diagnostics"] = _ingestion_diagnostics(session, eval_run.dataset_id)
     eval_run.metrics["pairing_skew"] = pairing_skew

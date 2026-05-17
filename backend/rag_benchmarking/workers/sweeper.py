@@ -103,6 +103,11 @@ def _fail_linked_eval_run(session: Session, job: models.Job, *, now: datetime, r
     Skips the write if the EvalRun is already terminal (e.g. the worker
     actually finished after the heartbeat lapse) so a real completion is not
     clobbered.
+
+    Also enumerates ``(case_id, variant)`` pairs that some variants ran but
+    others didn't (the typical reap pattern, since the runner loops cases
+    outside variants) and emits one ``JobReaped`` error row per gap so the UI
+    error table tells the operator which cells were dropped.
     """
     if not job.eval_run_id:
         return
@@ -112,7 +117,7 @@ def _fail_linked_eval_run(session: Session, job: models.Job, *, now: datetime, r
     if eval_run.status in JOB_TERMINAL_STATUSES:
         return
     eval_run.status = JobStatus.FAILED
-    eval_run.errors = list(eval_run.errors or []) + [
+    new_errors: list[dict[str, object]] = [
         {
             "case_id": None,
             "variant": None,
@@ -121,6 +126,39 @@ def _fail_linked_eval_run(session: Session, job: models.Job, *, now: datetime, r
             "reaped_at": now.isoformat(),
         }
     ]
+    new_errors.extend(_reaped_per_variant_errors(eval_run, now=now))
+    eval_run.errors = list(eval_run.errors or []) + new_errors
+
+
+def _reaped_per_variant_errors(eval_run: models.EvalRun, *, now: datetime) -> list[dict[str, object]]:
+    """Find (case, variant) cells that some variants completed but others
+    skipped, and synthesise one error row per missing cell. Heuristic: the
+    union of case_ids across variants is the "expected" set for this run.
+    Cases that no variant ever started are invisible here — they need the
+    dataset-side case list to enumerate, which the sweeper doesn't have."""
+    results = getattr(eval_run, "results", None) or []
+    by_variant: dict[str, set[str]] = {}
+    for result in results:
+        bucket = result.variant_name or result.retrieval_mode
+        if not bucket or not result.eval_case_id:
+            continue
+        by_variant.setdefault(bucket, set()).add(result.eval_case_id)
+    if not by_variant:
+        return []
+    expected_cases: set[str] = set().union(*by_variant.values())
+    rows: list[dict[str, object]] = []
+    for variant, case_ids in sorted(by_variant.items()):
+        for missing_case in sorted(expected_cases - case_ids):
+            rows.append(
+                {
+                    "case_id": missing_case,
+                    "variant": variant,
+                    "error_class": "JobReaped",
+                    "error": "skipped (job reaped before reaching this case)",
+                    "reaped_at": now.isoformat(),
+                }
+            )
+    return rows
 
 
 def _collect_redispatch_candidates(session: Session, now: datetime, queued_grace_seconds: int) -> list[models.Job]:

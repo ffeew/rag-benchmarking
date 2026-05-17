@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, ExternalLink, Scale } from 'lucide-react'
+import { ArrowLeft, Check, ExternalLink, Scale, X } from 'lucide-react'
 
 import { Badge, toneForStatus } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -10,7 +10,7 @@ import { Table, TBody, TD, TH, THead, TR } from '#/components/ui/table'
 import { ErrorState } from '#/components/data/ErrorState'
 import { MetricNumber } from '#/components/data/MetricNumber'
 import { api } from '#/lib/api'
-import { formatDateTime, formatPercent, truncateId } from '#/lib/format'
+import { formatDateTime, formatDuration, formatPercent, truncateId } from '#/lib/format'
 import { isTerminalJobStatus, nextJobInterval } from '#/lib/polling'
 import { qk } from '#/lib/queryKeys'
 import { paths } from '#/lib/routes'
@@ -53,10 +53,9 @@ function EvalDetail() {
   }
 
   const run = evalQuery.data
-  const metricEntries = Object.entries(run.metrics).filter(
-    ([, v]) => typeof v === 'number',
-  ) as Array<[string, number]>
   const isRunning = !isTerminalJobStatus(run.status)
+  const isPartial = run.status === 'failed' && run.results.length > 0
+  const isRecomputed = run.metrics._recomputed === true
 
   type ModeMetrics = Record<string, unknown>
   const modes = Object.entries(run.metrics).filter(
@@ -64,11 +63,20 @@ function EvalDetail() {
       typeof value === 'object' &&
       value !== null &&
       !Array.isArray(value) &&
-      key !== 'ragas_run',
+      key !== 'ragas_run' &&
+      // Bucket dicts for per-variant summaries are the ones that carry
+      // ``case_count`` — anything else is a meta block (ingestion_diagnostics,
+      // pairing_skew, etc.) we don't want to render as a variant card.
+      typeof (value as Record<string, unknown>).case_count === 'number',
   ) as Array<[string, ModeMetrics]>
 
   function numericMetric(modeData: ModeMetrics, key: string): number | null {
     const v = modeData[key]
+    return typeof v === 'number' ? v : null
+  }
+
+  function numericRunMetric(key: string): number | null {
+    const v = (run.metrics as Record<string, unknown> | null | undefined)?.[key]
     return typeof v === 'number' ? v : null
   }
 
@@ -80,13 +88,62 @@ function EvalDetail() {
 
   function formatMs(value: number | null): string {
     if (value === null) return '—'
-    return `${Math.round(value)} ms`
+    return formatDuration(value)
   }
 
   function formatUsd(value: number | null): string {
     if (value === null) return '—'
     return `$${value.toFixed(4)}`
   }
+
+  function passLabel(passed: unknown): {
+    label: string
+    tone: 'ok' | 'bad' | 'neutral'
+    icon: typeof Check | typeof X | null
+  } {
+    if (passed === true) return { label: 'PASS', tone: 'ok', icon: Check }
+    if (passed === false) return { label: 'FAIL', tone: 'bad', icon: X }
+    return { label: '—', tone: 'neutral', icon: null }
+  }
+
+  const passRate = numericRunMetric('pass_rate')
+  const passCount = numericRunMetric('pass_count')
+  const passEligibleCount = numericRunMetric('pass_eligible_count')
+  const avgLatencyMs = numericRunMetric('avg_latency_ms')
+  const totalCostUsd = numericRunMetric('total_cost_usd')
+  // Mean across per-variant answer accuracy / mrr / recall so the headline
+  // KPIs show a single overall number rather than picking an arbitrary variant.
+  const variantAnswerAccuracies = modes
+    .map(([, data]) => numericMetric(data, 'answer_accuracy_rate'))
+    .filter((v): v is number => v !== null)
+  const variantMrrs = modes
+    .map(([, data]) => numericMetric(data, 'avg_mrr'))
+    .filter((v): v is number => v !== null)
+  const variantRecallAt5 = modes
+    .map(([, data]) => numericMetric(data, 'avg_recall_at_5'))
+    .filter((v): v is number => v !== null)
+  function mean(values: number[]): number | null {
+    if (values.length === 0) return null
+    return values.reduce((a, b) => a + b, 0) / values.length
+  }
+  const headlineMetrics: Array<{ label: string; value: string }> = [
+    {
+      label: 'PASS RATE',
+      value:
+        passRate !== null
+          ? `${formatPercent(passRate)}${
+              passCount !== null && passEligibleCount !== null
+                ? ` (${passCount}/${passEligibleCount})`
+                : ''
+            }`
+          : '—',
+    },
+    { label: 'ANSWER ACCURACY', value: formatNumericMetric(mean(variantAnswerAccuracies)) },
+    { label: 'RECALL@5', value: formatNumericMetric(mean(variantRecallAt5)) },
+    { label: 'MRR', value: formatNumericMetric(mean(variantMrrs)) },
+    { label: 'AVG LATENCY', value: formatMs(avgLatencyMs) },
+    { label: 'TOTAL COST', value: formatUsd(totalCostUsd) },
+  ]
 
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-6 grid gap-5">
@@ -108,7 +165,22 @@ function EvalDetail() {
               {truncateId(run.id, 12, 6)}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge tone={toneForStatus(run.status)}>{run.status}</Badge>
+              <Badge tone={isPartial ? toneForStatus('partial') : toneForStatus(run.status)}>
+                {isPartial ? 'partial' : run.status}
+              </Badge>
+              {isPartial && (
+                <span
+                  className="text-[11px] text-[var(--ink-muted)] font-mono"
+                  title="Job was reaped before reaching all cases. Metrics below are recomputed from the cases that did complete."
+                >
+                  {run.results.length} cases completed
+                </span>
+              )}
+              {isRecomputed && !isPartial && (
+                <Badge tone="outline" size="sm" title="Aggregate metrics were recomputed from per-case results">
+                  recomputed
+                </Badge>
+              )}
               <span className="text-[11.5px] text-[var(--ink-muted)] font-mono">
                 variants {run.system_variant}
               </span>
@@ -128,19 +200,13 @@ function EvalDetail() {
         </div>
       </div>
 
-      {metricEntries.length > 0 && (
-        <section className="grid grid-cols-2 gap-px bg-[var(--rule)] border border-[var(--rule)] rounded-[5px] overflow-hidden md:grid-cols-4">
-          {metricEntries.slice(0, 4).map(([key, value]) => (
-            <div key={key} className="bg-[var(--surface)] px-4 py-4">
-              <MetricNumber
-                label={key.replace(/_/g, ' ').toUpperCase()}
-                value={value <= 1 ? formatPercent(value) : value.toFixed(2)}
-                size="md"
-              />
-            </div>
-          ))}
-        </section>
-      )}
+      <section className="grid grid-cols-2 gap-px bg-[var(--rule)] border border-[var(--rule)] rounded-[5px] overflow-hidden md:grid-cols-3 lg:grid-cols-6">
+        {headlineMetrics.map((m) => (
+          <div key={m.label} className="bg-[var(--surface)] px-4 py-4">
+            <MetricNumber label={m.label} value={m.value} size="md" />
+          </div>
+        ))}
+      </section>
 
       {modes.length > 0 && (
         <section className="grid gap-4">
@@ -334,16 +400,24 @@ function EvalDetail() {
               <THead>
                 <tr>
                   <TH>MODE</TH>
+                  <TH>PASS</TH>
                   <TH>ANSWER</TH>
-                  <TH>METRICS</TH>
+                  <TH className="text-right">MRR</TH>
+                  <TH className="text-right">RECALL@5</TH>
+                  <TH className="text-right">CITATION</TH>
+                  <TH className="text-right">LATENCY</TH>
                   <TH>TRACE</TH>
                 </tr>
               </THead>
               <TBody>
                 {run.results.map((r) => {
-                  const metricsList = Object.entries(r.metrics).filter(
-                    ([, v]) => typeof v === 'number',
-                  ) as Array<[string, number]>
+                  const m = r.metrics
+                  const num = (k: string): number | null => {
+                    const v = m[k]
+                    return typeof v === 'number' ? v : null
+                  }
+                  const pass = passLabel(m.passed)
+                  const Icon = pass.icon
                   return (
                     <TR key={r.id}>
                       <TD>
@@ -351,32 +425,32 @@ function EvalDetail() {
                           {r.retrieval_mode.replace('_', ' ')}
                         </Badge>
                       </TD>
-                      <TD className="max-w-[480px]">
+                      <TD>
+                        <Badge tone={pass.tone} size="sm">
+                          {Icon ? <Icon className="h-3 w-3" /> : null}
+                          {pass.label}
+                        </Badge>
+                      </TD>
+                      <TD className="max-w-[420px]">
                         {r.error ? (
-                          <span className="font-mono text-[var(--bad)]">
-                            {r.error}
-                          </span>
+                          <span className="font-mono text-[var(--bad)]">{r.error}</span>
                         ) : (
                           <span className="text-[12px] text-[var(--ink)] leading-relaxed line-clamp-2">
                             {r.answer ?? '–'}
                           </span>
                         )}
                       </TD>
-                      <TD>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10.5px]">
-                          {metricsList.slice(0, 4).map(([k, v]) => (
-                            <span key={k} className="text-[var(--ink-dim)]">
-                              <span className="text-[var(--ink-muted)]">
-                                {k.split('_')[0]}
-                              </span>{' '}
-                              <span className="numeric text-[var(--ink)]">
-                                {v <= 1
-                                  ? `${Math.round(v * 100)}%`
-                                  : v.toFixed(2)}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
+                      <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                        {formatNumericMetric(num('mrr'))}
+                      </TD>
+                      <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                        {formatNumericMetric(num('recall_at_5'))}
+                      </TD>
+                      <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                        {formatNumericMetric(num('citation_validity'))}
+                      </TD>
+                      <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                        {formatMs(num('latency_ms'))}
                       </TD>
                       <TD>
                         {r.trace_id ? (

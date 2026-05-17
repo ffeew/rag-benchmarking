@@ -145,7 +145,29 @@ def citation_to_read(citation: models.Citation, document: models.Document) -> Ci
     )
 
 
+def _is_finalized_metrics(metrics: dict[str, object] | None) -> bool:
+    """A finalized aggregate carries a ``variants_used`` marker the runner adds at
+    the end of ``run_evaluation``. Missing => the row never reached that line
+    (e.g. worker was reaped mid-loop), so the read path should recompute."""
+    if not metrics:
+        return False
+    return "variants_used" in metrics or any(isinstance(v, dict) for v in metrics.values())
+
+
 def eval_run_to_read(eval_run: models.EvalRun) -> EvalRunRead:
+    metrics: dict[str, object] = dict(eval_run.metrics or {})
+    if not _is_finalized_metrics(metrics) and eval_run.results:
+        # Aggregate the persisted per-result rows on the read path so reaped
+        # runs still surface useful numbers in the UI. The recompute is purely
+        # in-memory — the DB row stays untouched here; a backfill script
+        # persists the recomputed aggregate when an operator runs it.
+        from rag_evaluation_worker.runner import aggregate_metrics
+
+        seed = int((eval_run.run_config or {}).get("bootstrap_seed") or 1729)
+        recomputed = aggregate_metrics(list(eval_run.results), seed=seed)
+        if recomputed:
+            recomputed["_recomputed"] = True
+            metrics = recomputed
     return EvalRunRead(
         id=eval_run.id,
         dataset_id=eval_run.dataset_id,
@@ -154,7 +176,7 @@ def eval_run_to_read(eval_run: models.EvalRun) -> EvalRunRead:
         run_config=eval_run.run_config,
         system_variant=eval_run.system_variant,
         model_metadata=eval_run.model_metadata,
-        metrics=eval_run.metrics,
+        metrics=metrics,
         errors=eval_run.errors,
         created_at=eval_run.created_at,
         results=[

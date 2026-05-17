@@ -568,6 +568,7 @@ def _make_eval_run(**overrides: Any) -> models.EvalRun:
         "model_metadata": {},
         "metrics": {},
         "errors": [],
+        "results": [],
         "created_at": datetime.now(UTC),
     }
     defaults.update(overrides)
@@ -673,6 +674,49 @@ def test_fail_linked_eval_run_noop_when_eval_run_missing() -> None:
     )
 
     assert session.get_calls == [("missing-run", {"key_share": True})]
+
+
+def test_fail_linked_eval_run_emits_per_variant_skipped_rows() -> None:
+    """When some variants ran a case but others didn't (the typical reap
+    pattern, since cases are the outer loop), the helper must add one
+    ``JobReaped`` row per missing (case, variant) cell so the UI can show the
+    user which cells were dropped."""
+    case_a = SimpleNamespace(
+        eval_case_id="case-a",
+        variant_name="full_agentic",
+        retrieval_mode="full_agentic",
+    )
+    case_a_single_pass = SimpleNamespace(
+        eval_case_id="case-a",
+        variant_name="single_pass",
+        retrieval_mode="single_pass",
+    )
+    case_b_full_only = SimpleNamespace(
+        eval_case_id="case-b",
+        variant_name="full_agentic",
+        retrieval_mode="full_agentic",
+    )
+    eval_run = _make_eval_run(
+        status="running",
+        errors=[],
+        results=[case_a, case_a_single_pass, case_b_full_only],
+    )
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id=eval_run.id)
+    session = _FakeEvalRunSession(eval_run)
+    now = datetime.now(UTC)
+
+    sweeper._fail_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=now,
+        reason="no heartbeat for 800s",
+    )
+
+    skipped = [e for e in eval_run.errors if e.get("error_class") == "JobReaped" and e.get("case_id")]
+    assert len(skipped) == 1
+    assert skipped[0]["case_id"] == "case-b"
+    assert skipped[0]["variant"] == "single_pass"
+    assert skipped[0]["reaped_at"] == now.isoformat()
 
 
 def test_redispatch_exhausted_eval_job_fails_linked_eval_run(monkeypatch: pytest.MonkeyPatch) -> None:

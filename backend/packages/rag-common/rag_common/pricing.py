@@ -31,6 +31,12 @@ DEFAULT_PRICING: dict[str, ModelPrice] = {
     "cohere/embed-english-v3.0": ModelPrice(embedding_per_mtok=0.10),
     "cohere/rerank-v3.5": ModelPrice(rerank_per_search_unit=0.002),
     "cohere/rerank-english-v3.0": ModelPrice(rerank_per_search_unit=0.002),
+    # Keys below match the exact strings the runtime emits in usage records
+    # (no provider prefix for glm; capitalised path for Qwen; bare alias for
+    # rerank). Source: openrouter.ai pricing page, verified 2026-05-17.
+    "glm-4.7": ModelPrice(input_per_mtok=0.40, output_per_mtok=1.75),
+    "Qwen/Qwen3-Embedding-8B": ModelPrice(embedding_per_mtok=0.01),
+    "rerank-v3.5": ModelPrice(rerank_per_search_unit=0.002),
 }
 
 
