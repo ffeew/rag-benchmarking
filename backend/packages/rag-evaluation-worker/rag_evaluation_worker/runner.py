@@ -45,6 +45,7 @@ from rag_evaluation_worker.metrics import (
     strict_mean_reciprocal_rank,
     strict_recall_at_k,
 )
+from rag_evaluation_worker.judge import TextJudge, build_text_judge
 from rag_evaluation_worker.scoring import (
     answer_declined_to_respond,
     bootstrap_mean_ci,
@@ -324,6 +325,7 @@ def _compute_case_metrics(
     case: models.EvalCase,
     latency_ms: int,
     settings: Settings,
+    judge: TextJudge | None = None,
 ) -> dict[str, Any]:
     expected = _coerce_expected_citations(case.expected_citations or [])
     expected_evidence = coerce_expected_evidence(case.expected_evidence or [])
@@ -343,6 +345,7 @@ def _compute_case_metrics(
         answer=response.answer,
         insufficiency_reason=response.insufficiency_reason,
         raw_spec=case.expected_answer_spec,
+        judge=judge,
     )
     verified = case.verification_status == VerificationStatus.VERIFIED
     answer_gold_eligible = verified and bool(answer_metrics.get("answer_scoreable"))
@@ -1005,6 +1008,10 @@ def run_evaluation(
             )
     specs = _resolve_variants(eval_run.run_config)
     bootstrap_seed = int(eval_run.run_config.get("bootstrap_seed") or 1729)
+    # Build the answer-text judge once per run. ``None`` when Z.AI is
+    # unconfigured or mock mode is on — scoring falls back to substring
+    # matching for those paths (preserved for tests / offline runs).
+    text_judge = build_text_judge(resolved)
     total = max(1, len(cases) * len(specs))
     completed = 0
     errors: list[dict[str, Any]] = []
@@ -1043,6 +1050,7 @@ def run_evaluation(
                         case=case,
                         latency_ms=latency_ms,
                         settings=effective,
+                        judge=text_judge,
                     )
                     metrics["variant_name"] = spec.name
                     metrics["retrieval_mode"] = spec.retrieval_mode

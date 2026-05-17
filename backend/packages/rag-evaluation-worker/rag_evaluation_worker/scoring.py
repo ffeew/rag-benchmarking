@@ -7,6 +7,8 @@ from pydantic import ValidationError
 from rag_common.enums import ExpectedAnswerType
 from rag_common.schemas import ExpectedAnswerSpec, ExpectedEvidenceSpec
 
+from rag_evaluation_worker.judge import TextJudge
+
 
 @dataclass(frozen=True)
 class NumericCandidate:
@@ -49,6 +51,7 @@ def score_answer(
     answer: str,
     insufficiency_reason: str | None,
     raw_spec: object,
+    judge: TextJudge | None = None,
 ) -> dict[str, object]:
     spec = coerce_answer_spec(raw_spec)
     if spec.answer_type is None:
@@ -76,8 +79,11 @@ def score_answer(
             "reason_keyword_hit_rate": keyword_rate,
         }
 
-    value_scores = [_score_expected_value(answer, expected) for expected in spec.expected_values]
-    claim_rate = _required_claim_hit_rate(answer, spec.required_claims)
+    value_scores = [_score_expected_value(answer, expected, judge=judge) for expected in spec.expected_values]
+    claim_verdicts = _required_claim_verdicts(answer, spec.required_claims, judge=judge)
+    claim_rate = (
+        sum(verdict["score"] for verdict in claim_verdicts) / len(claim_verdicts) if claim_verdicts else 1.0
+    )
     score_parts: list[float] = []
     if value_scores:
         value_score_numbers: list[float] = []
@@ -91,7 +97,7 @@ def score_answer(
     if not score_parts:
         return {"answer_scoreable": False, "answer_accuracy": None, "answer_type": spec.answer_type}
     missing = [item["label"] for item in value_scores if item.get("score") == 0.0]
-    return {
+    result: dict[str, object] = {
         "answer_scoreable": True,
         "answer_type": spec.answer_type,
         "answer_accuracy": sum(score_parts) / len(score_parts),
@@ -99,6 +105,12 @@ def score_answer(
         "missing_expected_values": missing,
         "required_claim_hit_rate": claim_rate,
     }
+    if claim_verdicts:
+        # Per-claim verdicts (with rationale + match_type) so an analyst can
+        # see why a specific required_claim scored 0 — substring miss vs the
+        # LLM judge calling the claim absent vs contradicted.
+        result["required_claim_verdicts"] = claim_verdicts
+    return result
 
 
 def strict_evidence_eligible(evidence: Iterable[ExpectedEvidenceSpec]) -> list[ExpectedEvidenceSpec]:
@@ -125,13 +137,22 @@ def bootstrap_mean_ci(values: list[float], *, seed: int, samples: int = 500) -> 
     return [lower, upper]
 
 
-def _score_expected_value(answer: str, expected: object) -> dict[str, object]:
+def _score_expected_value(answer: str, expected: object, *, judge: TextJudge | None = None) -> dict[str, object]:
     label = getattr(expected, "label", "value")
     value_text = getattr(expected, "value_text", None)
     value_numeric = getattr(expected, "value_numeric", None)
     if value_text:
+        if judge is not None:
+            verdict = judge.judge(statement=value_text, answer=answer)
+            return {
+                "label": label,
+                "score": verdict.score,
+                "match_type": "text_llm_judge",
+                "rationale": verdict.rationale,
+                "judge_model": verdict.judge_model,
+            }
         hit = _normalize(value_text) in _normalize(answer)
-        return {"label": label, "score": 1.0 if hit else 0.0, "match_type": "text"}
+        return {"label": label, "score": 1.0 if hit else 0.0, "match_type": "text_substring"}
     if value_numeric is None:
         return {"label": label, "score": 0.0, "match_type": "missing_gold"}
 
@@ -196,12 +217,43 @@ def _numeric_tolerance(expected: float, tolerance_abs: float | None, tolerance_p
     return max(tolerances)
 
 
-def _required_claim_hit_rate(answer: str, claims: list[str]) -> float:
+def _required_claim_verdicts(
+    answer: str,
+    claims: list[str],
+    *,
+    judge: TextJudge | None = None,
+) -> list[dict[str, object]]:
+    """Score each required claim, preserving per-claim provenance.
+
+    With a judge supplied, each claim is scored by the LLM judge and the
+    rationale is captured for audit. Without a judge, falls back to the
+    legacy normalized-substring match.
+    """
     if not claims:
-        return 1.0
-    normalized = _normalize(answer)
-    hits = sum(1 for claim in claims if _normalize(claim) in normalized)
-    return hits / len(claims)
+        return []
+    verdicts: list[dict[str, object]] = []
+    for claim in claims:
+        if judge is not None:
+            verdict = judge.judge(statement=claim, answer=answer)
+            verdicts.append(
+                {
+                    "claim": claim,
+                    "score": verdict.score,
+                    "match_type": "text_llm_judge",
+                    "rationale": verdict.rationale,
+                    "judge_model": verdict.judge_model,
+                }
+            )
+            continue
+        hit = _normalize(claim) in _normalize(answer)
+        verdicts.append(
+            {
+                "claim": claim,
+                "score": 1.0 if hit else 0.0,
+                "match_type": "text_substring",
+            }
+        )
+    return verdicts
 
 
 def _keyword_hit_rate(answer: str, insufficiency_reason: str | None, keywords: list[str]) -> float:

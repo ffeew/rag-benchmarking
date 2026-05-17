@@ -1,6 +1,26 @@
 from rag_common.db import models
+from rag_evaluation_worker.judge import JudgeVerdict
 from rag_evaluation_worker.runner import aggregate_metrics
 from rag_evaluation_worker.scoring import answer_declined_to_respond, bootstrap_mean_ci, score_answer
+
+
+class _StubJudge:
+    """Deterministic stand-in for ``TextJudge`` so scoring tests don't touch an LLM.
+
+    Returns the verdict mapped from ``statement`` if present, otherwise a 0.0
+    verdict so a missing mapping looks like a "claim absent" call rather than
+    silently passing.
+    """
+
+    def __init__(self, verdicts: dict[str, JudgeVerdict]) -> None:
+        self._verdicts = verdicts
+        self.calls: list[tuple[str, str]] = []
+
+    def judge(self, *, statement: str, answer: str) -> JudgeVerdict:
+        self.calls.append((statement, answer))
+        return self._verdicts.get(
+            statement, JudgeVerdict(score=0.0, rationale="unmapped", judge_model="stub")
+        )
 
 
 def test_score_answer_numeric_tolerance() -> None:
@@ -146,6 +166,102 @@ def test_aggregate_metrics_emits_pass_rate_top_level_and_per_variant() -> None:
     assert aggregate["full_agentic"]["pass_rate"] == 0.5
     assert aggregate["full_agentic"]["pass_count"] == 1
     assert aggregate["llm_only"]["pass_rate"] == 1.0
+
+
+def test_score_answer_text_value_uses_judge_when_provided() -> None:
+    # The judge approves a paraphrase that the legacy substring path would have
+    # missed — proves the judge is wired into the text-value scoring path and
+    # the verdict's match_type / rationale surface in the result.
+    judge = _StubJudge(
+        {"Revenue grew year over year.": JudgeVerdict(score=1.0, rationale="paraphrase ok", judge_model="stub")}
+    )
+    metrics = score_answer(
+        answer="Annual revenue rose meaningfully YoY.",
+        insufficiency_reason=None,
+        raw_spec={
+            "answer_type": "text",
+            "expected_values": [{"label": "yoy_growth", "value_text": "Revenue grew year over year."}],
+        },
+        judge=judge,
+    )
+    assert metrics["answer_accuracy"] == 1.0
+    value_scores = metrics["value_scores"]
+    assert value_scores[0]["match_type"] == "text_llm_judge"
+    assert value_scores[0]["rationale"] == "paraphrase ok"
+    assert value_scores[0]["judge_model"] == "stub"
+    assert judge.calls == [("Revenue grew year over year.", "Annual revenue rose meaningfully YoY.")]
+
+
+def test_score_answer_text_value_falls_back_to_substring_without_judge() -> None:
+    # Existing behavior: with no judge, ``value_text`` keeps the lowercased
+    # substring containment so offline scoring (tests, dry runs) stays
+    # deterministic.
+    metrics = score_answer(
+        answer="Revenue grew year over year.",
+        insufficiency_reason=None,
+        raw_spec={
+            "answer_type": "text",
+            "expected_values": [{"label": "yoy", "value_text": "Revenue grew year over year."}],
+        },
+    )
+    assert metrics["value_scores"][0]["match_type"] == "text_substring"
+    assert metrics["answer_accuracy"] == 1.0
+
+
+def test_score_answer_required_claims_use_judge_per_claim() -> None:
+    judge = _StubJudge(
+        {
+            "Apple's iPhone is the largest product line.": JudgeVerdict(
+                score=1.0, rationale="paraphrased", judge_model="stub"
+            ),
+            "Services revenue exceeded $100 billion.": JudgeVerdict(
+                score=0.0, rationale="services figure not stated", judge_model="stub"
+            ),
+        }
+    )
+    metrics = score_answer(
+        answer="iPhone dominates Apple's product lineup; Services is reported but no dollar figure given.",
+        insufficiency_reason=None,
+        raw_spec={
+            "answer_type": "text",
+            "expected_values": [],
+            "required_claims": [
+                "Apple's iPhone is the largest product line.",
+                "Services revenue exceeded $100 billion.",
+            ],
+        },
+        judge=judge,
+    )
+    assert metrics["required_claim_hit_rate"] == 0.5
+    verdicts = metrics["required_claim_verdicts"]
+    assert {v["claim"] for v in verdicts} == {
+        "Apple's iPhone is the largest product line.",
+        "Services revenue exceeded $100 billion.",
+    }
+    for verdict in verdicts:
+        assert verdict["match_type"] == "text_llm_judge"
+        assert "rationale" in verdict
+
+
+def test_score_answer_numeric_path_skips_judge_entirely() -> None:
+    # Numeric scoring is regex + tolerance — it must not consult the judge
+    # even when one is supplied, because adding LLM latency for an already
+    # robust path would be wasted cost.
+    judge = _StubJudge({})
+    metrics = score_answer(
+        answer="Revenue was $94.1 billion.",
+        insufficiency_reason=None,
+        raw_spec={
+            "answer_type": "numeric",
+            "expected_values": [
+                {"label": "revenue", "value_numeric": 94.0, "unit": "billion", "tolerance_abs": 0.2}
+            ],
+        },
+        judge=judge,
+    )
+    assert metrics["answer_accuracy"] == 1.0
+    assert metrics["value_scores"][0]["match_type"] == "numeric"
+    assert judge.calls == []
 
 
 def test_aggregate_metrics_top_level_includes_avg_latency_ms() -> None:
