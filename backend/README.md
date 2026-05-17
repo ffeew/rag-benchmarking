@@ -37,7 +37,10 @@ The `migrate` service in `docker-compose.yml` runs `alembic upgrade head` on sta
 
 ## Tests, Lint, Type Check
 
+The test suite imports worker packages that are intentionally omitted from the root project's prod deps (to keep the API image lean). Run `uv sync --all-packages` once after a fresh checkout so every workspace member is installed into the venv.
+
 ```bash
+uv sync --all-packages                          # one-time: pull in worker packages for tests
 uv run --directory . pytest                     # full suite (starts pgvector testcontainer once)
 uv run --directory . pytest tests/test_<name>.py -v
 uv run --directory . ruff check .
