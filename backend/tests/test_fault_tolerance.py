@@ -555,3 +555,149 @@ def test_commit_job_progress_skips_cancelled_jobs() -> None:
     assert "completed_with_errors" in job_state.TERMINAL_STATUSES
     assert "running" not in job_state.TERMINAL_STATUSES
     assert "queued" not in job_state.TERMINAL_STATUSES
+
+
+def _make_eval_run(**overrides: Any) -> models.EvalRun:
+    defaults: dict[str, Any] = {
+        "id": "run-1",
+        "dataset_id": "ds-1",
+        "job_id": "job-1",
+        "status": "running",
+        "run_config": {},
+        "system_variant": "full_agentic",
+        "model_metadata": {},
+        "metrics": {},
+        "errors": [],
+        "created_at": datetime.now(UTC),
+    }
+    defaults.update(overrides)
+    return cast("models.EvalRun", SimpleNamespace(**defaults))
+
+
+class _FakeEvalRunSession:
+    """Minimal session stub that returns a single ``EvalRun`` by id from ``.get``.
+
+    The real ``_fail_linked_eval_run`` calls ``session.get(EvalRun, id, with_for_update=...)``
+    and mutates the returned row in place. The stub just resolves the lookup;
+    no transaction or lock semantics are needed for the unit tests below.
+    """
+
+    def __init__(self, eval_run: models.EvalRun | None) -> None:
+        self.eval_run = eval_run
+        self.get_calls: list[tuple[str, Any]] = []
+
+    def get(
+        self,
+        model: object,
+        identifier: str,
+        *,
+        with_for_update: bool | dict[str, Any] = False,
+    ) -> models.EvalRun | None:
+        self.get_calls.append((identifier, with_for_update))
+        if self.eval_run is None or self.eval_run.id != identifier:
+            return None
+        return self.eval_run
+
+
+def test_fail_linked_eval_run_marks_running_eval_failed() -> None:
+    """The reap path must flip a linked, still-running EvalRun to FAILED with
+    a structured error entry — otherwise the row stays at ``running`` forever
+    and the UI never moves off the "streaming" placeholder."""
+    eval_run = _make_eval_run(status="running", errors=[])
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id=eval_run.id)
+    session = _FakeEvalRunSession(eval_run)
+    now = datetime.now(UTC)
+
+    sweeper._fail_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=now,
+        reason="no heartbeat for 639s",
+    )
+
+    assert eval_run.status == "failed"
+    assert len(eval_run.errors) == 1
+    entry = eval_run.errors[0]
+    assert entry["error_class"] == "JobReaped"
+    assert entry["error"] == "no heartbeat for 639s"
+    assert entry["reaped_at"] == now.isoformat()
+
+
+def test_fail_linked_eval_run_preserves_terminal_eval_run() -> None:
+    """If the worker did manage to finish (eval_run already terminal), the
+    sweeper must not stomp the real outcome with a synthetic failure."""
+    eval_run = _make_eval_run(status="completed_with_errors", errors=[{"case_id": "c1"}])
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id=eval_run.id)
+    session = _FakeEvalRunSession(eval_run)
+
+    sweeper._fail_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=datetime.now(UTC),
+        reason="no heartbeat for 700s",
+    )
+
+    assert eval_run.status == "completed_with_errors"
+    assert eval_run.errors == [{"case_id": "c1"}]
+
+
+def test_fail_linked_eval_run_noop_without_link() -> None:
+    """Ingestion jobs (or any Job without ``eval_run_id``) must skip the
+    lookup so we don't issue a pointless SELECT and so the helper is safe to
+    call unconditionally from the reap/exhaust paths."""
+    job = _make_job(eval_run_id=None)
+    session = _FakeEvalRunSession(eval_run=None)
+
+    sweeper._fail_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=datetime.now(UTC),
+        reason="no heartbeat for 700s",
+    )
+
+    assert session.get_calls == []
+
+
+def test_fail_linked_eval_run_noop_when_eval_run_missing() -> None:
+    """If the EvalRun was already deleted (FK is ``ON DELETE SET NULL``), the
+    helper returns cleanly rather than raising — the Job is still durably
+    marked FAILED by the caller."""
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id="missing-run")
+    session = _FakeEvalRunSession(eval_run=None)
+
+    sweeper._fail_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=datetime.now(UTC),
+        reason="no heartbeat for 700s",
+    )
+
+    assert session.get_calls == [("missing-run", {"key_share": True})]
+
+
+def test_redispatch_exhausted_eval_job_fails_linked_eval_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When an eval job exhausts its retry budget, the linked EvalRun must be
+    flipped to FAILED in the same sweep transaction. Without this the row
+    sits at QUEUED indefinitely after the Job becomes terminal."""
+    eval_run = _make_eval_run(status="queued", errors=[])
+    exhausted_job = _make_job(
+        job_type="evaluation",
+        document_id=None,
+        eval_run_id=eval_run.id,
+        retry_count=sweeper.MAX_RETRIES,
+    )
+
+    session = _FakeEvalRunSession(eval_run)
+    monkeypatch.setattr(
+        sweeper,
+        "_collect_redispatch_candidates",
+        lambda _session, _now, _grace: [exhausted_job],
+    )
+
+    now = datetime.now(UTC)
+    redispatched, exhausted = sweeper._redispatch_queued(cast("Session", session), now, 0)
+
+    assert (redispatched, exhausted) == (0, 1)
+    assert exhausted_job.status == "failed"
+    assert eval_run.status == "failed"
+    assert eval_run.errors[0]["error_class"] == "JobReaped"

@@ -18,7 +18,7 @@ from typing import TypedDict
 import structlog
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
-from rag_common.enums import JobStatus
+from rag_common.enums import JOB_TERMINAL_STATUSES, JobStatus
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -90,6 +90,37 @@ def _revoke_existing_task(job: models.Job) -> None:
         )
 
 
+def _fail_linked_eval_run(session: Session, job: models.Job, *, now: datetime, reason: str) -> None:
+    """Sync an evaluation Job's terminal failure onto its linked EvalRun.
+
+    The runner's main session may have died holding uncommitted ``EvalRun``
+    writes, leaving the row at its bootstrap ``queued`` value even though the
+    Job has been ruled dead by the sweeper. Without this reconciliation the
+    UI keeps polling a row that will never advance.
+
+    Skips the write if the EvalRun is already terminal (e.g. the worker
+    actually finished after the heartbeat lapse) so a real completion is not
+    clobbered.
+    """
+    if not job.eval_run_id:
+        return
+    eval_run = session.get(models.EvalRun, job.eval_run_id, with_for_update={"key_share": True})
+    if eval_run is None:
+        return
+    if eval_run.status in JOB_TERMINAL_STATUSES:
+        return
+    eval_run.status = JobStatus.FAILED
+    eval_run.errors = list(eval_run.errors or []) + [
+        {
+            "case_id": None,
+            "variant": None,
+            "error_class": "JobReaped",
+            "error": reason,
+            "reaped_at": now.isoformat(),
+        }
+    ]
+
+
 def _collect_redispatch_candidates(session: Session, now: datetime, queued_grace_seconds: int) -> list[models.Job]:
     """Return queued rows that the sweeper should re-handle, holding row
     locks so a concurrent sweep cannot pick the same rows. The caller is
@@ -125,6 +156,7 @@ def _redispatch_queued(session: Session, now: datetime, queued_grace_seconds: in
             job.current_step = "retry budget exhausted"
             job.completed_at = now
             job.last_heartbeat_at = now
+            _fail_linked_eval_run(session, job, now=now, reason=job.error)
             exhausted += 1
             logger.warning(
                 "job_retry_budget_exhausted",
@@ -174,6 +206,7 @@ def _reap_silent_runners(session: Session, now: datetime, heartbeat_seconds: int
         job.progress = 100
         job.current_step = "no heartbeat"
         job.completed_at = now
+        _fail_linked_eval_run(session, job, now=now, reason=job.error)
         reaped += 1
         logger.warning(
             "job_running_reaped",

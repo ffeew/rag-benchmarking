@@ -1,4 +1,10 @@
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'skipped', 'cancelled'])
+const TERMINAL_STATUSES = new Set([
+  'completed',
+  'completed_with_errors',
+  'failed',
+  'skipped',
+  'cancelled',
+])
 
 export function isTerminalJobStatus(status?: string | null): boolean {
   return status ? TERMINAL_STATUSES.has(status) : false

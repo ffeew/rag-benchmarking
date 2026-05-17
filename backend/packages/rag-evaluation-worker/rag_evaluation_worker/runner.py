@@ -680,8 +680,15 @@ def _ragas_sample(case: models.EvalCase, response_answer: str, contexts: list[st
 def _attach_ragas_scores(
     pending: list[tuple[models.EvalResult, dict[str, Any]]],
     settings: Settings,
+    *,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
-    """Compute RAGAS faithfulness/answer_relevancy/context_* and attach to each result."""
+    """Compute RAGAS faithfulness/answer_relevancy/context_* and attach to each result.
+
+    Emits a heartbeat per pending entry once its metric set is scored so the
+    sweeper's ``RUNNING_HEARTBEAT_SECONDS`` window cannot expire during the
+    blocking LLM calls. Progress walks the 92→99 band reserved for ragas.
+    """
     if not pending:
         return {}
     if not judge_available(settings):
@@ -742,7 +749,8 @@ def _attach_ragas_scores(
     if has_reference:
         metrics_config.append((RagasMetric.CONTEXT_RECALL, ContextRecall(llm=llm)))
 
-    for entry, sample in pending:
+    total_pending = len(pending)
+    for idx, (entry, sample) in enumerate(pending):
         scores: dict[str, float] = {}
         for key, metric in metrics_config:
             try:
@@ -786,8 +794,18 @@ def _attach_ragas_scores(
         else:
             merged["judge_diagnostics"] = {"ragas_error": "no metric scored"}
         entry.metrics = merged
+        # Heartbeat per case so a long ragas phase cannot exceed the sweeper's
+        # heartbeat grace. 92 is set by the caller before this loop runs; we
+        # walk the 92→99 band so the final ``progress=100`` transition still
+        # reads as forward motion.
+        commit_job_progress(
+            job_id,
+            status=JobStatus.RUNNING,
+            progress=92 + int(((idx + 1) / total_pending) * 7),
+            current_step=f"ragas {idx + 1}/{total_pending}",
+        )
 
-    return {"case_count": len(pending), "metrics": [key for key, _ in metrics_config]}
+    return {"case_count": total_pending, "metrics": [key for key, _ in metrics_config]}
 
 
 def run_evaluation(
@@ -804,7 +822,12 @@ def run_evaluation(
         raise ValueError(f"Evaluation run {eval_run_id} was not found")
     commit_job_progress(job_id, status=JobStatus.RUNNING, progress=5, current_step="loading eval cases")
     eval_run.status = JobStatus.RUNNING
-    session.flush()
+    # Commit the RUNNING transition immediately. Without this the row sits at
+    # its bootstrap QUEUED value for the entire pipeline, and a worker crash
+    # (Celery time limit, OOM, container restart) before the trailing commit
+    # rolls every uncommitted EvalResult and the status change back, leaving
+    # the eval indistinguishable from "never picked up" in the UI.
+    session.commit()
 
     case_ids = eval_run.run_config.get("case_ids") or []
     if case_ids:
@@ -937,6 +960,12 @@ def run_evaluation(
                     contexts = [evidence.snippet for evidence in response.evidence if evidence.snippet]
                     pending_ragas.append((result_row, _ragas_sample(case, response.answer, contexts)))
             completed += 1
+            # Persist each completed case (success row or error row inside the
+            # ``except`` branch's savepoint) before moving on. Worker death
+            # mid-run then loses at most one in-flight case rather than the
+            # whole eval, and the API can stream partial results while the
+            # rest of the loop is still running.
+            session.commit()
             commit_job_progress(
                 job_id,
                 status=JobStatus.RUNNING,
@@ -947,7 +976,7 @@ def run_evaluation(
     pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
 
     commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="computing ragas metrics")
-    ragas_summary = _attach_ragas_scores(pending_ragas, resolved)
+    ragas_summary = _attach_ragas_scores(pending_ragas, resolved, job_id=job_id)
     session.flush()
 
     results = list(session.scalars(select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)))
@@ -977,5 +1006,9 @@ def run_evaluation(
         eval_run.metrics["ragas_run"] = ragas_summary
     eval_run.status = JobStatus.COMPLETED if not errors else JobStatus.COMPLETED_WITH_ERRORS
     commit_job_progress(job_id, status=eval_run.status, progress=100, current_step="completed")
-    session.flush()
+    # Make the terminal EvalRun state durable here rather than relying on the
+    # task wrapper's trailing commit. If the worker dies between this point
+    # and ``tasks.py`` finishing, the row would otherwise revert to the last
+    # committed value and the UI would never observe the final metrics.
+    session.commit()
     return eval_run
