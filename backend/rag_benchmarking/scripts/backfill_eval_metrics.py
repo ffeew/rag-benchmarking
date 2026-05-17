@@ -23,7 +23,7 @@ from typing import Iterable
 
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker
-from rag_evaluation_worker.runner import aggregate_metrics
+from rag_common.eval_aggregation import aggregate_metrics
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 

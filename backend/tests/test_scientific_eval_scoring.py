@@ -1,7 +1,7 @@
 from rag_common.db import models
+from rag_common.eval_aggregation import aggregate_metrics, bootstrap_mean_ci
 from rag_evaluation_worker.judge import JudgeVerdict
-from rag_evaluation_worker.runner import aggregate_metrics
-from rag_evaluation_worker.scoring import answer_declined_to_respond, bootstrap_mean_ci, score_answer
+from rag_evaluation_worker.scoring import answer_declined_to_respond, score_answer
 
 
 class _StubJudge:

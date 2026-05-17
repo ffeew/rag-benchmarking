@@ -1,5 +1,6 @@
 from rag_common.db import models
 from rag_common.enums import IngestionRunStatus, JobStatus, JobType
+from rag_common.eval_aggregation import aggregate_metrics
 from rag_common.schemas import (
     CitationRead,
     DatasetRead,
@@ -159,10 +160,8 @@ def eval_run_to_read(eval_run: models.EvalRun) -> EvalRunRead:
     if not _is_finalized_metrics(metrics) and eval_run.results:
         # Aggregate the persisted per-result rows on the read path so reaped
         # runs still surface useful numbers in the UI. The recompute is purely
-        # in-memory — the DB row stays untouched here; a backfill script
+        # in-memory — the DB row stays untouched here; the backfill script
         # persists the recomputed aggregate when an operator runs it.
-        from rag_evaluation_worker.runner import aggregate_metrics
-
         seed = int((eval_run.run_config or {}).get("bootstrap_seed") or 1729)
         recomputed = aggregate_metrics(list(eval_run.results), seed=seed)
         if recomputed:

@@ -17,6 +17,7 @@ from rag_common.enums import (
     RagasMetric,
     VerificationStatus,
 )
+from rag_common.eval_aggregation import aggregate_metrics
 from rag_common.eval_variants import apply_overrides
 from rag_common.job_state import commit_job_progress
 from rag_common.pricing import PricingResolver, load_pricing_overrides, merge_pricing
@@ -48,7 +49,6 @@ from rag_evaluation_worker.metrics import (
 from rag_evaluation_worker.judge import TextJudge, build_text_judge
 from rag_evaluation_worker.scoring import (
     answer_declined_to_respond,
-    bootstrap_mean_ci,
     coerce_expected_evidence,
     score_answer,
     strict_evidence_eligible,
@@ -466,250 +466,6 @@ def _detect_pairing_skew(case_ids_per_variant: dict[str, set[str]], *, expected_
     }
 
 
-def aggregate_metrics(results: list[models.EvalResult], *, seed: int = 1729) -> dict[str, Any]:
-    by_mode: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    by_mode_results: dict[str, list[models.EvalResult]] = defaultdict(list)
-    for result in results:
-        # Bucket on variant_name when present (post-0005), fall back to retrieval_mode
-        # for legacy rows so historical eval runs still aggregate.
-        bucket = result.variant_name or result.retrieval_mode
-        by_mode[bucket].append(result.metrics or {})
-        by_mode_results[bucket].append(result)
-    aggregate: dict[str, Any] = {}
-    grand_total_cost = 0.0
-    for mode, metrics in by_mode.items():
-        if not metrics:
-            continue
-        per_mode = _summary_for_metrics(metrics, seed=seed)
-        latency_values = [
-            metric["latency_ms"] for metric in metrics if isinstance(metric.get("latency_ms"), (int, float))
-        ]
-        if latency_values:
-            per_mode["avg_latency_ms"] = sum(latency_values) / len(latency_values)
-        cost_values = [
-            float(sum(result.cost_estimate.values()))
-            for result in by_mode_results[mode]
-            if isinstance(result.cost_estimate, dict)
-        ]
-        if cost_values:
-            per_mode["total_cost_usd"] = sum(cost_values)
-            per_mode["cost_per_case_usd"] = sum(cost_values) / max(len(cost_values), 1)
-            grand_total_cost += sum(cost_values)
-        token_values = [
-            int(_extract_total_tokens(result.usage))
-            for result in by_mode_results[mode]
-            if isinstance(result.usage, dict)
-        ]
-        if token_values:
-            per_mode["total_tokens"] = sum(token_values)
-        judge_scores = _judge_score_summary(metrics)
-        if judge_scores:
-            per_mode["judge_diagnostics"] = judge_scores
-        per_mode["by_category"] = _grouped_summaries(metrics, key="category", seed=seed)
-        per_mode["by_difficulty"] = _grouped_summaries(metrics, key="difficulty", seed=seed)
-        per_mode["by_tag"] = _tagged_summaries(metrics, seed=seed)
-        per_mode["representative_failures"] = _representative_failures(metrics)
-        # Surface the underlying pipeline literal and the overrides that produced
-        # this bucket so downstream tooling (analyze_ablation, dashboards) can
-        # group named variants by their lineage.
-        sample_row = by_mode_results[mode][0]
-        per_mode["retrieval_mode"] = sample_row.retrieval_mode
-        sample_metric = metrics[0] if metrics else {}
-        overrides_applied = sample_metric.get("overrides_applied")
-        if isinstance(overrides_applied, dict):
-            per_mode["overrides_applied"] = overrides_applied
-        aggregate[mode] = per_mode
-    if grand_total_cost > 0.0:
-        aggregate["total_cost_usd"] = grand_total_cost
-    # Top-level pass/latency rollups for the UI's run-wide KPI tiles. These
-    # weight every eligible case equally regardless of variant, which is the
-    # right denominator for "did this run pass overall".
-    all_metrics: list[dict[str, Any]] = []
-    for bucket in by_mode.values():
-        all_metrics.extend(bucket)
-    all_pass_values = [
-        1.0 if metric.get("passed") is True else 0.0
-        for metric in all_metrics
-        if metric.get("answer_gold_eligible") is True and isinstance(metric.get("passed"), bool)
-    ]
-    if all_pass_values:
-        aggregate["pass_rate"] = sum(all_pass_values) / len(all_pass_values)
-        aggregate["pass_count"] = int(sum(all_pass_values))
-        aggregate["pass_eligible_count"] = len(all_pass_values)
-    all_latencies = [
-        metric["latency_ms"] for metric in all_metrics if isinstance(metric.get("latency_ms"), (int, float))
-    ]
-    if all_latencies:
-        aggregate["avg_latency_ms"] = sum(all_latencies) / len(all_latencies)
-    return aggregate
-
-
-def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[str, Any]:
-    answer_values = _eligible_values(metrics, key="answer_accuracy", eligible_key="answer_gold_eligible")
-    evidence_recall_values = _eligible_values(
-        metrics, key="evidence_recall_at_10", eligible_key="evidence_gold_eligible"
-    )
-    citation_gold_recall_values = _eligible_values(
-        metrics, key="citation_gold_recall", eligible_key="evidence_gold_eligible"
-    )
-    # ``passed`` is a tri-valued field (True/False/None for non-eligible); we
-    # convert eligible bools to floats so the existing CI/mean helpers work.
-    pass_values = [
-        1.0 if metric.get("passed") is True else 0.0
-        for metric in metrics
-        if metric.get("answer_gold_eligible") is True and isinstance(metric.get("passed"), bool)
-    ]
-    pass_count = sum(1 for v in pass_values if v == 1.0)
-    summary: dict[str, Any] = {
-        "case_count": len(metrics),
-        "diagnostic_case_count": len(metrics),
-        "scientific_case_count": sum(1 for metric in metrics if metric.get("gold_eligible") is True),
-        "answer_scientific_case_count": len(answer_values),
-        "evidence_scientific_case_count": len(evidence_recall_values),
-        "draft_case_count": sum(
-            1 for metric in metrics if metric.get("verification_status") != VerificationStatus.VERIFIED
-        ),
-        "answer_accuracy_rate": _mean_list(answer_values),
-        "answer_accuracy_ci_95": bootstrap_mean_ci(answer_values, seed=seed),
-        "pass_rate": _mean_list(pass_values),
-        "pass_count": pass_count,
-        "pass_eligible_count": len(pass_values),
-        "avg_evidence_recall_at_10": _mean_list(evidence_recall_values),
-        "evidence_recall_at_10_ci_95": bootstrap_mean_ci(evidence_recall_values, seed=seed + 1),
-        "citation_gold_recall_rate": _mean_list(citation_gold_recall_values),
-        "answer_present_rate": _mean_metric(metrics, "answer_present"),
-        "expected_contains_rate": _mean_metric(metrics, "expected_contains"),
-        "citation_page_hit_rate": _mean_metric(metrics, "citation_page_hit"),
-        "insufficient_rate": _mean_metric(metrics, "insufficient"),
-        "avg_recall_at_5": _mean_metric(metrics, "recall_at_5"),
-        "avg_recall_at_10": _mean_metric(metrics, "recall_at_10"),
-        "avg_mrr": _mean_metric(metrics, "mrr"),
-        "avg_page_evidence_f1": _mean_metric(metrics, "page_evidence_f1"),
-        "avg_chunk_evidence_f1": _mean_metric(metrics, "chunk_evidence_f1"),
-        "avg_evidence_recall_at_5": _mean_metric(metrics, "evidence_recall_at_5"),
-        "avg_evidence_mrr": _mean_metric(metrics, "evidence_mrr"),
-        "avg_evidence_page_f1": _mean_metric(metrics, "evidence_page_f1"),
-        "avg_evidence_chunk_f1": _mean_metric(metrics, "evidence_chunk_f1"),
-        "metadata_filter_correctness_rate": _mean_metric(metrics, "metadata_filter_correctness"),
-        "citation_reference_validity_rate": _mean_metric(metrics, "citation_reference_validity"),
-        "citation_validity_rate": _mean_metric(metrics, "citation_validity"),
-        "claim_citation_coverage_rate": _mean_metric(metrics, "claim_citation_coverage"),
-        "citation_coverage_rate": _mean_metric(metrics, "citation_coverage"),
-        "citation_gold_precision_rate": _mean_metric(metrics, "citation_gold_precision"),
-    }
-    parser_page_values = _numeric_values(metrics, "parser_page_text_hit_rate")
-    chunk_values = _numeric_values(metrics, "chunk_evidence_hit_rate")
-    table_values = _numeric_values(metrics, "table_chunk_preservation_rate")
-    if parser_page_values:
-        summary["parser_page_text_hit_rate"] = _mean(parser_page_values)
-    if chunk_values:
-        summary["chunk_evidence_hit_rate"] = _mean(chunk_values)
-    if table_values:
-        summary["table_chunk_preservation_rate"] = _mean(table_values)
-    return summary
-
-
-def _eligible_values(metrics: list[dict[str, Any]], *, key: str, eligible_key: str) -> list[float]:
-    return [
-        float(metric[key])
-        for metric in metrics
-        if metric.get(eligible_key) is True and isinstance(metric.get(key), (int, float))
-    ]
-
-
-def _numeric_values(metrics: list[dict[str, Any]], key: str) -> list[float]:
-    return [float(metric[key]) for metric in metrics if isinstance(metric.get(key), (int, float))]
-
-
-def _mean_metric(metrics: list[dict[str, Any]], key: str) -> float:
-    return _mean(_numeric_values(metrics, key))
-
-
-def _mean_list(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return _mean(values)
-
-
-def _grouped_summaries(metrics: list[dict[str, Any]], *, key: str, seed: int) -> dict[str, Any]:
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for metric in metrics:
-        value = metric.get(key)
-        grouped[str(value or "uncategorized")].append(metric)
-    return {group: _summary_for_metrics(items, seed=seed) for group, items in grouped.items()}
-
-
-def _tagged_summaries(metrics: list[dict[str, Any]], *, seed: int) -> dict[str, Any]:
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for metric in metrics:
-        tags = metric.get("tags")
-        if not isinstance(tags, list) or not tags:
-            grouped["untagged"].append(metric)
-            continue
-        for tag in tags:
-            grouped[str(tag)].append(metric)
-    return {tag: _summary_for_metrics(items, seed=seed) for tag, items in grouped.items()}
-
-
-def _judge_score_summary(metrics: list[dict[str, Any]]) -> dict[str, Any]:
-    scores: dict[str, list[float]] = defaultdict(list)
-    for metric in metrics:
-        diagnostics = metric.get("judge_diagnostics")
-        ragas = diagnostics.get("ragas") if isinstance(diagnostics, dict) else metric.get("ragas")
-        if not isinstance(ragas, dict):
-            continue
-        for key, value in ragas.items():
-            if isinstance(value, (int, float)) and not math.isnan(float(value)):
-                scores[key].append(float(value))
-    return {"ragas": {key: _mean(values) for key, values in scores.items()}} if scores else {}
-
-
-def _representative_failures(metrics: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
-    failures: list[dict[str, Any]] = []
-    for metric in metrics:
-        answer_failed = (
-            metric.get("answer_gold_eligible") is True and _numeric_or_one(metric.get("answer_accuracy")) < 1.0
-        )
-        evidence_failed = (
-            metric.get("evidence_gold_eligible") is True and _numeric_or_one(metric.get("evidence_recall_at_10")) < 1.0
-        )
-        if not answer_failed and not evidence_failed:
-            continue
-        failures.append(
-            {
-                "eval_case_id": metric.get("eval_case_id"),
-                "case_key": metric.get("case_key"),
-                "category": metric.get("category"),
-                "answer_accuracy": metric.get("answer_accuracy"),
-                "evidence_recall_at_10": metric.get("evidence_recall_at_10"),
-            }
-        )
-        if len(failures) >= limit:
-            break
-    return failures
-
-
-def _numeric_or_one(value: Any) -> float:
-    return float(value) if isinstance(value, (int, float)) else 1.0
-
-
-def _mean(values: Any) -> float:
-    collected = [float(value) for value in values]
-    if not collected:
-        return 0.0
-    return sum(collected) / len(collected)
-
-
-def _extract_total_tokens(usage: dict[str, Any] | None) -> int:
-    if not isinstance(usage, dict):
-        return 0
-    total = 0
-    for role_data in usage.values():
-        if isinstance(role_data, dict):
-            total += int(role_data.get("total_tokens", 0) or 0)
-    return total
-
-
 def _case_has_scientific_gold(case: models.EvalCase) -> bool:
     if case.verification_status != VerificationStatus.VERIFIED:
         return False
@@ -738,7 +494,7 @@ def _ingestion_diagnostics(session: Session, dataset_id: str) -> dict[str, Any]:
         if isinstance(run.timings, dict) and isinstance(run.timings.get("total_seconds"), (int, float))
     ]
     if total_seconds:
-        diagnostics["avg_ingestion_time_seconds"] = _mean(total_seconds)
+        diagnostics["avg_ingestion_time_seconds"] = sum(total_seconds) / len(total_seconds)
     if pages:
         fallback_pages = [page for page in pages if page.parser != ParserType.MISTRAL_OCR]
         flagged_pages = [
@@ -781,7 +537,7 @@ def _attach_ragas_scores(
         return {"skipped": "judge_unavailable"}
 
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
         from ragas.embeddings import OpenAIEmbeddings as RagasOpenAIEmbeddings
         from ragas.llms import llm_factory
         from ragas.metrics.collections import (
@@ -798,7 +554,12 @@ def _attach_ragas_scores(
         return {"skipped": "no_api_key"}
     zai_api_key = settings.zai_api_key.get_secret_value()
 
-    llm_client = OpenAI(base_url=settings.zai_base_url, api_key=zai_api_key)
+    # RAGAS' ``metric.score()`` is the sync entrypoint but internally drives
+    # ``agenerate()`` on the wrapped LLM, so the underlying OpenAI client must
+    # be ``AsyncOpenAI`` — passing the sync ``OpenAI`` here raises
+    # ``TypeError: Cannot use agenerate() with a synchronous client.``
+    # mid-run and tanks the whole eval. The same applies to embeddings.
+    llm_client = AsyncOpenAI(base_url=settings.zai_base_url, api_key=zai_api_key)
     llm = llm_factory(model=settings.zai_judge_model or "", client=llm_client)
     # Best-effort temperature=0 on the RAGAS judge. The wrapper's attribute path
     # varies by RAGAS version, so we try the common ones and fall through silently.
@@ -815,7 +576,7 @@ def _attach_ragas_scores(
                 break
     embeddings = None
     if settings.openrouter_embedding_model and settings.openrouter_api_key is not None:
-        embedding_client = OpenAI(
+        embedding_client = AsyncOpenAI(
             base_url=settings.openrouter_base_url,
             api_key=settings.openrouter_api_key.get_secret_value(),
         )
@@ -863,8 +624,19 @@ def _attach_ragas_scores(
                 else:
                     continue
                 value = float(result.value) if result.value is not None else float("nan")
-            except (OSError, RuntimeError, SQLAlchemyError, ValueError) as exc:
-                logger.warning("ragas_metric_failed", extra={"metric": key, "error": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                # RAGAS is documented as informational-only (not under FDR
+                # control), so a per-metric failure must never abort the run.
+                # The exception surface is large — sync/async client wiring
+                # mismatches (TypeError), structured-output retry exhaustion
+                # (InstructorRetryException from upstream), max_tokens cutoffs,
+                # provider transport errors — all of which are scoring-quality
+                # signals at best. Log + skip, let the rest of the case set
+                # finish.
+                logger.warning(
+                    "ragas_metric_failed",
+                    extra={"metric": key, "error_class": type(exc).__name__, "error": str(exc)[:500]},
+                )
                 continue
             if not math.isnan(value):
                 scores[key] = value
@@ -1154,7 +926,16 @@ def run_evaluation(
     pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
 
     commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="computing ragas metrics")
-    ragas_summary = _attach_ragas_scores(pending_ragas, resolved, job_id=job_id)
+    # RAGAS is informational-only; setup-time failures (provider auth, import,
+    # client wiring) should not invalidate the per-case metrics already
+    # persisted. Per-metric failures are already swallowed inside the helper.
+    try:
+        ragas_summary = _attach_ragas_scores(pending_ragas, resolved, job_id=job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "ragas_phase_failed", extra={"error_class": type(exc).__name__, "error": str(exc)[:500]}
+        )
+        ragas_summary = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
     session.flush()
 
     results = list(session.scalars(select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)))

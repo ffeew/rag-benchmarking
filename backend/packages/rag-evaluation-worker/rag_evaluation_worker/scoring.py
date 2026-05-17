@@ -1,4 +1,3 @@
-import random
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -119,22 +118,6 @@ def strict_evidence_eligible(evidence: Iterable[ExpectedEvidenceSpec]) -> list[E
         for item in evidence
         if item.page_number is not None and (item.document_id is not None or (item.ticker and item.form_type))
     ]
-
-
-def bootstrap_mean_ci(values: list[float], *, seed: int, samples: int = 500) -> list[float] | None:
-    if not values:
-        return None
-    if len(values) == 1:
-        return [values[0], values[0]]
-    rng = random.Random(seed)  # noqa: S311 - deterministic bootstrap sampling, not security-sensitive.
-    means: list[float] = []
-    for _ in range(samples):
-        draw = [values[rng.randrange(len(values))] for _ in values]
-        means.append(sum(draw) / len(draw))
-    means.sort()
-    lower = means[int(0.025 * (len(means) - 1))]
-    upper = means[int(0.975 * (len(means) - 1))]
-    return [lower, upper]
 
 
 def _score_expected_value(answer: str, expected: object, *, judge: TextJudge | None = None) -> dict[str, object]:
