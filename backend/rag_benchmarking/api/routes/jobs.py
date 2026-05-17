@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
+from rag_common.config import get_settings
 from rag_common.db import models
 from rag_common.enums import JobStatus
 from rag_common.schemas import JobRead, JobSweepResponse, Page
@@ -62,11 +63,12 @@ def trigger_sweep(session: DbSession, _auth: AuthDep) -> JobSweepResponse:
     queued rows are eligible immediately — the scheduled beat sweep keeps
     its conservative 600 s grace for autonomous recovery.
     """
+    settings = get_settings()
     report = sweeper.run_sweep(
         session,
         now=datetime.now(UTC),
         queued_grace_seconds=0,
-        heartbeat_seconds=sweeper.RUNNING_HEARTBEAT_SECONDS,
+        heartbeat_seconds=settings.running_heartbeat_seconds,
     )
     session.commit()
     return JobSweepResponse(**report)

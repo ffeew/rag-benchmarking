@@ -27,10 +27,12 @@ from rag_benchmarking.workers.dispatch import dispatch_job
 
 logger = structlog.get_logger(__name__)
 
-# Defaults used by the scheduled Celery sweep. The operator-triggered sweep
-# in the API route passes ``queued_grace_seconds=0`` to act immediately.
+# Module-level defaults used by callers that don't have a Settings handy
+# (e.g. legacy callers). The scheduled sweep and the operator-triggered route
+# now read live values from ``rag_common.config.get_settings()`` so the
+# thresholds are tunable via env without a code change.
 QUEUED_GRACE_SECONDS = 600
-RUNNING_HEARTBEAT_SECONDS = 600
+RUNNING_HEARTBEAT_SECONDS = 2700
 MAX_RETRIES = 3
 
 # Only these AsyncResult states unambiguously mean the broker is no longer
@@ -269,14 +271,17 @@ def run_sweep(
 @celery_app.task(name="rag_benchmarking.sweep_stuck_jobs", bind=True, acks_late=True)
 def sweep_stuck_jobs(self: object) -> SweepReport:
     """Scan for stranded jobs and recover them. Idempotent — safe to run often."""
+    from rag_common.config import get_settings
+
+    settings = get_settings()
     maker = get_sessionmaker()
     with maker() as session:
         now = datetime.now(UTC)
         report = run_sweep(
             session,
             now=now,
-            queued_grace_seconds=QUEUED_GRACE_SECONDS,
-            heartbeat_seconds=RUNNING_HEARTBEAT_SECONDS,
+            queued_grace_seconds=settings.queued_grace_seconds,
+            heartbeat_seconds=settings.running_heartbeat_seconds,
         )
         diagnostics = _diagnostic_counts(session)
         session.commit()

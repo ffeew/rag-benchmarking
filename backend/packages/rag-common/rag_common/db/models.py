@@ -246,7 +246,7 @@ class EvalRun(TimestampMixin, Base):
     job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"), index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=JobStatus.QUEUED, index=True)
     run_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    system_variant: Mapped[str] = mapped_column(String(64), nullable=False, default=RetrievalMode.FULL_AGENTIC)
+    system_variant: Mapped[str] = mapped_column(String(512), nullable=False, default=RetrievalMode.FULL_AGENTIC)
     model_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     errors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)

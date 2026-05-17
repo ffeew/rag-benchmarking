@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     eval_timeout_seconds: Annotated[int, Field(gt=0)] = 1800
     query_trace_retention_days: Annotated[int, Field(gt=0)] = 30
 
+    # Sweeper thresholds. The scheduled `sweep_stuck_jobs` task marks a RUNNING
+    # job failed when no heartbeat has landed for ``running_heartbeat_seconds``.
+    # Must comfortably exceed ``eval_timeout_seconds`` (per-case cap) so a
+    # legitimately slow case — e.g. one stalled on provider rate-limit retries —
+    # cannot be reaped mid-flight by the sweeper.
+    running_heartbeat_seconds: Annotated[int, Field(gt=0)] = 2700
+    queued_grace_seconds: Annotated[int, Field(gt=0)] = 600
+
     pricing_overrides_path: Path | None = None
 
     @field_validator("cors_origins", mode="before")
