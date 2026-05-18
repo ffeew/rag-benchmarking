@@ -112,6 +112,64 @@ def reciprocal_rank_fusion(
     ]
 
 
+@dataclass
+class _FusionEntry:
+    """Per-chunk accumulator used during multi-list RRF fusion.
+
+    ``item`` is kept on first sight so the final list carries forward the chunk +
+    document references and the ranks observed at the first encounter; subsequent
+    appearances only update the fused score and the best rerank seen.
+    """
+
+    item: RetrievedChunk
+    fused_score: float
+    best_rerank: float | None
+
+
+def rrf_fuse_ranked_lists(
+    ranked_lists: list[list[RetrievedChunk]],
+    limit: int,
+) -> list[RetrievedChunk]:
+    """Reciprocal rank fusion across N already-ranked ``RetrievedChunk`` lists.
+
+    Multi-query analogue of ``reciprocal_rank_fusion``: that one fuses semantic +
+    lexical rows from a single retrieval call, while this one fuses the per-
+    subquestion outputs of multiple ``hybrid_retrieve`` calls. Same scoring constant
+    so fused scores stay comparable across the two stages. Score per chunk is
+    summed over the lists it appears in; ``rerank_score`` carries the max observed
+    value so evidence cards downstream still surface a meaningful per-chunk
+    relevance signal rather than only the fused RRF score.
+    """
+    rank_constant = 60.0
+    fused: dict[str, _FusionEntry] = {}
+    for ranked_list in ranked_lists:
+        for rank, item in enumerate(ranked_list, start=1):
+            contribution = 1.0 / (rank_constant + rank)
+            entry = fused.get(item.chunk.id)
+            if entry is None:
+                fused[item.chunk.id] = _FusionEntry(
+                    item=item,
+                    fused_score=contribution,
+                    best_rerank=item.rerank_score,
+                )
+                continue
+            entry.fused_score += contribution
+            if item.rerank_score is not None and (entry.best_rerank is None or item.rerank_score > entry.best_rerank):
+                entry.best_rerank = item.rerank_score
+    ordered = sorted(fused.values(), key=lambda entry: entry.fused_score, reverse=True)
+    return [
+        RetrievedChunk(
+            chunk=entry.item.chunk,
+            document=entry.item.document,
+            score=entry.fused_score,
+            semantic_rank=entry.item.semantic_rank,
+            lexical_rank=entry.item.lexical_rank,
+            rerank_score=entry.best_rerank,
+        )
+        for entry in ordered[:limit]
+    ]
+
+
 def hybrid_retrieve(
     session: Session,
     *,

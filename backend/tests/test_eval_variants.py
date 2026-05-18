@@ -47,7 +47,7 @@ def test_variant_name_pattern_rejects_uppercase() -> None:
         RetrievalVariantSpec(name="FullAgentic", retrieval_mode="full_agentic")
 
 
-def test_locked_9_catalog_shape() -> None:
+def test_locked_catalog_shape() -> None:
     names = [spec.name for spec in LOCKED_ABLATION_VARIANTS]
     assert names == [
         "full_agentic",
@@ -58,6 +58,7 @@ def test_locked_9_catalog_shape() -> None:
         "single_pass_semantic_only",
         "single_pass_lexical_only",
         "single_pass_no_reranker",
+        "single_pass_no_decomposition",
         "llm_only",
     ]
     # Spot-check the override semantics that drive the lesion study.
@@ -66,12 +67,13 @@ def test_locked_9_catalog_shape() -> None:
     assert by_name["full_agentic_no_reranker"].overrides.reranker_enabled is False
     assert by_name["single_pass_semantic_only"].overrides.full_text_candidates == 0
     assert by_name["single_pass_lexical_only"].overrides.semantic_candidates == 0
+    assert by_name["single_pass_no_decomposition"].overrides.query_decomposition_enabled is False
     assert by_name["llm_only"].retrieval_mode == "llm_only"
 
 
 def test_ablation_presets_exposes_locked9() -> None:
     assert "locked9" in ABLATION_PRESETS
-    assert len(ABLATION_PRESETS["locked9"]) == 9
+    assert len(ABLATION_PRESETS["locked9"]) == 10
 
 
 def test_evaluation_create_back_compat_with_system_variants() -> None:

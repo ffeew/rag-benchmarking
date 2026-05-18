@@ -279,6 +279,8 @@ class RetrievalOverrides(BaseModel):
     rerank_candidates: int | None = Field(default=None, gt=0, le=100)
     evidence_top_k: int | None = Field(default=None, gt=0, le=20)
     retrieval_agent_tool_call_budget: int | None = Field(default=None, ge=1, le=8)
+    query_decomposition_enabled: bool | None = None
+    decomposition_max_subquestions: int | None = Field(default=None, ge=1, le=6)
 
 
 class RetrievalVariantSpec(BaseModel):

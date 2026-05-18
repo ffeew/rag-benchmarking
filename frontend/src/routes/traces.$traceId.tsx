@@ -97,10 +97,17 @@ function TracePage() {
     )
   }
 
+  // Only ``full_agentic`` runs a verifier that produces a real confidence —
+  // ``single_pass`` and ``llm_only`` leave the field at its empty default.
+  // Older traces persisted 0.0 there; gate on mode so we treat both
+  // "0.0 from legacy default" and "null from new default" as N/A.
+  const verifierRan = trace.retrieval_mode === 'full_agentic'
   const rawConfidence = (trace.verifier_result as { confidence?: unknown })
     .confidence
   const confidence =
-    typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)
+    verifierRan &&
+    typeof rawConfidence === 'number' &&
+    Number.isFinite(rawConfidence)
       ? rawConfidence
       : null
 
@@ -164,7 +171,19 @@ function TracePage() {
             </span>
           }
           actions={
-            confidence !== null ? <ConfidenceMeter value={confidence} /> : null
+            confidence !== null ? (
+              <ConfidenceMeter value={confidence} />
+            ) : (
+              <span
+                className="inline-flex items-center gap-2"
+                title="No verifier runs in this mode, so no confidence is measured."
+              >
+                <span className="mono-label">CONF</span>
+                <span className="font-mono text-[12px] text-[var(--ink-muted)]">
+                  N/A
+                </span>
+              </span>
+            )
           }
         />
         <CardBody>

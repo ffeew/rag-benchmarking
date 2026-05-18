@@ -45,6 +45,11 @@ LOCKED_ABLATION_VARIANTS: list[RetrievalVariantSpec] = [
         retrieval_mode=RetrievalMode.SINGLE_PASS,
         overrides=RetrievalOverrides(reranker_enabled=False),
     ),
+    RetrievalVariantSpec(
+        name="single_pass_no_decomposition",
+        retrieval_mode=RetrievalMode.SINGLE_PASS,
+        overrides=RetrievalOverrides(query_decomposition_enabled=False),
+    ),
     RetrievalVariantSpec(name="llm_only", retrieval_mode=RetrievalMode.LLM_ONLY),
 ]
 

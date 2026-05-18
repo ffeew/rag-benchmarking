@@ -251,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         "--ablation-preset",
         choices=sorted(ABLATION_PRESETS.keys()),
         default=None,
-        help="Use a named ablation matrix (e.g. 'locked9' = 9 component-lesion configs).",
+        help="Use a named ablation matrix (e.g. 'locked9' = the locked component-lesion preset).",
     )
     parser.add_argument(
         "--variants-file",

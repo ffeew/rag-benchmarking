@@ -1,3 +1,4 @@
+import dataclasses
 import time
 from decimal import Decimal
 from typing import Any
@@ -18,12 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rag_retrieval.dataset_config import DatasetConfig, load_dataset_config
+from rag_retrieval.decomposition import decompose_query
 from rag_retrieval.generation import (
     citation_label,
     generate_answer,
     snippet,
 )
-from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve
+from rag_retrieval.hybrid import RetrievedChunk, hybrid_retrieve, rrf_fuse_ranked_lists
 from rag_retrieval.planning import RetrievalPlan, plan_query
 from rag_retrieval.retrieval_tool import run_retrieval_agent
 
@@ -135,12 +137,15 @@ def _to_retrieved_ref(rank: int, item: RetrievedChunk) -> RetrievedChunkRef:
 
 
 def _empty_verifier_result() -> dict[str, Any]:
+    # confidence is None (not 0.0) so the UI can distinguish "verifier didn't run"
+    # from "verifier ran and was unconfident". Single-pass and llm_only never
+    # overwrite this dict, so 0.0 would read as a low-confidence verdict.
     return {
         "supported_chunk_ids": [],
         "missing_subclaims": [],
         "contradictions": [],
         "retry_query": None,
-        "confidence": 0.0,
+        "confidence": None,
         "reasoning": None,
     }
 
@@ -191,6 +196,11 @@ def run_query(
     rerank_usage_total = TokenUsage()
     missing_subclaims: list[str] = []
     contradictions: list[str] = []
+    # Decomposition only fires for single_pass; full_agentic does its own multi-query
+    # via the retrieval agent's tool calls, and llm_only doesn't retrieve at all. Seed
+    # with the "not applicable" defaults so the trace surface is uniform across modes.
+    decomposition_meta: dict[str, Any] = {"agent_used": False, "fallback_reason": "not_applicable"}
+    decomposition_subquestions: list[str] = []
 
     if request.retrieval_mode == RetrievalMode.FULL_AGENTIC:
         known_tickers = set(dataset_config.known_tickers)
@@ -255,36 +265,63 @@ def run_query(
         plan, planner_meta, planner_usage = _heuristic_plan(
             session, request=request, resolved=resolved, dataset_config=dataset_config
         )
-        retrieved, retrieval_trace, embedding_usage, rerank_usage = hybrid_retrieve(
-            session,
-            dataset_id=request.dataset_id,
-            question=request.question,
-            filters=request.filters,
-            plan=plan,
-            top_k=top_k,
-            settings=resolved,
+        subquestions, decomposition_meta, decomposition_usage = decompose_query(
+            request.question,
+            resolved,
+            dataset_config=dataset_config,
         )
+        decomposition_subquestions = list(subquestions)
+        # Decomposition is a planning-phase LLM call; roll its usage into planner_usage
+        # the same way HyDE rolls into planner_usage inside full_agentic (query.py:216).
+        planner_usage = merge(planner_usage, decomposition_usage)
+        if subquestions:
+            # Record what we decomposed into so the persisted plan reflects the actual
+            # multi-query strategy used. RetrievalPlan is a frozen dataclass — replace
+            # is the standard mutate-by-copy.
+            plan = dataclasses.replace(plan, subquestions=subquestions)
+        queries: list[tuple[int | None, str]] = (
+            [(i, subq) for i, subq in enumerate(subquestions)] if subquestions else [(None, request.question)]
+        )
+        ranked_lists: list[list[RetrievedChunk]] = []
+        for subquestion_index, query_text in queries:
+            sub_retrieved, retrieval_trace, embedding_usage, rerank_usage = hybrid_retrieve(
+                session,
+                dataset_id=request.dataset_id,
+                question=query_text,
+                filters=request.filters,
+                plan=plan,
+                top_k=top_k,
+                settings=resolved,
+            )
+            embedding_usage_total = merge(embedding_usage_total, embedding_usage)
+            rerank_usage_total = merge(rerank_usage_total, rerank_usage)
+            ranked_lists.append(sub_retrieved)
+            call_entry: dict[str, Any] = {
+                "query": query_text,
+                **retrieval_trace,
+                "candidates": [
+                    {
+                        "rank": rank,
+                        "chunk_id": item.chunk.id,
+                        "ticker": item.document.ticker,
+                        "form_type": item.document.form_type,
+                        "filing_date": item.document.filing_date.isoformat() if item.document.filing_date else None,
+                        "page_start": item.chunk.page_start,
+                        "score": float(item.score),
+                        "rerank_score": float(item.rerank_score) if item.rerank_score is not None else None,
+                        "snippet": snippet(item.chunk.text, limit=400),
+                    }
+                    for rank, item in enumerate(sub_retrieved, start=1)
+                ],
+            }
+            if subquestion_index is not None:
+                call_entry["subquestion_index"] = subquestion_index
+            retrieval_calls.append(call_entry)
+        # Single-query path keeps the raw ranked list verbatim; multi-query path fuses
+        # the per-subquestion lists via RRF so the downstream verifier/generator sees a
+        # single coherent evidence ordering rather than a concatenation.
+        retrieved = ranked_lists[0] if len(ranked_lists) == 1 else rrf_fuse_ranked_lists(ranked_lists, top_k)
         full_retrieval = list(retrieved)
-        embedding_usage_total = embedding_usage
-        rerank_usage_total = rerank_usage
-        retrieval_calls.append({
-            "query": request.question,
-            **retrieval_trace,
-            "candidates": [
-                {
-                    "rank": rank,
-                    "chunk_id": item.chunk.id,
-                    "ticker": item.document.ticker,
-                    "form_type": item.document.form_type,
-                    "filing_date": item.document.filing_date.isoformat() if item.document.filing_date else None,
-                    "page_start": item.chunk.page_start,
-                    "score": float(item.score),
-                    "rerank_score": float(item.rerank_score) if item.rerank_score is not None else None,
-                    "snippet": snippet(item.chunk.text, limit=400),
-                }
-                for rank, item in enumerate(retrieved, start=1)
-            ],
-        })
     else:  # llm_only
         plan, planner_meta, planner_usage = _heuristic_plan(
             session, request=request, resolved=resolved, dataset_config=dataset_config
@@ -336,6 +373,11 @@ def run_query(
         "tool_call_count": planner_meta.get("tool_call_count"),
         "tool_retry_count": planner_meta.get("tool_retry_count"),
         "tool_call_budget": planner_meta.get("tool_call_budget"),
+        "decomposition_enabled": resolved.query_decomposition_enabled,
+        "decomposition_used": bool(decomposition_meta.get("agent_used")),
+        "decomposition_count": len(decomposition_subquestions),
+        "decomposition_fallback_reason": decomposition_meta.get("fallback_reason"),
+        "decomposition_error": decomposition_meta.get("error"),
         "usage_summary": usage_summary_dict,
         "cost_breakdown_usd": cost_breakdown,
         "cost_estimate_usd": cost_total,

@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     agent_retry_budget: Annotated[int, Field(ge=0, le=3)] = 1
     hyde_enabled: bool = True
     retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 4
+    # Query decomposition for single_pass: when on, an LLM call breaks multi-part
+    # questions into subquestions and single_pass fans out one hybrid_retrieve per
+    # subquestion (RRF-fused). Questions the LLM judges atomic return an empty list
+    # and fall through to the existing single hybrid_retrieve, so the LLM cost is
+    # paid but the retrieval cost stays flat for simple fact lookups.
+    query_decomposition_enabled: bool = True
+    decomposition_max_subquestions: Annotated[int, Field(ge=1, le=6)] = 4
     # When true, OpenRouter chat + pydantic-ai agent + RAGAS judge calls are pinned to
     # temperature=0 for evaluation determinism. Set to false only for debug runs that
     # intentionally re-enable sampling.
