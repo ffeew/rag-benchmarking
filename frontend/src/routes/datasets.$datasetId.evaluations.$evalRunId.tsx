@@ -177,21 +177,17 @@ function EvalDetail() {
   const passEligibleCount = numericRunMetric('pass_eligible_count')
   const avgLatencyMs = numericRunMetric('avg_latency_ms')
   const totalCostUsd = numericRunMetric('total_cost_usd')
-  // Mean across per-variant answer accuracy / mrr / recall so the headline
-  // KPIs show a single overall number rather than picking an arbitrary variant.
-  const variantAnswerAccuracies = modes
-    .map(([, data]) => numericMetric(data, 'answer_accuracy_rate'))
-    .filter((v): v is number => v !== null)
-  const variantMrrs = modes
-    .map(([, data]) => numericMetric(data, 'avg_mrr'))
-    .filter((v): v is number => v !== null)
-  const variantRecallAt5 = modes
-    .map(([, data]) => numericMetric(data, 'avg_recall_at_5'))
-    .filter((v): v is number => v !== null)
-  function mean(values: number[]): number | null {
-    if (values.length === 0) return null
-    return values.reduce((a, b) => a + b, 0) / values.length
-  }
+  // The headline strip only shows variant-agnostic rollups. Per-variant numbers
+  // (answer accuracy, recall, MRR) live in the variant cards below and in the
+  // ``VARIANT COMPARISON`` matrix so we don't average e.g. ``single_pass=100%``
+  // and ``llm_only=0%`` into a meaningless ``50%`` headline tile.
+  const distinctCaseCount = new Set(run.results.map((r) => r.eval_case_id).filter(Boolean)).size
+  const variantCount = modes.length
+  const totalTokens = modes.reduce<number | null>((sum, [, data]) => {
+    const v = numericMetric(data, 'total_tokens')
+    if (v === null) return sum
+    return (sum ?? 0) + v
+  }, null)
   const headlineMetrics: Array<{ label: string; value: string }> = [
     {
       label: 'PASS RATE',
@@ -204,11 +200,14 @@ function EvalDetail() {
             }`
           : '—',
     },
-    { label: 'ANSWER ACCURACY', value: formatNumericMetric(mean(variantAnswerAccuracies)) },
-    { label: 'RECALL@5', value: formatNumericMetric(mean(variantRecallAt5)) },
-    { label: 'MRR', value: formatNumericMetric(mean(variantMrrs)) },
+    { label: 'CASES', value: distinctCaseCount > 0 ? String(distinctCaseCount) : '—' },
+    { label: 'VARIANTS', value: variantCount > 0 ? String(variantCount) : '—' },
     { label: 'AVG LATENCY', value: formatMs(avgLatencyMs) },
     { label: 'TOTAL COST', value: formatUsd(totalCostUsd) },
+    {
+      label: 'TOTAL TOKENS',
+      value: totalTokens === null ? '—' : totalTokens.toLocaleString(),
+    },
   ]
 
   return (
@@ -273,6 +272,66 @@ function EvalDetail() {
           </div>
         ))}
       </section>
+
+      {modes.length > 1 && (
+        <Card>
+          <CardHeader
+            title={
+              <span className="font-mono text-[12px] uppercase tracking-wide text-[var(--ink)]">
+                VARIANT COMPARISON
+              </span>
+            }
+          />
+          <CardBody padded={false}>
+            <Table>
+              <THead>
+                <tr>
+                  <TH>VARIANT</TH>
+                  <TH className="text-right">PASS RATE</TH>
+                  <TH className="text-right">ANSWER ACC</TH>
+                  <TH className="text-right">RECALL@5</TH>
+                  <TH className="text-right">MRR</TH>
+                  <TH className="text-right">CITATION VALIDITY</TH>
+                  <TH className="text-right">AVG LATENCY</TH>
+                  <TH className="text-right">COST / CASE</TH>
+                </tr>
+              </THead>
+              <TBody>
+                {modes.map(([mode, data]) => (
+                  <TR key={mode}>
+                    <TD>
+                      <Badge tone="cite" size="sm">
+                        {mode.replace(/_/g, ' ')}
+                      </Badge>
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatNumericMetric(numericMetric(data, 'pass_rate'))}
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatNumericMetric(numericMetric(data, 'answer_accuracy_rate'))}
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatNumericMetric(numericMetric(data, 'avg_recall_at_5'))}
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatNumericMetric(numericMetric(data, 'avg_mrr'))}
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatNumericMetric(numericMetric(data, 'citation_validity_rate'))}
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatMs(numericMetric(data, 'avg_latency_ms'))}
+                    </TD>
+                    <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
+                      {formatUsd(numericMetric(data, 'cost_per_case_usd'))}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       {modes.length > 0 && (
         <section className="grid gap-4">
@@ -457,13 +516,23 @@ function EvalDetail() {
                   </span>{' '}
                   · {ablation.report.case_count} paired cases
                 </div>
+                <div className="px-4 pb-3 text-[11px] text-[var(--ink-muted)] font-mono leading-relaxed">
+                  Each row contrasts one variant against the baseline on one
+                  metric. <span className="text-[var(--ink)]">VARIANT</span> names
+                  the variant being compared. <span className="text-[var(--ink)]">
+                  BASELINE VALUE</span> and <span className="text-[var(--ink)]">
+                  VARIANT VALUE</span> are the mean metric on paired cases for
+                  the baseline ({ablation.report.baseline}) and the variant
+                  respectively; <span className="text-[var(--ink)]">DIFF</span> =
+                  variant − baseline.
+                </div>
                 <Table>
                   <THead>
                     <tr>
                       <TH>METRIC</TH>
-                      <TH>TREATMENT</TH>
-                      <TH className="text-right">BASELINE</TH>
-                      <TH className="text-right">TREATMENT</TH>
+                      <TH>VARIANT</TH>
+                      <TH className="text-right">BASELINE VALUE</TH>
+                      <TH className="text-right">VARIANT VALUE</TH>
                       <TH className="text-right">DIFF</TH>
                       <TH className="text-right">95% CI</TH>
                       <TH className="text-right">P</TH>
