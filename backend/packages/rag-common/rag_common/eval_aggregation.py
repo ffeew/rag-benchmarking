@@ -178,7 +178,6 @@ def _summary_for_metrics(metrics: list[dict[str, Any]], *, seed: int) -> dict[st
         "metadata_filter_correctness_rate": _mean_metric(metrics, "metadata_filter_correctness"),
         "citation_reference_validity_rate": _mean_metric(metrics, "citation_reference_validity"),
         "citation_validity_rate": _mean_metric(metrics, "citation_validity"),
-        "claim_citation_coverage_rate": _mean_metric(metrics, "claim_citation_coverage"),
         "citation_coverage_rate": _mean_metric(metrics, "citation_coverage"),
         "citation_gold_precision_rate": _mean_metric(metrics, "citation_gold_precision"),
     }

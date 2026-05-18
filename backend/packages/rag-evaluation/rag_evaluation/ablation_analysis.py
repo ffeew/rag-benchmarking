@@ -30,7 +30,6 @@ from rag_evaluation.paired_stats import (
 PRIMARY_ENDPOINTS_DEFAULT: tuple[str, ...] = (
     "answer_accuracy",
     "strict_recall_at_10",
-    "expected_contains",
 )
 
 # Mapping from "logical" endpoint name -> per-case metric key. Some endpoints
@@ -47,7 +46,7 @@ ENDPOINT_KEYS: dict[str, tuple[str, ...]] = {
     "chunk_evidence_f1": ("chunk_evidence_f1",),
     "strict_chunk_f1": ("strict_chunk_f1", "evidence_chunk_f1"),
     "citation_validity": ("citation_validity",),
-    "citation_coverage": ("citation_coverage", "claim_citation_coverage"),
+    "citation_coverage": ("citation_coverage",),
     "citation_gold_recall": ("citation_gold_recall",),
     "citation_gold_precision": ("citation_gold_precision",),
     "metadata_filter_correctness": ("metadata_filter_correctness",),
@@ -55,6 +54,7 @@ ENDPOINT_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 SECONDARY_ENDPOINTS_DEFAULT: tuple[str, ...] = (
+    "expected_contains",
     "mrr",
     "strict_mrr",
     "page_evidence_f1",

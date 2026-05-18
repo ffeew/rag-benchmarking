@@ -133,22 +133,61 @@ def strict_mean_reciprocal_rank(expected: Sequence[object], retrieved: list[Retr
 
 
 def page_evidence_f1(
-    expected_pages: set[tuple[str, int]],
-    retrieved_pages: set[tuple[str, int]],
+    expected: list[ExpectedCitation],
+    retrieved: list[RetrievedChunkRef],
 ) -> float:
-    """F1 over the set of (document_id, page_number) pairs.
+    """F1 over unique retrieved pages.
 
-    Returns 1.0 when both sets are empty (vacuous truth). Returns 0.0 when one is empty.
+    Each retrieved chunk contributes one entry per page in its ``[page_start, page_end]``
+    range, deduplicated by ``(document_id, page)`` so chunks that share a page don't
+    double-count. A page unit is "relevant" if any expected citation matches it via the
+    same document_id-or-(ticker, form_type) coupling used by chunk-level matching.
+
+    Returns 1.0 when both inputs are empty (vacuous truth); 0.0 when only one is.
     """
-    if not expected_pages and not retrieved_pages:
+    if not expected and not retrieved:
         return 1.0
-    if not expected_pages or not retrieved_pages:
+    if not expected or not retrieved:
         return 0.0
-    true_positives = len(expected_pages & retrieved_pages)
-    if true_positives == 0:
+    page_units = _unique_page_units(retrieved)
+    relevant_units = sum(
+        1 for item, page in page_units if any(_page_match(exp, item, page) for exp in expected)
+    )
+    covered_expected = sum(
+        1 for exp in expected if any(_page_match(exp, item, page) for item, page in page_units)
+    )
+    if relevant_units == 0 or covered_expected == 0:
         return 0.0
-    precision = true_positives / len(retrieved_pages)
-    recall = true_positives / len(expected_pages)
+    precision = relevant_units / len(page_units)
+    recall = covered_expected / len(expected)
+    return 2 * precision * recall / (precision + recall)
+
+
+def strict_page_evidence_f1(
+    expected: Sequence[object],
+    retrieved: list[RetrievedChunkRef],
+) -> float:
+    """Strict page-level F1 for verified evidence only.
+
+    Like ``page_evidence_f1`` but requires the same page+(document_id or ticker+form_type)
+    coupling as the strict recall metric; ticker-only hints don't count.
+    """
+    eligible = [_as_strict_expected(item) for item in expected]
+    if not eligible and not retrieved:
+        return 1.0
+    if not eligible or not retrieved:
+        return 0.0
+    page_units = _unique_page_units(retrieved)
+    relevant_units = sum(
+        1 for item, page in page_units if any(_strict_page_match(exp, item, page) for exp in eligible)
+    )
+    covered_expected = sum(
+        1 for exp in eligible if any(_strict_page_match(exp, item, page) for item, page in page_units)
+    )
+    if relevant_units == 0 or covered_expected == 0:
+        return 0.0
+    precision = relevant_units / len(page_units)
+    recall = covered_expected / len(eligible)
     return 2 * precision * recall / (precision + recall)
 
 
@@ -297,6 +336,46 @@ def _single_match(expected: ExpectedCitation, item: RetrievedChunkRef) -> bool:
     if expected.page_number is not None:
         return item.page_start <= expected.page_number <= item.page_end
     return bool(expected.ticker)
+
+
+def _unique_page_units(retrieved: list[RetrievedChunkRef]) -> list[tuple[RetrievedChunkRef, int]]:
+    """Flatten retrieved chunks into ``(chunk, page)`` units, deduped by ``(document_id, page)``.
+
+    Two chunks that cover the same page collapse into one unit; we keep the first
+    occurrence so rank-aware downstream consumers can still see the higher-ranked chunk.
+    """
+    seen: set[tuple[str, int]] = set()
+    units: list[tuple[RetrievedChunkRef, int]] = []
+    for item in retrieved:
+        for page in range(item.page_start, item.page_end + 1):
+            key = (item.document_id, page)
+            if key in seen:
+                continue
+            seen.add(key)
+            units.append((item, page))
+    return units
+
+
+def _page_match(expected: ExpectedCitation, item: RetrievedChunkRef, page: int) -> bool:
+    if expected.page_number is not None and expected.page_number != page:
+        return False
+    if expected.document_id:
+        return expected.document_id == item.document_id
+    if expected.ticker and expected.ticker.upper() != item.ticker.upper():
+        return False
+    if expected.form_type and expected.form_type.upper() != item.form_type.upper():
+        return False
+    return bool(expected.ticker)
+
+
+def _strict_page_match(expected: ExpectedCitation, item: RetrievedChunkRef, page: int) -> bool:
+    if expected.page_number is None or expected.page_number != page:
+        return False
+    if expected.document_id:
+        return expected.document_id == item.document_id
+    if not expected.ticker or not expected.form_type:
+        return False
+    return expected.ticker.upper() == item.ticker.upper() and expected.form_type.upper() == item.form_type.upper()
 
 
 def _as_strict_expected(item: object) -> ExpectedCitation:

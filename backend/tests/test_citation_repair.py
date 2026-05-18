@@ -125,6 +125,10 @@ def test_citation_validation_passes_on_first_try(monkeypatch: pytest.MonkeyPatch
     assert answer.metadata["citation_validation"] == "passed"
     assert answer.metadata["repair_used"] is False
     assert "[AAPL 2025-01-31 10-K, p. 10]" in answer.answer
+    # ``answer_with_tags`` carries the pre-substitution string so downstream metrics
+    # can scan for ##eN tags (the rendered ``answer.answer`` has labels swapped in).
+    assert answer.metadata["answer_with_tags"] == "Apple revenue was $394B ##e1."
+    assert "##e1" in answer.metadata["answer_with_tags"]
 
 
 def test_unrecoverable_validator_failure_falls_back_to_extractive(

@@ -13,6 +13,7 @@ from rag_evaluation.metrics import (
     recall_at_k,
     strict_chunk_evidence_f1,
     strict_mean_reciprocal_rank,
+    strict_page_evidence_f1,
     strict_recall_at_k,
 )
 
@@ -115,26 +116,64 @@ def test_strict_mrr_rejects_ticker_only_hint() -> None:
 
 
 def test_page_f1_full_overlap() -> None:
-    assert page_evidence_f1({("AAPL", 10)}, {("AAPL", 10)}) == 1.0
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    retrieved = [_chunk(1, page_start=10, page_end=10)]
+    assert page_evidence_f1(expected, retrieved) == 1.0
 
 
 def test_page_f1_disjoint_returns_zero() -> None:
-    assert page_evidence_f1({("AAPL", 10)}, {("MSFT", 20)}) == 0.0
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    retrieved = [_chunk(1, ticker="MSFT", form="10-K", page_start=20, page_end=20)]
+    assert page_evidence_f1(expected, retrieved) == 0.0
 
 
 def test_page_f1_partial_overlap() -> None:
-    score = page_evidence_f1({("AAPL", 10), ("AAPL", 11)}, {("AAPL", 10), ("AAPL", 12)})
-    # precision = 1/2, recall = 1/2, F1 = 0.5
-    assert abs(score - 0.5) < 1e-9
+    # expected pages 10, 11 against retrieved chunk covering pages 10-12.
+    # page_units = [(chunk, 10), (chunk, 11), (chunk, 12)]; matched 2/3, covered 2/2.
+    expected = [
+        ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10),
+        ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=11),
+    ]
+    retrieved = [_chunk(1, page_start=10, page_end=12)]
+    score = page_evidence_f1(expected, retrieved)
+    # precision = 2/3, recall = 2/2, F1 = 2 * 2/3 * 1 / (2/3 + 1) = 0.8
+    assert abs(score - 0.8) < 1e-9
 
 
 def test_page_f1_both_empty_returns_one() -> None:
-    assert page_evidence_f1(set(), set()) == 1.0
+    assert page_evidence_f1([], []) == 1.0
 
 
 def test_page_f1_one_empty_returns_zero() -> None:
-    assert page_evidence_f1({("AAPL", 10)}, set()) == 0.0
-    assert page_evidence_f1(set(), {("AAPL", 10)}) == 0.0
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    assert page_evidence_f1(expected, []) == 0.0
+    assert page_evidence_f1([], [_chunk(1)]) == 0.0
+
+
+def test_page_f1_ticker_only_expected_not_halved_by_dual_keying() -> None:
+    # Regression: with the old _retrieved_page_set adding BOTH (document_id, page) and
+    # (ticker, page), precision was artificially halved for ticker-only expected
+    # citations. Now we count unique pages once, so a single retrieved page matching
+    # a single expected page yields F1 == 1.0.
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=34)]
+    retrieved = [_chunk(1, page_start=34, page_end=34)]
+    assert page_evidence_f1(expected, retrieved) == 1.0
+
+
+def test_page_f1_dedupes_overlapping_chunks() -> None:
+    # Two chunks both covering page 10 should not double-count.
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    retrieved = [_chunk(1, page_start=10, page_end=10), _chunk(2, page_start=10, page_end=10)]
+    assert page_evidence_f1(expected, retrieved) == 1.0
+
+
+def test_strict_page_f1_requires_page_and_doc_or_form() -> None:
+    retrieved = [_chunk(1, page_start=10, page_end=10)]
+    # ticker-only hint: rejected by strict matching
+    assert strict_page_evidence_f1([ExpectedCitation(ticker="AAPL")], retrieved) == 0.0
+    # page + ticker + form: accepted
+    expected = [ExpectedCitation(ticker="AAPL", form_type="10-K", page_number=10)]
+    assert strict_page_evidence_f1(expected, retrieved) == 1.0
 
 
 # ---------- chunk_evidence_f1 ----------
@@ -306,10 +345,19 @@ def test_citation_coverage_partial_coverage() -> None:
 
 
 def test_citation_coverage_returns_half_when_tags_rendered_to_labels() -> None:
-    # Generator pipeline already renders ##eN to labels, citations_used is the fallback signal
+    # Legacy fallback: when only the rendered answer is available (older eval rows
+    # without ``answer_with_tags``), the regex misses and we return 0.5.
     answer = "Apple revenue was $94 billion [AAPL 2024-10-31 10-K, p. 32]."
     score = citation_coverage(answer, ["##e1"])
     assert score == 0.5
+
+
+def test_citation_coverage_real_signal_with_raw_tagged_answer() -> None:
+    # New behavior: when the runner threads the pre-substitution answer through,
+    # citation_coverage sees the ##eN tags directly and reports a real fraction.
+    raw_answer = "Apple revenue was $94 billion ##e1. R&D rose 12% ."
+    score = citation_coverage(raw_answer, ["##e1"])
+    assert score == 0.5  # one of two material sentences carries a tag
 
 
 def test_citation_coverage_empty_answer_returns_one() -> None:

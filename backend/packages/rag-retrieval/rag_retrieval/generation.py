@@ -442,6 +442,10 @@ def generate_answer_with_agent(
         "citation_validation": "repaired" if repair_used else "passed",
         "repair_used": repair_used,
         "citations_used": final_output.citations_used,
+        # Pre-substitution answer with raw ##eN tags. The rendered ``answer`` field on
+        # ``AnswerDraft`` has labels swapped in for display; downstream coverage scoring
+        # needs the tags so it can tell which sentences carry citations.
+        "answer_with_tags": final_output.answer,
         "evidence_tag_count": len(valid_tags),
         "citation_label_template": template,
     }

@@ -45,6 +45,7 @@ from rag_evaluation.metrics import (
     recall_at_k,
     strict_chunk_evidence_f1,
     strict_mean_reciprocal_rank,
+    strict_page_evidence_f1,
     strict_recall_at_k,
 )
 from rag_evaluation.scoring import (
@@ -100,52 +101,6 @@ def _coerce_retrieved(refs: list[Any] | None) -> list[RetrievedChunkRef]:
         data = ref.model_dump() if hasattr(ref, "model_dump") else dict(ref)
         coerced.append(RetrievedChunkRef(**data))
     return coerced
-
-
-def _expected_page_set(expected: list[ExpectedCitation]) -> set[tuple[str, int]]:
-    pages: set[tuple[str, int]] = set()
-    for exp in expected:
-        if exp.page_number is None:
-            continue
-        key = exp.document_id or exp.ticker
-        if key is None:
-            continue
-        pages.add((key, exp.page_number))
-    return pages
-
-
-def _retrieved_page_set(retrieved: list[RetrievedChunkRef]) -> set[tuple[str, int]]:
-    pages: set[tuple[str, int]] = set()
-    for item in retrieved:
-        for page in range(item.page_start, item.page_end + 1):
-            pages.add((item.document_id, page))
-            pages.add((item.ticker, page))
-    return pages
-
-
-def _strict_expected_page_set(expected: Sequence[object]) -> set[tuple[str, int]]:
-    pages: set[tuple[str, int]] = set()
-    for exp in expected:
-        page_number = getattr(exp, "page_number", None)
-        if page_number is None:
-            continue
-        document_id = getattr(exp, "document_id", None)
-        ticker = getattr(exp, "ticker", None)
-        form_type = getattr(exp, "form_type", None)
-        if document_id:
-            pages.add((str(document_id), int(page_number)))
-        if ticker and form_type:
-            pages.add((f"{str(ticker).upper()}:{str(form_type).upper()}", int(page_number)))
-    return pages
-
-
-def _strict_retrieved_page_set(retrieved: list[RetrievedChunkRef]) -> set[tuple[str, int]]:
-    pages: set[tuple[str, int]] = set()
-    for item in retrieved:
-        for page in range(item.page_start, item.page_end + 1):
-            pages.add((item.document_id, page))
-            pages.add((f"{item.ticker.upper()}:{item.form_type.upper()}", page))
-    return pages
 
 
 def _load_chunk_snapshots(session: Session, chunk_ids: list[str]) -> dict[str, ChunkSnapshot]:
@@ -341,6 +296,12 @@ def _compute_case_metrics(
 
     citations_used_raw = generator_metadata.get("citations_used")
     citations_used = [str(item) for item in citations_used_raw] if isinstance(citations_used_raw, list) else []
+    # Prefer the pre-substitution answer (with raw ##eN tags) for coverage scoring;
+    # the rendered ``response.answer`` has labels swapped in, so the ##eN regex would
+    # always miss and the metric would fall back to its 0.5 placeholder. Older eval
+    # runs without ``answer_with_tags`` keep the legacy behavior.
+    answer_with_tags_raw = generator_metadata.get("answer_with_tags")
+    answer_for_coverage = answer_with_tags_raw if isinstance(answer_with_tags_raw, str) else response.answer
     answer_metrics = score_answer(
         answer=response.answer,
         insufficiency_reason=response.insufficiency_reason,
@@ -372,24 +333,19 @@ def _compute_case_metrics(
         "recall_at_5": recall_at_k(expected, retrieved, k=5),
         "recall_at_10": recall_at_k(expected, retrieved, k=10),
         "mrr": mean_reciprocal_rank(expected, retrieved),
-        "page_evidence_f1": page_evidence_f1(_expected_page_set(expected), _retrieved_page_set(retrieved)),
+        "page_evidence_f1": page_evidence_f1(expected, retrieved),
         "chunk_evidence_f1": chunk_evidence_f1(expected, retrieved),
         "evidence_recall_at_5": strict_recall_at_k(strict_expected, retrieved, k=5) if evidence_gold_eligible else None,
         "evidence_recall_at_10": (
             strict_recall_at_k(strict_expected, retrieved, k=10) if evidence_gold_eligible else None
         ),
         "evidence_mrr": strict_mean_reciprocal_rank(strict_expected, retrieved) if evidence_gold_eligible else None,
-        "evidence_page_f1": (
-            page_evidence_f1(_strict_expected_page_set(strict_expected), _strict_retrieved_page_set(retrieved))
-            if evidence_gold_eligible
-            else None
-        ),
+        "evidence_page_f1": strict_page_evidence_f1(strict_expected, retrieved) if evidence_gold_eligible else None,
         "evidence_chunk_f1": (strict_chunk_evidence_f1(strict_expected, retrieved) if evidence_gold_eligible else None),
         "metadata_filter_correctness": metadata_filter_correctness(plan_filters, expected),
         "citation_validity": citation_validity(citation_snapshots, chunks_by_id),
         "citation_reference_validity": citation_validity(citation_snapshots, chunks_by_id),
-        "claim_citation_coverage": citation_coverage(response.answer, citations_used),
-        "citation_coverage": citation_coverage(response.answer, citations_used),
+        "citation_coverage": citation_coverage(answer_for_coverage, citations_used),
     }
     metrics.update(answer_metrics)
     if evidence_gold_eligible:
