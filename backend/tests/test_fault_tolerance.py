@@ -160,20 +160,24 @@ def test_dispatch_job_routes_ingestion(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_dispatch_job_routes_evaluation(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeBroker("eval-task")
-    monkeypatch.setattr(dispatch, "celery_app", fake)
+    """Evaluation jobs now run in-process: dispatch hands off to the launcher
+    instead of publishing to the Celery evaluation queue. The returned task
+    id is the launcher's ``inproc:*`` sentinel, which the sweeper recognises
+    and the DB row stores in ``celery_task_id`` for continuity with ingestion
+    jobs."""
+    captured: list[dict[str, str]] = []
+
+    def fake_launch(*, eval_run_id: str, job_id: str) -> str:
+        captured.append({"eval_run_id": eval_run_id, "job_id": job_id})
+        return "inproc:eval-fake"
+
+    monkeypatch.setattr(dispatch, "launch_evaluation_thread", fake_launch)
     job = _make_job(job_type="evaluation", document_id=None, eval_run_id="run-7")
 
     task_id = dispatch.dispatch_job(job)
 
-    assert task_id == "eval-task"
-    assert fake.sent == [
-        {
-            "name": "rag_benchmarking.run_evaluation",
-            "kwargs": {"eval_run_id": "run-7", "job_id": "job-1"},
-            "queue": "evaluation",
-        }
-    ]
+    assert task_id == "inproc:eval-fake"
+    assert captured == [{"eval_run_id": "run-7", "job_id": "job-1"}]
 
 
 def test_dispatch_job_returns_none_on_broker_failure(monkeypatch: pytest.MonkeyPatch) -> None:

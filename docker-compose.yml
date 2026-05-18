@@ -45,9 +45,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # api / migrate / beat / maintenance-worker all share the lean Dockerfile,
-  # which installs only `rag-benchmarking` and its workspace deps — no docling,
-  # ragas, chonkie, pypdf, or mistral OCR client.
+  # api / migrate / beat / maintenance-worker all share the API Dockerfile,
+  # which installs `rag-benchmarking` and its workspace deps including
+  # `rag-evaluation` (RAGAS) so evals can run in-process. Ingestion-only deps
+  # (docling, chonkie, pypdf, mistral OCR client) stay isolated in
+  # `rag-ingestion-worker`.
   migrate:
     build:
       context: ./backend
@@ -110,33 +112,6 @@ services:
     volumes:
       - ./backend:/app
       - ./sec_filings_pdf:/app/sec_filings_pdf:ro
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-
-  # Evaluation worker: RAGAS metric stack + rag-retrieval. Consumes the
-  # evaluation queue. Kept separate from ingestion-worker so neither image
-  # carries the other's heavy deps.
-  evaluation-worker:
-    build:
-      context: ./backend
-      dockerfile: packages/rag-evaluation-worker/Dockerfile
-    user: "${UID:-1000}:${GID:-1000}"
-    env_file: ./backend/.env
-    command:
-      [
-        "celery",
-        "-A", "rag_evaluation_worker.celery_app:celery_app",
-        "worker",
-        "--loglevel=INFO",
-        "-Q", "evaluation",
-      ]
-    volumes:
-      - ./backend:/app
     depends_on:
       migrate:
         condition: service_completed_successfully

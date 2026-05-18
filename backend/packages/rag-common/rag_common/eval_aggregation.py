@@ -1,7 +1,7 @@
 """Per-variant and run-wide aggregation over eval-result rows.
 
 Hosted in ``rag_common`` so the API image (which deliberately excludes
-``rag_evaluation_worker`` to stay lean — see ``backend/Dockerfile``) can
+``rag_evaluation`` to stay lean — see ``backend/Dockerfile``) can
 recompute aggregates on the read path without pulling in the worker's
 heavy deps (ragas, openai, docling). The eval worker, the
 ``backfill_eval_metrics`` script, and the API serializer all import from

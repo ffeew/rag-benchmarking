@@ -2,12 +2,10 @@ import structlog
 from celery import Celery, signals
 from rag_common.config import get_settings
 from rag_common.constants import (
-    QUEUE_EVALUATION,
     QUEUE_INGESTION,
     QUEUE_MAINTENANCE,
     TASK_INGEST_DOCUMENT,
     TASK_PURGE_OLD_TRACES,
-    TASK_RUN_EVALUATION,
     TASK_SWEEP_STUCK_JOBS,
 )
 from rag_common.logging import configure_logging
@@ -18,9 +16,10 @@ settings = get_settings()
 #   * the API + migrate images (producer-side: send_task, control.revoke).
 #   * the scheduler / maintenance-worker image (consumer-side: registers the
 #     sweeper task via `include`).
-# The ingestion/evaluation tasks live in the `rag-ingestion-worker` package
-# and are registered on a separate Celery app there — keeping them out of
-# `include` here is what lets the lean images skip the heavy worker deps.
+# Evaluations no longer go through Celery — the API runs them in-process via
+# ``rag_benchmarking.evaluation.launch_evaluation_thread``. Ingestion tasks
+# still live in ``rag-ingestion-worker`` (registered on a separate Celery app
+# in that package) so the API image stays free of docling/mistral OCR deps.
 celery_app = Celery(
     "rag_benchmarking",
     broker=settings.redis_url,
@@ -33,7 +32,6 @@ celery_app = Celery(
 
 celery_app.conf.task_routes = {
     TASK_INGEST_DOCUMENT: {"queue": QUEUE_INGESTION},
-    TASK_RUN_EVALUATION: {"queue": QUEUE_EVALUATION},
     TASK_SWEEP_STUCK_JOBS: {"queue": QUEUE_MAINTENANCE},
     TASK_PURGE_OLD_TRACES: {"queue": QUEUE_MAINTENANCE},
 }

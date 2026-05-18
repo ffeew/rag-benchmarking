@@ -1,37 +1,34 @@
-"""Dispatch a persisted Job row to its Celery task by name.
+"""Dispatch a persisted Job row to its execution path.
 
 This indirection lets API routes, the retry endpoint, and the sweeper all
 hand off a Job through the same code path. Callers must persist (commit) the
 Job first, then call ``dispatch_job`` and write back the returned task id —
 the DB row is the source of truth.
 
-We deliberately publish by task NAME (``celery_app.send_task(...)``) rather
-than importing the task function: the producer (``rag_benchmarking``, run by
-the API/scheduler images) has no reason to import the worker's heavy
-ingestion / evaluation modules, so the by-name pattern is what keeps those
-images lean.
+Ingestion jobs still go to a Celery worker (the ingestion image carries
+docling/chonkie/mistral OCR deps that don't belong in the API image).
+Evaluation jobs now run in-process: ``launch_evaluation_thread`` spawns a
+daemon thread inside the current process and returns a sentinel
+``inproc:*`` task id so the existing job-tracking machinery (Job row,
+sweeper, frontend polling) keeps working unchanged.
 """
 
 import structlog
-from rag_common.constants import (
-    QUEUE_EVALUATION,
-    QUEUE_INGESTION,
-    TASK_INGEST_DOCUMENT,
-    TASK_RUN_EVALUATION,
-)
+from rag_common.constants import QUEUE_INGESTION, TASK_INGEST_DOCUMENT
 from rag_common.db import models
 
+from rag_benchmarking.evaluation import launch_evaluation_thread
 from rag_benchmarking.workers.celery_app import celery_app
 
 logger = structlog.get_logger(__name__)
 
 
 def dispatch_job(job: models.Job) -> str | None:
-    """Send `job` to its Celery task and return the new task id.
+    """Send `job` to its execution path and return a task id.
 
-    Returns None when the broker rejected the message. The caller decides
-    whether to surface the error to the user; the sweeper will retry the
-    row on its next pass regardless of the outcome here.
+    Returns None when an ingestion broker submit was rejected. Evaluation
+    dispatch returns the in-process sentinel id and never returns None —
+    spawning a thread doesn't have a broker that can fail.
     """
     if job.job_type == "ingestion":
         if not job.document_id:
@@ -68,27 +65,13 @@ def dispatch_job(job: models.Job) -> str | None:
     if job.job_type == "evaluation":
         if not job.eval_run_id:
             raise ValueError(f"Evaluation job {job.id} is missing eval_run_id")
-        try:
-            result = celery_app.send_task(
-                TASK_RUN_EVALUATION,
-                kwargs={"eval_run_id": job.eval_run_id, "job_id": job.id},
-                queue=QUEUE_EVALUATION,
-            )
-        except Exception as exc:  # noqa: BLE001 — broker failures must not abort caller
-            logger.exception(
-                "job_dispatch_failed",
-                job_id=job.id,
-                job_type=job.job_type,
-                exception_type=exc.__class__.__name__,
-            )
-            return None
-        task_id = str(result.id)
+        task_id = launch_evaluation_thread(eval_run_id=job.eval_run_id, job_id=job.id)
         logger.info(
             "job_dispatched",
             job_id=job.id,
             job_type=job.job_type,
             celery_task_id=task_id,
-            queue=QUEUE_EVALUATION,
+            queue="in-process",
         )
         return task_id
 

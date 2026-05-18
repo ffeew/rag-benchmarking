@@ -14,7 +14,7 @@ For every case in the YAML, this script:
   4. Confirms every ``expected_values[].value_numeric`` shows up on the cited
      page (formatted with optional ``$``, thousands separators and unit), within
      the case's ``tolerance_abs`` / ``tolerance_pct`` (mirrors the matcher in
-     ``rag_evaluation_worker.scoring``).
+     ``rag_evaluation.scoring``).
   5. Confirms every ``evidence_text`` substring appears on the cited page
      (case- and whitespace-insensitive).
   6. For ``insufficient_evidence`` / ``refusal`` cases skips PDF content checks

@@ -1,4 +1,4 @@
-from rag_evaluation_worker.metrics import (
+from rag_evaluation.metrics import (
     ChunkSnapshot,
     CitationSnapshot,
     ExpectedCitation,

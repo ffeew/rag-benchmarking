@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from rag_common.enums import ExpectedAnswerType
 from rag_common.schemas import ExpectedAnswerSpec, ExpectedEvidenceSpec
 
-from rag_evaluation_worker.judge import TextJudge
+from rag_evaluation.judge import TextJudge
 
 
 @dataclass(frozen=True)
@@ -80,9 +80,7 @@ def score_answer(
 
     value_scores = [_score_expected_value(answer, expected, judge=judge) for expected in spec.expected_values]
     claim_verdicts = _required_claim_verdicts(answer, spec.required_claims, judge=judge)
-    claim_rate = (
-        sum(verdict["score"] for verdict in claim_verdicts) / len(claim_verdicts) if claim_verdicts else 1.0
-    )
+    claim_rate = sum(verdict["score"] for verdict in claim_verdicts) / len(claim_verdicts) if claim_verdicts else 1.0
     score_parts: list[float] = []
     if value_scores:
         value_score_numbers: list[float] = []

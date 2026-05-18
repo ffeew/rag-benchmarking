@@ -9,12 +9,10 @@ reference the same constant rather than coupling through a Python import.
 from typing import Final
 
 TASK_INGEST_DOCUMENT: Final = "rag_benchmarking.ingest_document"
-TASK_RUN_EVALUATION: Final = "rag_benchmarking.run_evaluation"
 TASK_SWEEP_STUCK_JOBS: Final = "rag_benchmarking.sweep_stuck_jobs"
 TASK_PURGE_OLD_TRACES: Final = "rag_benchmarking.purge_old_traces"
 
 QUEUE_INGESTION: Final = "ingestion"
-QUEUE_EVALUATION: Final = "evaluation"
 QUEUE_MAINTENANCE: Final = "maintenance"
 
 # Dimensionality of the pgvector ``chunks.embedding_vector`` column. The column

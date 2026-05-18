@@ -11,7 +11,7 @@ import pytest
 from rag_common.config import Settings
 from rag_common.db import models
 from rag_common.schemas import QueryResponse
-from rag_evaluation_worker.runner import _detect_pairing_skew, _resolve_variants
+from rag_evaluation.runner import _detect_pairing_skew, _resolve_variants
 from sqlalchemy.orm import Session
 
 
@@ -132,7 +132,7 @@ def test_runner_passes_overridden_settings_to_run_query(
         captured.append({"retrieval_mode": request.retrieval_mode, "hyde_enabled": settings.hyde_enabled})
         return _stub_query_response(next(trace_iter))
 
-    from rag_evaluation_worker import runner as runner_module
+    from rag_evaluation import runner as runner_module
 
     monkeypatch.setattr(runner_module, "run_query", fake_run_query)
     # Skip RAGAS in this test.

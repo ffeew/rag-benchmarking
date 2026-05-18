@@ -179,7 +179,7 @@ operator → POST /v1/datasets/{id}/ingestions
 | Ingestion pipeline | `backend/packages/rag-ingestion-worker/ingestion/{parsing,chunking,pipeline}.py` |
 | Ingestion tasks | `backend/packages/rag-ingestion-worker/tasks.py` |
 | Retrieval primitives | `backend/packages/rag-retrieval/{hybrid,planning,hyde,verification,generation,retrieval_tool,query,dataset_config}.py` |
-| Evaluation runner | `backend/packages/rag-evaluation-worker/{runner,scoring,metrics,ablation_analysis}.py` |
+| Evaluation runner | `backend/packages/rag-evaluation/{runner,scoring,metrics,ablation_analysis}.py` |
 | Locked variants | `backend/packages/rag-common/rag_common/eval_variants.py` |
 | Eval cases | `backend/eval_cases/sec_filings_v1.yaml` |
 | Scripts (CLI reproduction) | `backend/rag_benchmarking/scripts/{seed_eval_cases,run_eval,compare_ablations}.py` |
@@ -527,8 +527,8 @@ and the per-case review in
 
 We exceed the system-design target of 60–80 cases. The set was sized
 to give Wilcoxon enough power to detect Cliff's δ ≈ 0.30 effects after
-Benjamini-Hochberg correction across the 24-test family — see §7 of the
-ablation plan.
+Benjamini-Hochberg correction across the 27-test family (9 contrasts × 3
+endpoints, post 2026-05-18 amendment) — see §7 of the ablation plan.
 
 ### Locked ablation variants
 
@@ -537,17 +537,18 @@ Pre-registered in
 in `backend/packages/rag-common/rag_common/eval_variants.py` as
 `LOCKED_ABLATION_VARIANTS`:
 
-| # | Variant | `retrieval_mode` | Overrides | Isolates |
-| - | --- | --- | --- | --- |
-| 1 | `full_agentic` | `full_agentic` | — | Baseline |
-| 2 | `full_agentic_no_hyde` | `full_agentic` | `hyde_enabled=false` | HyDE |
-| 3 | `full_agentic_no_reranker` | `full_agentic` | `reranker_enabled=false` | Reranker |
-| 4 | `full_agentic_no_hyde_no_reranker` | `full_agentic` | both off | HyDE × Reranker |
-| 5 | `single_pass` | `single_pass` | — | Agentic loop |
-| 6 | `single_pass_semantic_only` | `single_pass` | `full_text_candidates=0` | FTS channel |
-| 7 | `single_pass_lexical_only` | `single_pass` | `semantic_candidates=0` | Vector channel |
-| 8 | `single_pass_no_reranker` | `single_pass` | `reranker_enabled=false` | Reranker outside the loop |
-| 9 | `llm_only` | `llm_only` | — | Retrieval-free floor |
+| #  | Variant | `retrieval_mode` | Overrides | Isolates |
+| -- | --- | --- | --- | --- |
+| 1  | `full_agentic` | `full_agentic` | — | Baseline |
+| 2  | `full_agentic_no_hyde` | `full_agentic` | `hyde_enabled=false` | HyDE |
+| 3  | `full_agentic_no_reranker` | `full_agentic` | `reranker_enabled=false` | Reranker |
+| 4  | `full_agentic_no_hyde_no_reranker` | `full_agentic` | both off | HyDE × Reranker |
+| 5  | `single_pass` | `single_pass` | — | Agentic loop |
+| 6  | `single_pass_semantic_only` | `single_pass` | `full_text_candidates=0` | FTS channel |
+| 7  | `single_pass_lexical_only` | `single_pass` | `semantic_candidates=0` | Vector channel |
+| 8  | `single_pass_no_reranker` | `single_pass` | `reranker_enabled=false` | Reranker outside the loop |
+| 9  | `single_pass_no_decomposition` | `single_pass` | `query_decomposition_enabled=false` | Query decomposition (multi-query fan-out) |
+| 10 | `llm_only` | `llm_only` | — | Retrieval-free floor |
 
 All variants run inside one `EvalRun` against the same case set so the
 paired contrasts are atomic and we can compute paired statistics without
@@ -594,7 +595,7 @@ machinery as the deterministic scores.
   Risk difference + 95% paired-bootstrap CI.
 - **Latency / cost**: log-paired Wilcoxon; geometric-mean ratio + CI.
 - **Multiple comparisons**: Benjamini-Hochberg step-up at q = 0.05
-  across the 24-test primary family (8 contrasts × 3 endpoints).
+  across the 27-test primary family (9 contrasts × 3 endpoints).
 - **Subgroup carve-outs**: `refusal` and `insufficient_evidence`
   flagged separately; included in the primary analysis but reported
   with subgroup mean differences.
@@ -623,12 +624,13 @@ uv run --directory backend python -m rag_benchmarking.scripts.seed_eval_cases \
   --dataset <dataset_id> \
   --file backend/eval_cases/sec_filings_v1.yaml
 
-# 3) Run the full locked ablation (all nine variants, one EvalRun):
+# 3) Run the full locked ablation (all ten variants, one EvalRun):
 uv run --directory backend python -m rag_benchmarking.scripts.run_eval \
   --dataset <dataset_id> \
   --variants full_agentic,full_agentic_no_hyde,full_agentic_no_reranker,\
 full_agentic_no_hyde_no_reranker,single_pass,single_pass_semantic_only,\
-single_pass_lexical_only,single_pass_no_reranker,llm_only \
+single_pass_lexical_only,single_pass_no_reranker,single_pass_no_decomposition,\
+llm_only \
   --output markdown
 
 # 4) Pretty-print the ablation contrast table from the saved artifact:
@@ -678,6 +680,7 @@ bullet.
 | `single_pass −fts` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 | `single_pass −vector` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 | `single_pass −reranker` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `single_pass −decomposition` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
 
 ### 7.3 By category (subgroup table)
 
@@ -734,7 +737,7 @@ pre-registered hypotheses, not as a description of measured results.
 Once §7 is populated, the discussion should be rewritten to match the
 observed effect sizes and significance results.
 
-### Retrieval vs. no retrieval (H8: `full_agentic` > `llm_only`)
+### Retrieval vs. no retrieval (H9: `full_agentic` > `llm_only`)
 
 This is the headline contrast required by `task.md` §6. The hypothesis
 is that any retrieval pipeline beats `llm_only` by a large margin on
@@ -789,6 +792,25 @@ The reranker is most valuable when the candidate set is wider — the
 agent's iterative retrieves naturally narrow the candidate set across
 calls. We expect the reranker effect to be **larger** in `single_pass`
 than in `full_agentic`.
+
+### Query decomposition in single_pass (H8: `full_agentic` > `single_pass_no_decomposition`)
+
+`single_pass` defaults to decomposing multi-part / comparison / cross-entity
+questions into 2-5 subquestions and fanning out one `hybrid_retrieve` per
+subquestion before RRF-fusing the results — the multi-query analogue of what
+`full_agentic` accomplishes via repeated `retrieve_evidence` tool calls.
+`single_pass_no_decomposition` disables that step so single_pass falls back
+to one retrieve against the raw question.
+
+We expect the lift from decomposition to concentrate in `cross_company_comparison`,
+`multi_part`, and `sector_synthesis` cases — the same subgroups where the
+agent's iterative tool calls earn their keep. On atomic single-fact lookups
+the decomposer is instructed to return an empty list (no fan-out, no extra
+retrieval cost), so the expected effect on `single_company_lookup` is near
+zero. The within-mode contrast `single_pass` vs `single_pass_no_decomposition`
+(reported as a secondary, uncorrected contrast under the same `EvalRun`) is
+the operationally interesting decision lens: it answers "should single_pass
+keep decomposition on by default?" holding agency constant.
 
 ### Subgroup expectations
 

@@ -56,7 +56,7 @@ TERMINAL_STATUSES = {status.value for status in JOB_TERMINAL_STATUSES}
 
 # Headline metric keys produced by the evaluation runner. Order is the order we
 # render in the table; missing keys are shown as "—". Keep in sync with
-# ``rag_evaluation_worker.runner._summary_for_metrics``.
+# ``rag_evaluation.runner._summary_for_metrics``.
 HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
     ("case_count", "Cases"),
     ("answer_accuracy_rate", "Answer accuracy"),

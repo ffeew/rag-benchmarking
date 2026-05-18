@@ -17,7 +17,7 @@ resolution-markers = [
 members = [
     "rag-benchmarking",
     "rag-common",
-    "rag-evaluation-worker",
+    "rag-evaluation",
     "rag-ingestion-worker",
     "rag-retrieval",
 ]
@@ -3261,6 +3261,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "rag-common" },
+    { name = "rag-evaluation" },
     { name = "rag-retrieval" },
     { name = "sqlalchemy" },
     { name = "structlog" },
@@ -3290,6 +3291,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.10.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rag-common", editable = "packages/rag-common" },
+    { name = "rag-evaluation", editable = "packages/rag-evaluation" },
     { name = "rag-retrieval", editable = "packages/rag-retrieval" },
     { name = "sqlalchemy", specifier = ">=2.0.40" },
     { name = "structlog", specifier = ">=25.2.0" },
@@ -3337,11 +3339,10 @@ requires-dist = [
 ]
 
 [[package]]
-name = "rag-evaluation-worker"
+name = "rag-evaluation"
 version = "0.1.0"
-source = { editable = "packages/rag-evaluation-worker" }
+source = { editable = "packages/rag-evaluation" }
 dependencies = [
-    { name = "celery", extra = ["redis"] },
     { name = "rag-common" },
     { name = "rag-retrieval" },
     { name = "ragas" },
@@ -3351,7 +3352,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "celery", extras = ["redis"], specifier = ">=5.5.0" },
     { name = "rag-common", editable = "packages/rag-common" },
     { name = "rag-retrieval", editable = "packages/rag-retrieval" },
     { name = "ragas", specifier = ">=0.4.3" },

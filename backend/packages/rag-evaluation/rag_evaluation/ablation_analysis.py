@@ -16,7 +16,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from rag_evaluation_worker.paired_stats import (
+from rag_evaluation.paired_stats import (
     benjamini_hochberg,
     cliffs_delta,
     mcnemar_midp,

@@ -9,7 +9,7 @@ FastAPI, Celery, SQLAlchemy, Alembic, MinIO, pgvector, and provider integration 
   - `rag-common` — shared config, schemas, DB models, providers, pricing, job state, logging.
   - `rag-ingestion-worker` — Celery worker for OCR/parse/chunk/embed.
   - `rag-retrieval` — query planning, hybrid retrieval, verification, answer generation.
-  - `rag-evaluation-worker` — Celery worker for evaluation runs and scoring.
+  - `rag-evaluation` — evaluation runner (per-case scoring, RAGAS, ablation analysis). Imported in-process by the API; no longer a Celery worker.
 - `migrations/` — Alembic schema versions.
 - `tests/` — pytest suite. `conftest.py` spins up a pgvector testcontainer reused across the session.
 - `eval_cases/` — curated gold YAML for the scientific-benchmark profile.

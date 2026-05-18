@@ -19,7 +19,7 @@ Outputs a markdown table to stdout. Sources of variant metrics:
 * If the run's ``metrics`` dict has per-variant keys (``full_agentic`` /
   ``single_pass`` / ``llm_only``), those are used directly.
 * Otherwise the run is recomputed from the ``results`` list via
-  ``rag_evaluation_worker.runner.aggregate_metrics`` (so old artifacts without
+  ``rag_evaluation.runner.aggregate_metrics`` (so old artifacts without
   pre-baked aggregates still render).
 """
 

@@ -1,9 +1,10 @@
-# Lean image for the API + migrate + scheduler/maintenance roles.
+# Image for the API + migrate + scheduler/maintenance roles.
 #
-# Installs only the `rag-benchmarking` workspace package and its closure
-# (rag-common + rag-retrieval), so heavy ingestion/eval deps (docling, ragas,
-# chonkie, pypdf, mistral OCR) — which live exclusively in `rag-ingestion-worker`
-# / `rag-evaluation-worker` — never land in this image.
+# Installs the `rag-benchmarking` workspace package and its closure
+# (rag-common + rag-retrieval + rag-evaluation). Evaluations run in-process
+# inside the API now, so RAGAS lives in this image. PDF/OCR deps (docling,
+# chonkie, pypdf, mistral OCR) still live exclusively in `rag-ingestion-worker`
+# and never land in this image.
 #
 # Two stages: `builder` pulls the toolchain + uv + workspace manifests and
 # synthesises /opt/venv; `runtime` is a clean slim image with just the venv,
@@ -35,7 +36,7 @@ COPY pyproject.toml uv.lock README.md ./
 COPY packages/rag-common/pyproject.toml packages/rag-common/README.md packages/rag-common/
 COPY packages/rag-retrieval/pyproject.toml packages/rag-retrieval/README.md packages/rag-retrieval/
 COPY packages/rag-ingestion-worker/pyproject.toml packages/rag-ingestion-worker/README.md packages/rag-ingestion-worker/
-COPY packages/rag-evaluation-worker/pyproject.toml packages/rag-evaluation-worker/README.md packages/rag-evaluation-worker/
+COPY packages/rag-evaluation/pyproject.toml packages/rag-evaluation/README.md packages/rag-evaluation/
 
 # Resolve and install third-party deps without installing the project itself.
 # Source edits below this line don't bust this cache layer.
@@ -45,6 +46,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Source for everything in this package's closure.
 COPY packages/rag-common packages/rag-common
 COPY packages/rag-retrieval packages/rag-retrieval
+COPY packages/rag-evaluation packages/rag-evaluation
 COPY rag_benchmarking ./rag_benchmarking
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations

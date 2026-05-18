@@ -15,9 +15,10 @@ because the main session is suspended in user code waiting for the helper
 to return. ``FOR KEY SHARE`` is compatible with the FK lock and still
 serializes the read-then-write against any actor stronger than us.
 
-Shared by every worker that updates Job rows (``rag-ingestion-worker``,
-``rag-evaluation-worker``, plus the sweeper in ``rag_benchmarking.workers``),
-so it lives in the rag-common shared kernel.
+Shared by every actor that updates Job rows (the ``rag-ingestion-worker``
+Celery tasks, the in-process evaluation runner in ``rag-evaluation``, and
+the sweeper in ``rag_benchmarking.workers``), so it lives in the rag-common
+shared kernel.
 
 See also ``rag_common.ingestion_run_state`` for the analogous helper that
 protects ``IngestionRun`` rows from the same rollback hazard.

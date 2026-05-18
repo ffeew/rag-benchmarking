@@ -8,7 +8,7 @@ short reference calculation — these tests are the audit surface for
 import math
 
 import pytest
-from rag_evaluation_worker.paired_stats import (
+from rag_evaluation.paired_stats import (
     benjamini_hochberg,
     cliffs_delta,
     mcnemar_midp,

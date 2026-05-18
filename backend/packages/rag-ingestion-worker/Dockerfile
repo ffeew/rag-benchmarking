@@ -1,6 +1,7 @@
 # Image for the ingestion worker (Celery consumer of the ingestion queue).
 # Owns PDF parsing and chunking deps (pypdf, chonkie, docling, Mistral OCR client).
-# RAGAS / rag-retrieval live in `rag-evaluation-worker` and never enter this image.
+# RAGAS / rag-retrieval live in `rag-evaluation` and never enter this image —
+# evaluations are run in-process by the API now, not by this worker.
 #
 # Build context is the backend root (./backend) so uv sees the whole workspace.
 # Two stages: `builder` pulls the toolchain and synthesises /opt/venv;
@@ -33,7 +34,7 @@ COPY pyproject.toml uv.lock README.md ./
 COPY packages/rag-common/pyproject.toml packages/rag-common/README.md packages/rag-common/
 COPY packages/rag-retrieval/pyproject.toml packages/rag-retrieval/README.md packages/rag-retrieval/
 COPY packages/rag-ingestion-worker/pyproject.toml packages/rag-ingestion-worker/README.md packages/rag-ingestion-worker/
-COPY packages/rag-evaluation-worker/pyproject.toml packages/rag-evaluation-worker/README.md packages/rag-evaluation-worker/
+COPY packages/rag-evaluation/pyproject.toml packages/rag-evaluation/README.md packages/rag-evaluation/
 
 # Resolve and install third-party deps without installing the project itself.
 RUN --mount=type=cache,target=/root/.cache/uv \

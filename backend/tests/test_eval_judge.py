@@ -9,7 +9,7 @@ parsing, and error handling without touching a real LLM.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from rag_evaluation_worker.judge import JudgeVerdict, TextJudge, _parse_verdict
+from rag_evaluation.judge import JudgeVerdict, TextJudge, _parse_verdict
 
 
 def _mock_client(content: str) -> MagicMock:

@@ -4,9 +4,10 @@ version = "0.1.0"
 description = "SEC filings agentic RAG benchmark with FastAPI, Celery, pgvector, MinIO, and React."
 readme = "README.md"
 requires-python = ">=3.13"
-# The root package is the lean API + scheduler/migrate. Heavy ingestion deps
-# (docling/chonkie/pypdf/ragas/mistral) live exclusively in `rag-ingestion-worker`
-# so `uv sync --package rag-benchmarking` produces an image that never pulls them.
+# The root package is the API + scheduler/migrate. Evaluations now run
+# in-process inside the API so `rag-evaluation` is a direct dep — that pulls
+# the RAGAS stack. Ingestion-only deps (docling/chonkie/pypdf/mistral OCR)
+# stay isolated in `rag-ingestion-worker` so the API image doesn't carry them.
 dependencies = [
   "alembic>=1.16.0",
   "celery[redis]>=5.5.0",
@@ -20,6 +21,7 @@ dependencies = [
   "pydantic-settings>=2.10.0",
   "python-multipart>=0.0.20",
   "rag-common",
+  "rag-evaluation",
   "rag-retrieval",
   "sqlalchemy>=2.0.40",
   "structlog>=25.2.0",
@@ -38,7 +40,7 @@ members = ["packages/*"]
 rag-common = { workspace = true }
 rag-retrieval = { workspace = true }
 rag-ingestion-worker = { workspace = true }
-rag-evaluation-worker = { workspace = true }
+rag-evaluation = { workspace = true }
 # docling pulls torch + torchvision; force them off PyTorch's CPU-only index
 # so the multi-GB CUDA / nvidia wheels stay out of the ingestion-worker image.
 torch = { index = "pytorch-cpu" }
@@ -129,7 +131,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
   "rag_ingestion_worker.tasks",
-  "rag_evaluation_worker.tasks",
   "rag_benchmarking.workers.sweeper",
   "rag_benchmarking.workers.retention",
 ]

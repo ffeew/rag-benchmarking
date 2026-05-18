@@ -29,7 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from rag_evaluation_worker.metrics import (
+from rag_evaluation.metrics import (
     ChunkSnapshot,
     CitationSnapshot,
     ExpectedCitation,
@@ -46,8 +46,8 @@ from rag_evaluation_worker.metrics import (
     strict_mean_reciprocal_rank,
     strict_recall_at_k,
 )
-from rag_evaluation_worker.judge import TextJudge, build_text_judge
-from rag_evaluation_worker.scoring import (
+from rag_evaluation.judge import TextJudge, build_text_judge
+from rag_evaluation.scoring import (
     answer_declined_to_respond,
     coerce_expected_evidence,
     score_answer,
@@ -384,9 +384,7 @@ def _compute_case_metrics(
             if evidence_gold_eligible
             else None
         ),
-        "evidence_chunk_f1": (
-            strict_chunk_evidence_f1(strict_expected, retrieved) if evidence_gold_eligible else None
-        ),
+        "evidence_chunk_f1": (strict_chunk_evidence_f1(strict_expected, retrieved) if evidence_gold_eligible else None),
         "metadata_filter_correctness": metadata_filter_correctness(plan_filters, expected),
         "citation_validity": citation_validity(citation_snapshots, chunks_by_id),
         "citation_reference_validity": citation_validity(citation_snapshots, chunks_by_id),
@@ -705,7 +703,7 @@ def _attach_ablation_report(eval_run: models.EvalRun, results: list[models.EvalR
     Skipped (with a structured marker) when fewer than two variants ran or no usable
     baseline is present.
     """
-    from rag_evaluation_worker.ablation_analysis import run_ablation_analysis
+    from rag_evaluation.ablation_analysis import run_ablation_analysis
 
     variant_names = sorted({r.variant_name or r.retrieval_mode for r in results if r.variant_name or r.retrieval_mode})
     if len(variant_names) < 2:
@@ -913,9 +911,7 @@ def run_evaluation(
             # at read time, so this is belt-and-suspenders.
             if completed % resolved.eval_partial_aggregate_every == 0:
                 partial = list(
-                    session.scalars(
-                        select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id)
-                    )
+                    session.scalars(select(models.EvalResult).where(models.EvalResult.eval_run_id == eval_run.id))
                 )
                 eval_run.metrics = aggregate_metrics(partial, seed=bootstrap_seed)
                 eval_run.metrics["_partial"] = True
@@ -942,9 +938,7 @@ def run_evaluation(
         try:
             ragas_summary = _attach_ragas_scores(pending_ragas, resolved, job_id=job_id)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "ragas_phase_failed", extra={"error_class": type(exc).__name__, "error": str(exc)[:500]}
-            )
+            logger.warning("ragas_phase_failed", extra={"error_class": type(exc).__name__, "error": str(exc)[:500]})
             ragas_summary = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
     else:
         commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="ragas skipped")

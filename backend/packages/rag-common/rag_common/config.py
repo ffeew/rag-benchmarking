@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     # metric per case, sequential, on the slow judge model. Set to false for
     # iteration / smoke tests to skip the trailing 4+ minute RAGAS phase.
     eval_run_ragas: bool = True
+    # Maximum number of evaluations that may run simultaneously inside one API
+    # process. The launcher gates thread creation with a semaphore sized from
+    # this value. The default of 1 matches the previous Celery worker's
+    # ``worker_prefetch_multiplier=1``; bump it to allow concurrent evals if
+    # the host has the CPU + provider quota headroom.
+    eval_max_inflight: Annotated[int, Field(ge=1, le=8)] = 1
 
     # Sweeper thresholds. The scheduled `sweep_stuck_jobs` task marks a RUNNING
     # job failed when no heartbeat has landed for ``running_heartbeat_seconds``.

@@ -2,6 +2,12 @@
 
 Pre-registered: 2026-05-16. Locked before any production run was executed.
 
+**Amendment 2026-05-18**: added the `single_pass_no_decomposition` knockout
+(variant #9) covering the newly-introduced query-decomposition step in the
+single_pass pipeline. The variant + its hypothesis (H9) are added below; the
+FDR family expands from 24 to 27 tests. Variants 1-8 and their pre-registered
+hypotheses are unchanged.
+
 This document declares the hypotheses, endpoints, statistical tests, and
 inclusion rules for the v1 component-lesion ablation study of the retrieval
 pipeline. Any deviation from this plan during analysis must be flagged as
@@ -21,17 +27,18 @@ contrasts.
 Defined in `backend/packages/rag-common/rag_common/eval_variants.py` as
 `LOCKED_ABLATION_VARIANTS`.
 
-| # | Variant name                       | retrieval_mode  | Overrides                                       | Isolates                              |
-| - | ---------------------------------- | --------------- | ----------------------------------------------- | ------------------------------------- |
-| 1 | `full_agentic`                     | `full_agentic`  | —                                               | Baseline                              |
-| 2 | `full_agentic_no_hyde`             | `full_agentic`  | `hyde_enabled=False`                            | HyDE                                  |
-| 3 | `full_agentic_no_reranker`         | `full_agentic`  | `reranker_enabled=False`                        | Reranker                              |
-| 4 | `full_agentic_no_hyde_no_reranker` | `full_agentic`  | `hyde_enabled=False, reranker_enabled=False`    | HyDE × Reranker interaction           |
-| 5 | `single_pass`                      | `single_pass`   | —                                               | Agentic loop                          |
-| 6 | `single_pass_semantic_only`        | `single_pass`   | `full_text_candidates=0`                        | Lexical (FTS) channel                 |
-| 7 | `single_pass_lexical_only`         | `single_pass`   | `semantic_candidates=0`                         | Semantic (vector) channel             |
-| 8 | `single_pass_no_reranker`          | `single_pass`   | `reranker_enabled=False`                        | Reranker outside the agent loop       |
-| 9 | `llm_only`                         | `llm_only`      | —                                               | Retrieval-free floor                  |
+| #  | Variant name                       | retrieval_mode  | Overrides                                       | Isolates                              |
+| -- | ---------------------------------- | --------------- | ----------------------------------------------- | ------------------------------------- |
+| 1  | `full_agentic`                     | `full_agentic`  | —                                               | Baseline                              |
+| 2  | `full_agentic_no_hyde`             | `full_agentic`  | `hyde_enabled=False`                            | HyDE                                  |
+| 3  | `full_agentic_no_reranker`         | `full_agentic`  | `reranker_enabled=False`                        | Reranker                              |
+| 4  | `full_agentic_no_hyde_no_reranker` | `full_agentic`  | `hyde_enabled=False, reranker_enabled=False`    | HyDE × Reranker interaction           |
+| 5  | `single_pass`                      | `single_pass`   | —                                               | Agentic loop                          |
+| 6  | `single_pass_semantic_only`        | `single_pass`   | `full_text_candidates=0`                        | Lexical (FTS) channel                 |
+| 7  | `single_pass_lexical_only`         | `single_pass`   | `semantic_candidates=0`                         | Semantic (vector) channel             |
+| 8  | `single_pass_no_reranker`          | `single_pass`   | `reranker_enabled=False`                        | Reranker outside the agent loop       |
+| 9  | `single_pass_no_decomposition`     | `single_pass`   | `query_decomposition_enabled=False`             | Query decomposition (multi-query fan-out) |
+| 10 | `llm_only`                         | `llm_only`      | —                                               | Retrieval-free floor                  |
 
 All variants run inside one `EvalRun` against the same case set so the
 contrasts are atomically paired.
@@ -78,9 +85,21 @@ For each primary endpoint *E* ∈ {`answer_accuracy`, `strict_recall_at_10`,
 - **H5**(*E*): `full_agentic` > `single_pass_semantic_only`
 - **H6**(*E*): `full_agentic` > `single_pass_lexical_only`
 - **H7**(*E*): `full_agentic` > `single_pass_no_reranker`
-- **H8**(*E*): `full_agentic` > `llm_only` (sanity check; expected largest effect)
+- **H8**(*E*): `full_agentic` > `single_pass_no_decomposition`
+- **H9**(*E*): `full_agentic` > `llm_only` (sanity check; expected largest effect)
 
-FDR family = 8 contrasts × 3 endpoints = **24 tests**.
+FDR family = 9 contrasts × 3 endpoints = **27 tests**.
+
+### Secondary (within-mode) contrast for decomposition
+
+`single_pass` > `single_pass_no_decomposition` measures the lift of query
+decomposition **inside** the single_pass pipeline, holding agency constant.
+It is reported under "secondary (uncorrected)" — outside the FDR family —
+because the primary family above is anchored to `full_agentic` as baseline
+per the §4 policy. The within-mode contrast is the operationally interesting
+one for the decision "should single_pass use decomposition by default?" but
+is paired *under the same `EvalRun`* so the same case set + provider snapshot
+underlies both arms.
 
 ## 5. Inclusion / exclusion
 
@@ -106,7 +125,7 @@ FDR family = 8 contrasts × 3 endpoints = **24 tests**.
 
 - **Test**: Wilcoxon signed-rank with continuity correction. Exact
   enumeration when N ≤ 25 and no ties; normal approximation otherwise.
-- **Alternative**: one-sided (greater) for primary endpoints per H1-H8;
+- **Alternative**: one-sided (greater) for primary endpoints per H1-H9;
   two-sided for secondaries.
 - **Point + interval**: mean(b - a) ± 95 % paired bootstrap CI of the mean
   difference (5 000 resamples, seed=1729, paired indices).
@@ -141,9 +160,10 @@ With N=99 paired observations and α=0.05 one-sided Wilcoxon:
 
 - Power 0.80 corresponds to roughly Cliff's δ ≈ 0.20 (between small and
   medium).
-- After BH across 24 tests at q=0.05, the *least-significant* test in the
-  family is effectively tested at α ≈ 0.05·k/24, so the minimum detectable
-  effect at 80 % power rises to roughly **δ ≈ 0.30** (medium).
+- After BH across 27 tests at q=0.05, the *least-significant* test in the
+  family is effectively tested at α ≈ 0.05·k/27, so the minimum detectable
+  effect at 80 % power rises to roughly **δ ≈ 0.30** (medium). The 24-test
+  baseline figure is preserved in the git history for reference.
 
 **Reporting note**: absence of a significant result at this N is not
 evidence of no effect. Effects with Cliff's δ < 0.20 may be real but
@@ -176,7 +196,7 @@ Acknowledged residual stochasticity:
 
 ## 9. Operational plan
 
-1. **Smoke**: run 5 cases × 9 variants to verify schema, pairing-skew check,
+1. **Smoke**: run 5 cases × 10 variants to verify schema, pairing-skew check,
    and analyzer output shape.
 2. **Full study**:
    ```bash

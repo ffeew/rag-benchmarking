@@ -1,9 +1,10 @@
 """Periodic stuck-job sweeper.
 
-Re-dispatches queued rows whose Celery message demonstrably vanished and
-fails running rows that stopped emitting heartbeats. The DB is the source
-of truth for what needs to run — this task closes the loop between
-persisted intent and broker reality.
+Re-dispatches queued rows whose execution demonstrably vanished and fails
+running rows that stopped emitting heartbeats. The DB is the source of
+truth for what needs to run — this task closes the loop between persisted
+intent and runtime reality (Celery broker for ingestion, in-process thread
+for evaluation).
 
 The core work lives in :func:`run_sweep`, which takes a session and explicit
 grace/heartbeat windows so the ``POST /v1/jobs/sweep`` route can invoke a
@@ -22,6 +23,7 @@ from rag_common.enums import JOB_TERMINAL_STATUSES, JobStatus
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from rag_benchmarking.evaluation import inproc_thread_alive, is_inproc_task_id
 from rag_benchmarking.workers.celery_app import celery_app
 from rag_benchmarking.workers.dispatch import dispatch_job
 
@@ -52,6 +54,12 @@ class SweepReport(TypedDict):
 def _celery_task_is_dead(task_id: str | None) -> bool:
     if not task_id:
         return True
+    if is_inproc_task_id(task_id):
+        # Same-process introspection only — when sweep runs in a different
+        # process from the launcher, the registry returns False (not alive).
+        # The caller's heartbeat staleness check is the real liveness gate
+        # for cross-process in-proc evals.
+        return not inproc_thread_alive(task_id)
     state = celery_app.AsyncResult(task_id).state
     return state in _CERTAIN_DEAD_STATES
 
@@ -80,6 +88,13 @@ def _queued_job_needs_recovery(job: models.Job, now: datetime, queued_grace_seco
 
 def _revoke_existing_task(job: models.Job) -> None:
     if not job.celery_task_id:
+        return
+    if is_inproc_task_id(job.celery_task_id):
+        # In-process evals can't be revoked via the broker — the daemon
+        # thread either already exited (so the registry is empty) or is
+        # still running in its own process. Cross-process termination
+        # would require os-level signalling we don't want. The new task
+        # id we're about to mint replaces the old one in the DB.
         return
     try:
         celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGTERM")

@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-from rag_evaluation_worker.ablation_analysis import (
+from rag_evaluation.ablation_analysis import (
     PRIMARY_ENDPOINTS_DEFAULT,
     SECONDARY_ENDPOINTS_DEFAULT,
     render_csv,

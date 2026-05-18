@@ -20,9 +20,9 @@ A new CLI script, `backend/rag_benchmarking/scripts/verify_eval_cases.py`, loads
 5. Confirms every `expected_values[].value_numeric` appears on at least one cited page, with the case's `tolerance_abs`/`tolerance_pct`, accepting unit equivalents (16.6 billion = 16,600 million; `$`-prefixed numbers count as million/billion/dollar when the column header sets the unit).
 6. Confirms every `expected_values[].value_text` appears either on a cited page (whitespace-permissive, also tries the space-stripped form) or in a PDF filename (for `YYYY-MM-DD` date answers).
 7. For `latest_filing`-tagged cases, confirms the cited PDF is genuinely the newest of its `(ticker, form_type)` in the corpus.
-8. Computed values - comparison winners (`higher_company`, `highest_company`, etc.) and derived ratios (`*_pct`, `*_ratio`, `*_yoy_growth`, ...) - are tracked as informational notes rather than failures, since the scorer in `rag_evaluation_worker.scoring` only matches them against the agent's answer text.
+8. Computed values - comparison winners (`higher_company`, `highest_company`, etc.) and derived ratios (`*_pct`, `*_ratio`, `*_yoy_growth`, ...) - are tracked as informational notes rather than failures, since the scorer in `rag_evaluation.scoring` only matches them against the agent's answer text.
 
-The verifier mirrors `_NUMBER_RE` / `_unit_matches` / `_numeric_tolerance` from `backend/packages/rag-evaluation-worker/rag_evaluation_worker/scoring.py:16` so what the verifier accepts is a superset of what the scorer would accept.
+The verifier mirrors `_NUMBER_RE` / `_unit_matches` / `_numeric_tolerance` from `backend/packages/rag-evaluation/rag_evaluation/scoring.py:16` so what the verifier accepts is a superset of what the scorer would accept.
 
 ## Findings on the original 63 cases
 
