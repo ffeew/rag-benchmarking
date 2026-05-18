@@ -76,6 +76,58 @@ function EvalDetail() {
     return typeof v === 'number' ? v : null
   }
 
+  // Metrics that only make sense when a retrieval phase actually ran. ``llm_only``
+  // skips retrieval entirely, so emitting 0% for these reads as a retriever
+  // failure rather than "this variant has no retrieval stage." Return null
+  // (rendered as ``—``) instead so the table communicates not-applicable.
+  const RETRIEVAL_ONLY_METRIC_KEYS = new Set([
+    'avg_recall_at_5',
+    'avg_recall_at_10',
+    'avg_mrr',
+    'avg_page_evidence_f1',
+    'avg_chunk_evidence_f1',
+    'avg_evidence_recall_at_5',
+    'avg_evidence_recall_at_10',
+    'avg_evidence_mrr',
+    'avg_evidence_page_f1',
+    'avg_evidence_chunk_f1',
+    'metadata_filter_correctness_rate',
+    // Per-result metric keys (used in the case-results table)
+    'recall_at_5',
+    'recall_at_10',
+    'mrr',
+    'page_evidence_f1',
+    'chunk_evidence_f1',
+  ])
+  // RAGAS metrics that require non-empty retrieved context. ``llm_only`` ships
+  // no context, so these are not applicable regardless of what RAGAS returns.
+  const CONTEXT_RAGAS_KEYS = new Set(['context_precision', 'context_recall'])
+
+  function isRetrievalCapable(retrievalMode: string | null | undefined): boolean {
+    return retrievalMode !== 'llm_only'
+  }
+
+  function applicableMetric(
+    modeData: ModeMetrics,
+    key: string,
+  ): number | null {
+    const retrievalMode =
+      typeof modeData.retrieval_mode === 'string' ? modeData.retrieval_mode : null
+    if (!isRetrievalCapable(retrievalMode) && RETRIEVAL_ONLY_METRIC_KEYS.has(key)) {
+      return null
+    }
+    return numericMetric(modeData, key)
+  }
+
+  function applicableRagasScore(modeData: ModeMetrics, key: string): number | null {
+    const retrievalMode =
+      typeof modeData.retrieval_mode === 'string' ? modeData.retrieval_mode : null
+    if (!isRetrievalCapable(retrievalMode) && CONTEXT_RAGAS_KEYS.has(key)) {
+      return null
+    }
+    return ragasScore(modeData, key)
+  }
+
   function ragasScore(modeData: ModeMetrics, key: string): number | null {
     const diag = modeData.judge_diagnostics
     if (!diag || typeof diag !== 'object' || Array.isArray(diag)) return null
@@ -311,10 +363,10 @@ function EvalDetail() {
                       {formatNumericMetric(numericMetric(data, 'answer_accuracy_rate'))}
                     </TD>
                     <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
-                      {formatNumericMetric(numericMetric(data, 'avg_recall_at_5'))}
+                      {formatNumericMetric(applicableMetric(data, 'avg_recall_at_5'))}
                     </TD>
                     <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
-                      {formatNumericMetric(numericMetric(data, 'avg_mrr'))}
+                      {formatNumericMetric(applicableMetric(data, 'avg_mrr'))}
                     </TD>
                     <TD className="text-right font-mono numeric text-[11px] text-[var(--ink)]">
                       {formatNumericMetric(numericMetric(data, 'citation_validity_rate'))}
@@ -346,43 +398,61 @@ function EvalDetail() {
               />
               <CardBody>
                 <div className="grid gap-3">
-                  <div>
-                    <div className="mono-label text-[var(--ink-muted)] mb-2">
-                      RETRIEVER
+                  {isRetrievalCapable(
+                    typeof modeData.retrieval_mode === 'string'
+                      ? (modeData.retrieval_mode as string)
+                      : null,
+                  ) ? (
+                    <div>
+                      <div className="mono-label text-[var(--ink-muted)] mb-2">
+                        RETRIEVER
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                        <MetricNumber
+                          label="RECALL@5"
+                          value={formatNumericMetric(applicableMetric(modeData, 'avg_recall_at_5'))}
+                          size="sm"
+                        />
+                        <MetricNumber
+                          label="RECALL@10"
+                          value={formatNumericMetric(applicableMetric(modeData, 'avg_recall_at_10'))}
+                          size="sm"
+                        />
+                        <MetricNumber
+                          label="MRR"
+                          value={formatNumericMetric(applicableMetric(modeData, 'avg_mrr'))}
+                          size="sm"
+                        />
+                        <MetricNumber
+                          label="PAGE F1"
+                          value={formatNumericMetric(applicableMetric(modeData, 'avg_page_evidence_f1'))}
+                          size="sm"
+                        />
+                        <MetricNumber
+                          label="CHUNK F1"
+                          value={formatNumericMetric(applicableMetric(modeData, 'avg_chunk_evidence_f1'))}
+                          size="sm"
+                        />
+                        <MetricNumber
+                          label="FILTER OK"
+                          value={formatNumericMetric(applicableMetric(modeData, 'metadata_filter_correctness_rate'))}
+                          size="sm"
+                        />
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-                      <MetricNumber
-                        label="RECALL@5"
-                        value={formatNumericMetric(numericMetric(modeData, 'avg_recall_at_5'))}
-                        size="sm"
-                      />
-                      <MetricNumber
-                        label="RECALL@10"
-                        value={formatNumericMetric(numericMetric(modeData, 'avg_recall_at_10'))}
-                        size="sm"
-                      />
-                      <MetricNumber
-                        label="MRR"
-                        value={formatNumericMetric(numericMetric(modeData, 'avg_mrr'))}
-                        size="sm"
-                      />
-                      <MetricNumber
-                        label="PAGE F1"
-                        value={formatNumericMetric(numericMetric(modeData, 'avg_page_evidence_f1'))}
-                        size="sm"
-                      />
-                      <MetricNumber
-                        label="CHUNK F1"
-                        value={formatNumericMetric(numericMetric(modeData, 'avg_chunk_evidence_f1'))}
-                        size="sm"
-                      />
-                      <MetricNumber
-                        label="FILTER OK"
-                        value={formatNumericMetric(numericMetric(modeData, 'metadata_filter_correctness_rate'))}
-                        size="sm"
-                      />
+                  ) : (
+                    <div>
+                      <div className="mono-label text-[var(--ink-muted)] mb-2 flex items-center gap-2">
+                        <span>RETRIEVER</span>
+                        <Badge tone="outline" size="sm">no retrieval stage</Badge>
+                      </div>
+                      <p className="text-[11.5px] text-[var(--ink-muted)] font-mono">
+                        This variant answers directly from the model with no
+                        retrieval. Retrieval metrics (recall, MRR, page/chunk
+                        F1, filter correctness) are not applicable.
+                      </p>
                     </div>
-                  </div>
+                  )}
                   <div>
                     <div className="mono-label text-[var(--ink-muted)] mb-2 flex items-center gap-2">
                       <span>GENERATOR</span>
@@ -405,12 +475,12 @@ function EvalDetail() {
                       />
                       <MetricNumber
                         label="CTX PRECISION"
-                        value={formatNumericMetric(ragasScore(modeData, 'context_precision'))}
+                        value={formatNumericMetric(applicableRagasScore(modeData, 'context_precision'))}
                         size="sm"
                       />
                       <MetricNumber
                         label="CTX RECALL"
-                        value={formatNumericMetric(ragasScore(modeData, 'context_recall'))}
+                        value={formatNumericMetric(applicableRagasScore(modeData, 'context_recall'))}
                         size="sm"
                       />
                     </div>
@@ -682,7 +752,9 @@ function EvalDetail() {
               <TBody>
                 {run.results.map((r) => {
                   const m = r.metrics
+                  const retrievalCapable = isRetrievalCapable(r.retrieval_mode)
                   const num = (k: string): number | null => {
+                    if (!retrievalCapable && RETRIEVAL_ONLY_METRIC_KEYS.has(k)) return null
                     const v = m[k]
                     return typeof v === 'number' ? v : null
                   }
