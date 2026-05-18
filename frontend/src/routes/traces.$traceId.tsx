@@ -189,76 +189,76 @@ function TracePage() {
         </CardBody>
       </Card>
 
-      {/* Plan + Verifier + Calls + Evidence */}
-      <div className="grid gap-5 lg:grid-cols-[2fr_3fr]">
-        <div className="grid gap-5 self-start lg:sticky lg:top-4">
-          <PlanCard plan={trace.plan} />
-          <VerifierVerdict
-            verdict={trace.verifier_result}
-            retrievalMode={trace.retrieval_mode}
-          />
-          <ModelMetaCard
-            modelMetadata={trace.model_metadata}
-            finalAnswerMetadata={trace.final_answer_metadata}
-          />
-        </div>
+      {/* Plan */}
+      <PlanCard plan={trace.plan} />
 
-        <div className="grid gap-5 min-w-0">
-          <Card>
-            <CardHeader
-              title={
-                <span>
-                  RETRIEVAL CALLS{' '}
-                  <span className="text-[var(--ink-muted)] font-mono numeric">
-                    {trace.retrieval_calls.length}
-                  </span>
-                </span>
-              }
-            />
-            <CardBody className="grid gap-3">
-              {trace.retrieval_calls.length === 0 ? (
-                <p className="text-[12.5px] text-[var(--ink-muted)]">
-                  No retrieval calls recorded (LLM-only mode?).
-                </p>
-              ) : (
-                trace.retrieval_calls.map((call, i) => (
-                  <RetrievalCallCard key={i} call={call} index={i} />
-                ))
-              )}
-            </CardBody>
-          </Card>
+      {/* Retrieval Calls */}
+      <Card>
+        <CardHeader
+          title={
+            <span>
+              RETRIEVAL CALLS{' '}
+              <span className="text-[var(--ink-muted)] font-mono numeric">
+                {trace.retrieval_calls.length}
+              </span>
+            </span>
+          }
+        />
+        <CardBody className="grid gap-3">
+          {trace.retrieval_calls.length === 0 ? (
+            <p className="text-[12.5px] text-[var(--ink-muted)]">
+              No retrieval calls recorded (LLM-only mode?).
+            </p>
+          ) : (
+            trace.retrieval_calls.map((call, i) => (
+              <RetrievalCallCard key={i} call={call} index={i} />
+            ))
+          )}
+        </CardBody>
+      </Card>
 
-          <Card>
-            <CardHeader
-              title={
-                <span>
-                  CITATIONS{' '}
-                  <span className="text-[var(--ink-muted)] font-mono numeric">
-                    {trace.citations.length}
-                  </span>
-                </span>
-              }
-            />
-            <CardBody className="grid gap-2">
-              {trace.citations.length === 0 ? (
-                <p className="text-[12.5px] text-[var(--ink-muted)]">
-                  No citations.
-                </p>
-              ) : (
-                trace.citations.map((c, i) => (
-                  <CitationCard
-                    key={c.chunk_id}
-                    citation={c}
-                    index={i + 1}
-                    highlighted={highlighted === i + 1}
-                    onSelect={(idx) => jumpToCitation(idx)}
-                  />
-                ))
-              )}
-            </CardBody>
-          </Card>
-        </div>
-      </div>
+      {/* Citations */}
+      <Card>
+        <CardHeader
+          title={
+            <span>
+              CITATIONS{' '}
+              <span className="text-[var(--ink-muted)] font-mono numeric">
+                {trace.citations.length}
+              </span>
+            </span>
+          }
+        />
+        <CardBody className="grid gap-2">
+          {trace.citations.length === 0 ? (
+            <p className="text-[12.5px] text-[var(--ink-muted)]">
+              No citations.
+            </p>
+          ) : (
+            trace.citations.map((c, i) => (
+              <CitationCard
+                key={c.chunk_id}
+                citation={c}
+                index={i + 1}
+                highlighted={highlighted === i + 1}
+                onSelect={(idx) => jumpToCitation(idx)}
+              />
+            ))
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Verifier */}
+      <VerifierVerdict
+        verdict={trace.verifier_result}
+        retrievalMode={trace.retrieval_mode}
+      />
+
+      {/* Model metadata */}
+      <ModelMetaCard
+        modelMetadata={trace.model_metadata}
+        finalAnswerMetadata={trace.final_answer_metadata}
+      />
     </div>
   )
 }
