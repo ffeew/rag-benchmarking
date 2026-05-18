@@ -4,7 +4,7 @@ FastAPI, Celery, SQLAlchemy, Alembic, MinIO, pgvector, and provider integration 
 
 ## Layout
 
-- `rag_benchmarking/` — FastAPI app, API routes, ingestion orchestration, worker dispatch, beat-scheduled maintenance tasks (sweeper, trace retention), and operational scripts.
+- `rag_benchmarking/` — FastAPI app, API routes, ingestion orchestration, worker dispatch, operator-triggered stuck-job sweep, and operational scripts.
 - `packages/` — installable monorepo packages:
   - `rag-common` — shared config, schemas, DB models, providers, pricing, job state, logging.
   - `rag-ingestion-worker` — Celery worker for OCR/parse/chunk/embed.
@@ -49,9 +49,10 @@ uv run --directory . mypy rag_benchmarking tests
 
 The testcontainer image pin (`pgvector/pgvector:pg17`) matches docker-compose so the schema, vector extension, and JSONB operators behave identically to production.
 
-## Workers And Beat
+## Workers
 
-Tasks publish through `rag_common.constants.TASK_*` names so the producer (API + scheduler) doesn't import the consumer packages. The maintenance worker registers two beat-driven tasks:
+Ingestion is the only background queue. The API publishes through `rag_common.constants.TASK_INGEST_DOCUMENT` so the producer doesn't import the consumer package; the `rag-ingestion-worker` package consumes the `ingestion` queue and runs OCR / parse / chunk / embed.
 
-- `sweep-stuck-jobs` — every 60s (`rag_benchmarking/workers/sweeper.py`).
-- `purge-old-traces` — hourly (`rag_benchmarking/workers/retention.py`); deletes orphan `QueryTrace` rows older than `query_trace_retention_days`.
+Evaluations run in-process inside the API via `rag_benchmarking.evaluation.launch_evaluation_thread`.
+
+When a job gets stuck (broker drop, worker crash mid-task), call `POST /v1/jobs/sweep` to redispatch queued rows and reap silent runners. The logic lives in `rag_benchmarking/workers/sweeper.py:run_sweep` and is invoked inline by the route — there is no scheduled sweep. Orphan `QueryTrace` rows are cleaned up by FK cascade when their parent dataset is deleted.

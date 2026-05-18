@@ -1,39 +1,25 @@
 import structlog
 from celery import Celery, signals
 from rag_common.config import get_settings
-from rag_common.constants import (
-    QUEUE_INGESTION,
-    QUEUE_MAINTENANCE,
-    TASK_INGEST_DOCUMENT,
-    TASK_PURGE_OLD_TRACES,
-    TASK_SWEEP_STUCK_JOBS,
-)
+from rag_common.constants import QUEUE_INGESTION, TASK_INGEST_DOCUMENT
 from rag_common.logging import configure_logging
 
 settings = get_settings()
 
-# This Celery instance is shared by:
-#   * the API + migrate images (producer-side: send_task, control.revoke).
-#   * the scheduler / maintenance-worker image (consumer-side: registers the
-#     sweeper task via `include`).
-# Evaluations no longer go through Celery — the API runs them in-process via
-# ``rag_benchmarking.evaluation.launch_evaluation_thread``. Ingestion tasks
-# still live in ``rag-ingestion-worker`` (registered on a separate Celery app
-# in that package) so the API image stays free of docling/mistral OCR deps.
+# Producer-side Celery app used by the API to dispatch ingestion tasks and by
+# the sweeper (``rag_benchmarking.workers.sweeper``) to introspect / revoke
+# them. The consumer-side app for ingestion lives in ``rag-ingestion-worker``.
+# Evaluations run in-process via ``rag_benchmarking.evaluation.launch_evaluation_thread``
+# and the stuck-job sweep is operator-triggered through ``POST /v1/jobs/sweep`` —
+# neither needs a beat scheduler or a maintenance worker.
 celery_app = Celery(
     "rag_benchmarking",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=[
-        "rag_benchmarking.workers.sweeper",
-        "rag_benchmarking.workers.retention",
-    ],
 )
 
 celery_app.conf.task_routes = {
     TASK_INGEST_DOCUMENT: {"queue": QUEUE_INGESTION},
-    TASK_SWEEP_STUCK_JOBS: {"queue": QUEUE_MAINTENANCE},
-    TASK_PURGE_OLD_TRACES: {"queue": QUEUE_MAINTENANCE},
 }
 celery_app.conf.task_track_started = True
 
@@ -48,21 +34,6 @@ celery_app.conf.task_time_limit = 1800
 celery_app.conf.task_soft_time_limit = 1500
 celery_app.conf.broker_transport_options = {"visibility_timeout": 3600}
 celery_app.conf.result_expires = 86400
-
-# Beat schedule for the sweeper. Beat must be running as a separate process
-# (see the `beat` service in docker-compose.yml) for these to fire.
-celery_app.conf.beat_schedule = {
-    "sweep-stuck-jobs": {
-        "task": TASK_SWEEP_STUCK_JOBS,
-        "schedule": 60.0,
-    },
-    "purge-old-traces": {
-        "task": TASK_PURGE_OLD_TRACES,
-        # Hourly is plenty — deletions are cheap, idempotent, and the
-        # retention window is measured in days.
-        "schedule": 3600.0,
-    },
-}
 
 
 # Signal-driven logging setup + per-task lifecycle observability. Connecting a

@@ -38,7 +38,7 @@ Primary services:
 | --- | --- |
 | React/Vite frontend | Web workspace for datasets, ingestion, query, traces, and evaluations. |
 | FastAPI app | Authenticated HTTP API for datasets, documents, ingestion jobs, queries, traces, and evaluations. |
-| Celery workers | Long-running ingestion (parsing, chunking, embedding, indexing) and maintenance jobs. |
+| Celery workers | Long-running ingestion (parsing, chunking, embedding, indexing). |
 | In-process evaluation runner | Daemon thread per evaluation launched inside the FastAPI process (`rag_benchmarking.evaluation.launch_evaluation_thread`); RAGAS and judge calls run in the API image. |
 | Redis | Celery broker and result backend only. |
 | Postgres + pgvector | Durable metadata, chunks, embeddings, traces, jobs, citations, and evaluation results. |

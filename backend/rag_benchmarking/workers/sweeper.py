@@ -1,26 +1,23 @@
-"""Periodic stuck-job sweeper.
+"""Operator-triggered stuck-job sweeper.
 
 Re-dispatches queued rows whose execution demonstrably vanished and fails
 running rows that stopped emitting heartbeats. The DB is the source of
-truth for what needs to run — this task closes the loop between persisted
+truth for what needs to run — this closes the loop between persisted
 intent and runtime reality (Celery broker for ingestion, in-process thread
 for evaluation).
 
-The core work lives in :func:`run_sweep`, which takes a session and explicit
-grace/heartbeat windows so the ``POST /v1/jobs/sweep`` route can invoke a
-zero-grace sweep inline without depending on the maintenance-queue worker.
-The Celery task :func:`sweep_stuck_jobs` is the thin wrapper Celery beat
-fires every minute, and uses the conservative defaults.
+Invoked inline from ``POST /v1/jobs/sweep`` — there is no beat scheduler
+firing it on a timer. The handler passes a zero grace window so a click
+immediately recovers fresh queued rows whose initial dispatch failed.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import TypedDict
 
 import structlog
 from rag_common.db import models
-from rag_common.db.session import get_sessionmaker
 from rag_common.enums import JOB_TERMINAL_STATUSES, JobStatus
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rag_benchmarking.evaluation import inproc_thread_alive, is_inproc_task_id
@@ -29,12 +26,11 @@ from rag_benchmarking.workers.dispatch import dispatch_job
 
 logger = structlog.get_logger(__name__)
 
-# The grace + heartbeat windows are env-tunable: the scheduled sweep and the
-# operator-triggered route both read live values from
-# ``rag_common.config.get_settings()``. These module-level constants are the
-# fallback defaults and the values the test suite asserts against.
-# ``MAX_RETRIES`` is intentionally hardcoded — there's no Settings field for
-# it, and ``_redispatch_queued`` references this constant directly.
+# The grace + heartbeat windows are env-tunable: the operator-triggered route
+# reads live values from ``rag_common.config.get_settings()``. These
+# module-level constants are the fallback defaults and the values the test
+# suite asserts against. ``MAX_RETRIES`` is intentionally hardcoded — there's
+# no Settings field for it, and ``_redispatch_queued`` references it directly.
 QUEUED_GRACE_SECONDS = 600
 RUNNING_HEARTBEAT_SECONDS = 2700
 MAX_RETRIES = 3
@@ -57,10 +53,6 @@ def _celery_task_is_dead(task_id: str | None) -> bool:
     if not task_id:
         return True
     if is_inproc_task_id(task_id):
-        # Same-process introspection only — when sweep runs in a different
-        # process from the launcher, the registry returns False (not alive).
-        # The caller's heartbeat staleness check is the real liveness gate
-        # for cross-process in-proc evals.
         return not inproc_thread_alive(task_id)
     state = celery_app.AsyncResult(task_id).state
     return state in _CERTAIN_DEAD_STATES
@@ -92,11 +84,10 @@ def _revoke_existing_task(job: models.Job) -> None:
     if not job.celery_task_id:
         return
     if is_inproc_task_id(job.celery_task_id):
-        # In-process evals can't be revoked via the broker — the daemon
-        # thread either already exited (so the registry is empty) or is
-        # still running in its own process. Cross-process termination
-        # would require os-level signalling we don't want. The new task
-        # id we're about to mint replaces the old one in the DB.
+        # In-process evals can't be revoked via the broker — interrupting a
+        # daemon thread mid-flight would need os-level signalling we don't
+        # want. The new task id we're about to mint replaces the old one in
+        # the DB; the old thread will exit on its own.
         return
     try:
         celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGTERM")
@@ -273,35 +264,6 @@ def _reap_silent_runners(session: Session, now: datetime, heartbeat_seconds: int
     return reaped
 
 
-def _diagnostic_counts(session: Session) -> dict[str, int]:
-    """Snapshot status counters so even a no-op sweep emits useful telemetry.
-
-    ``running_without_heartbeat`` is the smoking gun for the current
-    debug session — a non-zero value here means rows are in ``running``
-    yet ``_reap_silent_runners`` cannot see them (its WHERE clause requires
-    ``last_heartbeat_at IS NOT NULL``).
-    """
-    queued = (
-        session.scalar(select(func.count()).select_from(models.Job).where(models.Job.status == JobStatus.QUEUED)) or 0
-    )
-    running = (
-        session.scalar(select(func.count()).select_from(models.Job).where(models.Job.status == JobStatus.RUNNING)) or 0
-    )
-    running_no_hb = (
-        session.scalar(
-            select(func.count())
-            .select_from(models.Job)
-            .where(models.Job.status == JobStatus.RUNNING, models.Job.last_heartbeat_at.is_(None))
-        )
-        or 0
-    )
-    return {
-        "queued_jobs": queued,
-        "running_jobs": running,
-        "running_jobs_without_heartbeat": running_no_hb,
-    }
-
-
 def run_sweep(
     session: Session,
     *,
@@ -311,40 +273,9 @@ def run_sweep(
 ) -> SweepReport:
     """Execute a single sweep pass on ``session`` and return what changed.
 
-    Does not commit — the caller owns the session lifecycle. Callers:
-
-    - The Celery task :func:`sweep_stuck_jobs` (scheduled by beat) opens its
-      own short-lived session and commits before returning.
-    - The ``POST /v1/jobs/sweep`` route handler reuses the request-scoped
-      session and commits at end of request.
+    Does not commit — the caller (the ``POST /v1/jobs/sweep`` route handler)
+    reuses the request-scoped session and commits at end of request.
     """
     redispatched, exhausted = _redispatch_queued(session, now, queued_grace_seconds)
     reaped = _reap_silent_runners(session, now, heartbeat_seconds)
     return {"redispatched": redispatched, "exhausted": exhausted, "reaped": reaped}
-
-
-@celery_app.task(name="rag_benchmarking.sweep_stuck_jobs", bind=True, acks_late=True)
-def sweep_stuck_jobs(self: object) -> SweepReport:
-    """Scan for stranded jobs and recover them. Idempotent — safe to run often."""
-    from rag_common.config import get_settings
-
-    settings = get_settings()
-    maker = get_sessionmaker()
-    with maker() as session:
-        now = datetime.now(UTC)
-        report = run_sweep(
-            session,
-            now=now,
-            queued_grace_seconds=settings.queued_grace_seconds,
-            heartbeat_seconds=settings.running_heartbeat_seconds,
-        )
-        diagnostics = _diagnostic_counts(session)
-        session.commit()
-    logger.info(
-        "sweep_pass_done",
-        redispatched=report["redispatched"],
-        exhausted=report["exhausted"],
-        reaped=report["reaped"],
-        **diagnostics,
-    )
-    return report

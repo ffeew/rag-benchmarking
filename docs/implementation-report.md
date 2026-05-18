@@ -95,8 +95,6 @@ methodology (10%) is addressed through a pre-registered ablation study.
 | `api` | FastAPI HTTP surface (datasets, documents, ingestions, jobs, query, traces, evaluations, eval-cases, health). Also hosts the in-process evaluation runner (daemon thread per run, RAGAS + judge bundled into this image). Serves the built SPA at `/` in production. | `backend/Dockerfile` |
 | `frontend` | Vite dev server in development; built static assets baked into the api image for production. | `frontend/Dockerfile` |
 | `ingestion-worker` | Celery worker on the `ingestion` queue. Heavy parsing/embedding deps only. | `backend/packages/rag-ingestion-worker/Dockerfile` |
-| `maintenance-worker` | Celery worker on `maintenance` (stuck-job sweep, trace retention). | `backend/Dockerfile` (separate target) |
-| `beat` | Celery beat scheduler driving the maintenance cadence. | `backend/Dockerfile` (separate target) |
 | `migrate` | Alembic-runs-once container; api waits on it. | `backend/Dockerfile` |
 | `postgres` | Postgres 17 + pgvector. Retrieval store, traces, jobs, eval results. | `pgvector/pgvector:pg17` |
 | `redis` | Celery broker + result backend. | `redis:8` |
@@ -837,7 +835,7 @@ keep decomposition on by default?" holding agency constant.
 | Rerank API failure | Trace records `degraded_reason=rerank_failed`; system continues on RRF order. |
 | Insufficient evidence | Answer payload sets `insufficient_evidence=true` + `insufficiency_reason`; cited evidence stays minimal. |
 | Citation hallucination attempt | `verify_evidence` rejects unknown chunk_ids before persistence; generation fails closed rather than silently dropping the bad cite. |
-| Stale / orphaned Celery job | `maintenance-worker` sweeps jobs past their soft timeout and marks them failed; surfaced in the Jobs view. |
+| Stale / orphaned Celery job | Operator triggers `POST /v1/jobs/sweep` from the Jobs view; `run_sweep` redispatches queued rows whose Celery task vanished and marks running rows failed once their heartbeat lapses past `running_heartbeat_seconds`. |
 
 ### Honest limitations
 
@@ -978,7 +976,6 @@ listed in `backend/.env.example`.
 | Chunking | `table_max_rows` | 60 | oversized table split |
 | Eval | `eval_temperature_zero` | true | force temperature 0 in eval |
 | Eval | `eval_timeout_seconds` | 1800 | per-case timeout |
-| Eval | `query_trace_retention_days` | 30 | maintenance sweep |
 | Embeddings | `embedding_dimension` | 1024 | pgvector column width |
 
 ## Appendix C. References

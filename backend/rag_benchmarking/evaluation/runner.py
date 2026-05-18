@@ -12,12 +12,9 @@ Concurrency is bounded by a module-level semaphore sized from
 ``settings.eval_max_inflight`` (default 1, matching the previous Celery
 worker's ``worker_prefetch_multiplier=1``).
 
-Process-local state caveat: ``_INFLIGHT`` and the semaphore are per-process.
-When the sweeper runs in a different process (the maintenance-worker
-container) it can't introspect this registry. The sweeper therefore relies
-on the heartbeat staleness path to detect dead in-proc evaluations across
-processes; the registry helper is only useful when sweep + launch share a
-process (e.g. ``POST /v1/jobs/sweep`` invoked inline against the API).
+``_INFLIGHT`` and the semaphore are per-process. The stuck-job sweeper
+runs inline against the same API process via ``POST /v1/jobs/sweep``, so
+the registry lookup ``inproc_thread_alive`` is always meaningful.
 """
 
 import threading

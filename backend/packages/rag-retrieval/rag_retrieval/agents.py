@@ -71,17 +71,19 @@ def _openrouter_provider(api_key: str, base_url: str) -> OpenAIProvider:
 
 
 def deterministic_model_settings(settings: Settings | None = None) -> ModelSettings | None:
-    """Return ``ModelSettings(temperature=0)`` when the eval determinism knob is on.
-
-    Used by every Pydantic AI ``Agent`` we build so HyDE / retrieval / verifier /
-    generator all run at temperature=0 during evaluation. Returns ``None`` when
-    determinism is disabled so the agent falls back to provider defaults.
+    """Return ``ModelSettings(temperature=0, max_tokens=...)`` for every Pydantic
+    AI ``Agent`` so HyDE / retrieval / verifier / generator share one
+    determinism + completion-budget surface. ``max_tokens`` is always set so
+    providers can preflight-check ``prompt_tokens + max_tokens`` against the
+    context window; otherwise long-context cases fail with
+    "Model token limit (provider default) exceeded before any response was
+    generated".
     """
 
     resolved = settings or get_settings()
     if not resolved.eval_temperature_zero:
-        return None
-    return ModelSettings(temperature=0)
+        return ModelSettings(max_tokens=resolved.generation_max_tokens)
+    return ModelSettings(temperature=0, max_tokens=resolved.generation_max_tokens)
 
 
 def build_chat_model(settings: Settings | None = None) -> Model:

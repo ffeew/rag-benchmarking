@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. **Amended**: evaluations now run as in-process daemon threads inside the API (see commit `5af2dc7`); the stuck-job sweeper is invoked synchronously via `POST /v1/jobs/sweep`, not on a beat schedule; orphan trace retention is handled by FK `ondelete="CASCADE"` from `datasets` to `query_traces` rather than a periodic purge. As a result, the only Celery queue is `ingestion`; the `beat` and `maintenance-worker` services have been removed from `docker-compose.yml`.
 
 ## Context
 

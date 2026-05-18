@@ -56,12 +56,9 @@ def list_jobs(
 def trigger_sweep(session: DbSession, _auth: AuthDep) -> JobSweepResponse:
     """Run the sweeper inline so the operator gets immediate recovery.
 
-    Bypasses the maintenance-queue Celery worker on purpose: the operator
-    clicked this button precisely because the regular path isn't moving
-    things, so we cannot route the recovery through the same broker we
-    suspect is partially broken. ``queued_grace_seconds=0`` means fresh
-    queued rows are eligible immediately — the scheduled beat sweep keeps
-    its conservative 600 s grace for autonomous recovery.
+    ``queued_grace_seconds=0`` means fresh queued rows are eligible
+    immediately — the operator clicked this button precisely because
+    something is stuck, so the conservative defaults aren't useful here.
     """
     settings = get_settings()
     report = sweeper.run_sweep(

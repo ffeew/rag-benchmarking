@@ -45,6 +45,7 @@ class ZaiClient:
         payload: dict[str, Any] = {
             "model": selected_model,
             "messages": messages,
+            "max_tokens": self.settings.generation_max_tokens,
         }
         if self.settings.eval_temperature_zero:
             payload["temperature"] = 0

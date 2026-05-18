@@ -88,14 +88,19 @@ class Settings(BaseSettings):
     # temperature=0 for evaluation determinism. Set to false only for debug runs that
     # intentionally re-enable sampling.
     eval_temperature_zero: bool = True
+    # Explicit upper bound on completion tokens for every chat call (HyDE,
+    # planner, retrieval agent, verifier, generator, RAGAS judge, llm_only
+    # ablation). Set explicitly because some providers reject preflight when
+    # ``len(prompt) + provider_default_max_tokens > context_window`` — the
+    # symptom is a ``Model token limit (provider default) exceeded before any
+    # response was generated`` error on long-context cases.
+    generation_max_tokens: Annotated[int, Field(ge=512, le=32768)] = 8192
 
     embedding_dimension: Annotated[int, Field(gt=0)] = 1024
     chunk_target_tokens: Annotated[int, Field(gt=100)] = 1000
     chunk_max_tokens: Annotated[int, Field(gt=100)] = 1500
     chunk_overlap_tokens: Annotated[int, Field(ge=0)] = 120
     table_max_rows: Annotated[int, Field(gt=1)] = 60
-
-    query_trace_retention_days: Annotated[int, Field(gt=0)] = 30
 
     # Multi-criteria pass thresholds for the per-case ``passed`` flag and the
     # variant-level ``pass_rate`` aggregate. A case is considered passed when
@@ -125,10 +130,10 @@ class Settings(BaseSettings):
     # the host has the CPU + provider quota headroom.
     eval_max_inflight: Annotated[int, Field(ge=1, le=8)] = 1
 
-    # Sweeper thresholds. The scheduled `sweep_stuck_jobs` task marks a RUNNING
-    # job failed when no heartbeat has landed for ``running_heartbeat_seconds``.
-    # The default is set generously so a legitimately slow eval case — e.g. one
-    # stalled on provider rate-limit retries — cannot be reaped mid-flight.
+    # Sweeper thresholds. ``POST /v1/jobs/sweep`` marks a RUNNING job failed
+    # when no heartbeat has landed for ``running_heartbeat_seconds``. The
+    # default is generous so a legitimately slow eval case — e.g. one stalled
+    # on provider rate-limit retries — cannot be reaped mid-flight.
     running_heartbeat_seconds: Annotated[int, Field(gt=0)] = 2700
     queued_grace_seconds: Annotated[int, Field(gt=0)] = 600
 

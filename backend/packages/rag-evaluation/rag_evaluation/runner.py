@@ -726,7 +726,7 @@ def run_evaluation(
                 select(models.EvalCase)
                 .where(models.EvalCase.dataset_id == eval_run.dataset_id)
                 .order_by(models.EvalCase.created_at)
-                .limit(80)
+                .limit(500)
             )
         )
     benchmark_profile = str(eval_run.run_config.get("benchmark_profile") or BenchmarkProfile.SCIENTIFIC)
