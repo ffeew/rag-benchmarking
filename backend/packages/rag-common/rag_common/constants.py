@@ -21,6 +21,5 @@ QUEUE_MAINTENANCE: Final = "maintenance"
 # same N. Any code that reads ``Settings.embedding_dimension`` must agree with
 # this constant; ``Settings`` validates the match at load time and refuses to
 # start otherwise. Changing this value requires a new migration that alters
-# the column type and rebuilds the HNSW index. The column lived in a separate
-# ``embeddings`` table prior to migration 0004_consolidate_chunk_embedding.py.
+# the column type and rebuilds the HNSW index.
 EMBEDDING_VECTOR_DIMENSION: Final = 1024

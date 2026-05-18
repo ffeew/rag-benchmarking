@@ -140,9 +140,8 @@ def format_citation(
 ) -> str:
     """Render a citation label from primitive fields.
 
-    Kept primitive (no SQLAlchemy or RetrievedChunk import) so both
-    ``verification._evidence_label`` and ``generation.citation_label`` can share it.
-    ``filing_date`` accepts anything with an ``isoformat()`` method or a string;
+    Kept primitive (no SQLAlchemy or RetrievedChunk import) so any caller can share
+    it. ``filing_date`` accepts anything with an ``isoformat()`` method or a string;
     falsy values render as ``"undated"``.
 
     Templates are validated at the API boundary (see ``_validate_citation_label_template``

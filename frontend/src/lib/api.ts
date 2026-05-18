@@ -322,13 +322,6 @@ export interface AblationReport {
   case_count: number
 }
 
-export interface AblationSkipped {
-  skipped?: string
-  error?: string
-  variants?: Array<string>
-  baseline?: string
-}
-
 export type RetrievalMode = 'full_agentic' | 'single_pass' | 'llm_only'
 
 export const RETRIEVAL_MODES = [

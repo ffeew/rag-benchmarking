@@ -94,16 +94,6 @@ def build_chat_model(settings: Settings | None = None) -> Model:
     return OpenAIChatModel(resolved.zai_chat_model, provider=provider)
 
 
-def build_judge_model(settings: Settings | None = None) -> Model:
-    resolved = settings or get_settings()
-    if resolved.zai_api_key is None:
-        raise ProviderError("ZAI_API_KEY is not configured")
-    if not resolved.zai_judge_model:
-        raise ProviderError("ZAI_JUDGE_MODEL is not configured")
-    provider = _zai_provider(resolved.zai_api_key.get_secret_value(), resolved.zai_base_url)
-    return OpenAIChatModel(resolved.zai_judge_model, provider=provider)
-
-
 def build_openrouter_chat_model(settings: Settings | None = None) -> Model:
     """Build a pydantic-ai chat model backed by OpenRouter.
 
@@ -116,9 +106,7 @@ def build_openrouter_chat_model(settings: Settings | None = None) -> Model:
         raise ProviderError("OPENROUTER_API_KEY is not configured")
     if not resolved.openrouter_chat_model:
         raise ProviderError("OPENROUTER_CHAT_MODEL is not configured")
-    provider = _openrouter_provider(
-        resolved.openrouter_api_key.get_secret_value(), resolved.openrouter_base_url
-    )
+    provider = _openrouter_provider(resolved.openrouter_api_key.get_secret_value(), resolved.openrouter_base_url)
     return OpenAIChatModel(resolved.openrouter_chat_model, provider=provider)
 
 

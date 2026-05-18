@@ -4,7 +4,6 @@ from typing import cast
 from rag_common.config import Settings
 from rag_common.schemas import QueryFilters
 from rag_retrieval.planning import plan_query
-from rag_retrieval.verification import verify_evidence
 
 
 def _mock_settings() -> Settings:
@@ -63,15 +62,4 @@ def test_plan_query_falls_back_to_heuristic_in_mock_mode() -> None:
     assert plan.latest is True
     assert metadata["agent_used"] is False
     assert metadata["fallback_reason"] == "agent_unavailable"
-    assert usage.is_empty()
-
-
-def test_verify_evidence_falls_back_when_no_evidence() -> None:
-    settings = _mock_settings()
-    result, metadata, usage = verify_evidence("any question", [], settings=settings)
-
-    assert result.supported_chunk_ids == []
-    assert result.confidence < 0.3
-    assert metadata["agent_used"] is False
-    assert metadata["fallback_reason"] == "no_retrieved_evidence"
     assert usage.is_empty()

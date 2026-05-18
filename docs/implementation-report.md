@@ -9,7 +9,7 @@ rationale). It is structured to match the deliverable requirements in
 The system is a production-shaped retrieval-augmented generation pipeline
 over SEC filings (10-K, 10-Q, 8-K) for the largest 50 US companies. It
 exposes a typed FastAPI HTTP surface, a React/Vite operator workspace,
-durable Celery-backed ingestion and evaluation pipelines, a hybrid
+a durable Celery-backed ingestion pipeline, an in-process evaluation runner, a hybrid
 retrieval store on Postgres + pgvector, and an evaluation harness that
 runs a pre-registered ablation study over a 99-case verified eval set.
 
@@ -92,10 +92,9 @@ methodology (10%) is addressed through a pre-registered ablation study.
 
 | Service | Responsibility | Container |
 | --- | --- | --- |
-| `api` | FastAPI HTTP surface (datasets, documents, ingestions, jobs, query, traces, evaluations, eval-cases, health). Serves the built SPA at `/` in production. | `backend/Dockerfile` |
+| `api` | FastAPI HTTP surface (datasets, documents, ingestions, jobs, query, traces, evaluations, eval-cases, health). Also hosts the in-process evaluation runner (daemon thread per run, RAGAS + judge bundled into this image). Serves the built SPA at `/` in production. | `backend/Dockerfile` |
 | `frontend` | Vite dev server in development; built static assets baked into the api image for production. | `frontend/Dockerfile` |
-| `ingestion-worker` | Celery worker on the `ingestion` queue. Heavy parsing/embedding deps only. | `backend/Dockerfile` (separate target) |
-| `evaluation-worker` | Celery worker on the `evaluation` queue. RAGAS / judge-model deps. | `backend/Dockerfile` (separate target) |
+| `ingestion-worker` | Celery worker on the `ingestion` queue. Heavy parsing/embedding deps only. | `backend/packages/rag-ingestion-worker/Dockerfile` |
 | `maintenance-worker` | Celery worker on `maintenance` (stuck-job sweep, trace retention). | `backend/Dockerfile` (separate target) |
 | `beat` | Celery beat scheduler driving the maintenance cadence. | `backend/Dockerfile` (separate target) |
 | `migrate` | Alembic-runs-once container; api waits on it. | `backend/Dockerfile` |
@@ -175,11 +174,13 @@ operator → POST /v1/datasets/{id}/ingestions
 | Settings (pydantic-settings) | `backend/packages/rag-common/rag_common/config.py` |
 | SQLAlchemy models | `backend/packages/rag-common/rag_common/db/models.py` |
 | Alembic migrations | `backend/migrations/versions/` |
-| Celery app + queues | `backend/packages/rag-common/rag_common/workers/celery_app.py` |
-| Ingestion pipeline | `backend/packages/rag-ingestion-worker/ingestion/{parsing,chunking,pipeline}.py` |
-| Ingestion tasks | `backend/packages/rag-ingestion-worker/tasks.py` |
-| Retrieval primitives | `backend/packages/rag-retrieval/{hybrid,planning,hyde,verification,generation,retrieval_tool,query,dataset_config}.py` |
-| Evaluation runner | `backend/packages/rag-evaluation/{runner,scoring,metrics,ablation_analysis}.py` |
+| Celery app (API/scheduler side) | `backend/rag_benchmarking/workers/celery_app.py` |
+| Celery app (ingestion side) | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/celery_app.py` |
+| In-process evaluation launcher | `backend/rag_benchmarking/evaluation/runner.py` |
+| Ingestion pipeline | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/ingestion/{parsing,chunking,pipeline}.py` |
+| Ingestion tasks | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/tasks.py` |
+| Retrieval primitives | `backend/packages/rag-retrieval/rag_retrieval/{hybrid,planning,hyde,verification,generation,retrieval_tool,query,dataset_config}.py` |
+| Evaluation runner | `backend/packages/rag-evaluation/rag_evaluation/{runner,scoring,metrics,ablation_analysis}.py` |
 | Locked variants | `backend/packages/rag-common/rag_common/eval_variants.py` |
 | Eval cases | `backend/eval_cases/sec_filings_v1.yaml` |
 | Scripts (CLI reproduction) | `backend/rag_benchmarking/scripts/{seed_eval_cases,run_eval,compare_ablations}.py` |

@@ -17,7 +17,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    environment: str = "local"
     api_bearer_token: SecretStr
     allow_mock_providers: bool = False
 
@@ -76,9 +75,6 @@ class Settings(BaseSettings):
     evidence_top_k: Annotated[int, Field(gt=0, le=20)] = 8
     rerank_candidates: Annotated[int, Field(gt=0, le=100)] = 20
     reranker_enabled: bool = True
-    # Deprecated: superseded by retrieval_agent_tool_call_budget for full_agentic.
-    # Still consumed by the legacy verifier-driven retry path on non-agentic flows.
-    agent_retry_budget: Annotated[int, Field(ge=0, le=3)] = 1
     hyde_enabled: bool = True
     retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 4
     # Query decomposition for single_pass: when on, an LLM call breaks multi-part
@@ -99,7 +95,6 @@ class Settings(BaseSettings):
     chunk_overlap_tokens: Annotated[int, Field(ge=0)] = 120
     table_max_rows: Annotated[int, Field(gt=1)] = 60
 
-    eval_timeout_seconds: Annotated[int, Field(gt=0)] = 1800
     query_trace_retention_days: Annotated[int, Field(gt=0)] = 30
 
     # Multi-criteria pass thresholds for the per-case ``passed`` flag and the
@@ -132,9 +127,8 @@ class Settings(BaseSettings):
 
     # Sweeper thresholds. The scheduled `sweep_stuck_jobs` task marks a RUNNING
     # job failed when no heartbeat has landed for ``running_heartbeat_seconds``.
-    # Must comfortably exceed ``eval_timeout_seconds`` (per-case cap) so a
-    # legitimately slow case — e.g. one stalled on provider rate-limit retries —
-    # cannot be reaped mid-flight by the sweeper.
+    # The default is set generously so a legitimately slow eval case — e.g. one
+    # stalled on provider rate-limit retries — cannot be reaped mid-flight.
     running_heartbeat_seconds: Annotated[int, Field(gt=0)] = 2700
     queued_grace_seconds: Annotated[int, Field(gt=0)] = 600
 

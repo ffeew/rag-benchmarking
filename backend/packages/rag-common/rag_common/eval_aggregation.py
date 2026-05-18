@@ -1,11 +1,11 @@
 """Per-variant and run-wide aggregation over eval-result rows.
 
-Hosted in ``rag_common`` so the API image (which deliberately excludes
-``rag_evaluation`` to stay lean — see ``backend/Dockerfile``) can
-recompute aggregates on the read path without pulling in the worker's
-heavy deps (ragas, openai, docling). The eval worker, the
-``backfill_eval_metrics`` script, and the API serializer all import from
-here.
+Hosted in ``rag_common`` (rather than ``rag_evaluation``) so the API
+serializer and the ``backfill_eval_metrics`` script can recompute
+aggregates without taking a dependency on the full evaluation stack.
+The in-process evaluation runner imports it too, but only ``rag_common``
+membership keeps this module reachable from read-path code that mustn't
+import the scoring/judge surface.
 
 Pure data-shaping logic: takes ``EvalResult`` rows (or their ``metrics``
 dicts) and returns aggregate dicts. No I/O, no LLM calls. Anything that

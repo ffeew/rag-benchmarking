@@ -29,10 +29,12 @@ from rag_benchmarking.workers.dispatch import dispatch_job
 
 logger = structlog.get_logger(__name__)
 
-# Module-level defaults used by callers that don't have a Settings handy
-# (e.g. legacy callers). The scheduled sweep and the operator-triggered route
-# now read live values from ``rag_common.config.get_settings()`` so the
-# thresholds are tunable via env without a code change.
+# The grace + heartbeat windows are env-tunable: the scheduled sweep and the
+# operator-triggered route both read live values from
+# ``rag_common.config.get_settings()``. These module-level constants are the
+# fallback defaults and the values the test suite asserts against.
+# ``MAX_RETRIES`` is intentionally hardcoded — there's no Settings field for
+# it, and ``_redispatch_queued`` references this constant directly.
 QUEUED_GRACE_SECONDS = 600
 RUNNING_HEARTBEAT_SECONDS = 2700
 MAX_RETRIES = 3

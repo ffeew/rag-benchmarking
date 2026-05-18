@@ -36,15 +36,15 @@ function SystemPage() {
 
   const providerRows: Array<KVRow> = []
   for (const k of [
-    'openrouter_chat_model',
-    'openrouter_judge_model',
+    'zai_chat_model',
+    'zai_judge_model',
     'openrouter_embedding_model',
     'openrouter_rerank_model',
     'mistral_ocr_model',
   ]) {
     if (providers[k] !== undefined && providers[k] !== null) {
       providerRows.push({
-        key: k.replace('openrouter_', '').replace(/_/g, ' '),
+        key: k.replace(/^(openrouter|zai)_/, '').replace(/_/g, ' '),
         value: String(providers[k]),
         mono: true,
         copyable: true,
@@ -60,7 +60,6 @@ function SystemPage() {
     'evidence_top_k',
     'rerank_candidates',
     'reranker_enabled',
-    'agent_retry_budget',
   ]) {
     if (providers[k] !== undefined && providers[k] !== null) {
       retrievalRows.push({

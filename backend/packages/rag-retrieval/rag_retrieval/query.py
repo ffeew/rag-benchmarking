@@ -144,7 +144,6 @@ def _empty_verifier_result() -> dict[str, Any]:
         "supported_chunk_ids": [],
         "missing_subclaims": [],
         "contradictions": [],
-        "retry_query": None,
         "confidence": None,
         "reasoning": None,
     }
@@ -248,7 +247,6 @@ def run_query(
             "supported_chunk_ids": list(agent_result.output.selected_chunk_ids),
             "missing_subclaims": list(agent_result.output.missing_subclaims),
             "contradictions": list(agent_result.output.contradictions),
-            "retry_query": None,
             "confidence": agent_result.output.confidence,
             "reasoning": agent_result.output.reasoning or None,
         }

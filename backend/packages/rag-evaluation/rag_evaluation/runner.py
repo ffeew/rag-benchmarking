@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from rag_evaluation.judge import TextJudge, build_text_judge
 from rag_evaluation.metrics import (
     ChunkSnapshot,
     CitationSnapshot,
@@ -46,7 +47,6 @@ from rag_evaluation.metrics import (
     strict_mean_reciprocal_rank,
     strict_recall_at_k,
 )
-from rag_evaluation.judge import TextJudge, build_text_judge
 from rag_evaluation.scoring import (
     answer_declined_to_respond,
     coerce_expected_evidence,

@@ -19,7 +19,7 @@ is a no-op unless ``--force`` is set.
 import argparse
 import logging
 import sys
-from typing import Iterable
+from collections.abc import Iterable
 
 from rag_common.db import models
 from rag_common.db.session import get_sessionmaker

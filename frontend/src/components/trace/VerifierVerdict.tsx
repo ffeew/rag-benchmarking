@@ -16,11 +16,12 @@ function asString(item: string | Record<string, unknown>): string {
 }
 
 // Only the full_agentic pipeline runs the LLM verifier as a discrete step
-// (see backend/packages/rag-retrieval/rag_retrieval/query.py:195-253 — the
-// retrieval agent's structured output IS the verifier verdict). single_pass
-// uses ``keyword_verify_evidence`` — a deterministic lexical check that
-// doesn't produce per-claim verdicts. llm_only skips retrieval entirely.
-// Surface that explicitly so empty SUPPORTED/MISSING sections don't read as
+// (see the RetrievalMode.FULL_AGENTIC branch in
+// backend/packages/rag-retrieval/rag_retrieval/query.py — the retrieval
+// agent's structured output IS the verifier verdict). single_pass uses
+// ``keyword_verify_evidence`` — a deterministic lexical check that doesn't
+// produce per-claim verdicts. llm_only skips retrieval entirely. Surface
+// that explicitly so empty SUPPORTED/MISSING sections don't read as
 // "the verifier ran and found nothing."
 const VERIFIER_BYPASS_BY_MODE: Record<string, string> = {
   single_pass:

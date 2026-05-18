@@ -6,13 +6,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.exceptions import ModelHTTPError
 from rag_common.config import Settings, get_settings
 from rag_common.enums import Provider, RetrievalMode
 from rag_common.providers.openrouter import ProviderError
 from rag_common.providers.zai import ZaiClient
 from rag_common.usage import TokenUsage, from_openrouter_usage, safe_pydantic_ai_usage
-
-from pydantic_ai.exceptions import ModelHTTPError
 
 from rag_retrieval.agents import (
     AGENT_RETRYABLE_ERRORS,
@@ -28,7 +27,6 @@ from rag_retrieval.dataset_config import (
 )
 from rag_retrieval.hybrid import RetrievedChunk
 from rag_retrieval.planning import RetrievalPlan
-from rag_retrieval.verification import VerificationResult, keyword_verify_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +34,11 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AnswerDraft",
     "GeneratorOutput",
-    "VerificationResult",
     "citation_label",
     "generate_answer",
     "generate_answer_with_agent",
-    "keyword_verify_evidence",
     "local_grounded_answer",
     "snippet",
-    "verify_evidence",
 ]
 
 
@@ -154,11 +149,6 @@ def local_grounded_answer(
         insufficiency_reason=insufficiency_reason,
         metadata={"generator": generator},
     )
-
-
-def verify_evidence(question: str, retrieved: list[RetrievedChunk]) -> VerificationResult:
-    """Back-compat shim: returns only the VerificationResult, no metadata."""
-    return keyword_verify_evidence(question, retrieved)
 
 
 @dataclass(frozen=True)
@@ -408,9 +398,7 @@ def generate_answer_with_agent(
                 fallback_provider = Provider.OPENROUTER
                 fallback_model = settings.openrouter_chat_model
             except AGENT_RETRYABLE_ERRORS as fallback_exc:
-                logger.warning(
-                    "generator_openrouter_fallback_failed", extra={"error": str(fallback_exc)}
-                )
+                logger.warning("generator_openrouter_fallback_failed", extra={"error": str(fallback_exc)})
                 return (
                     local_grounded_answer(
                         question,

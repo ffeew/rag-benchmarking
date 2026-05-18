@@ -37,7 +37,6 @@ def test_keyword_verify_returns_low_confidence_when_nothing_matches() -> None:
     result = keyword_verify_evidence("Microsoft Azure pricing in Asia", chunks)
 
     assert result.supported_chunk_ids == []
-    assert result.retry_query is not None
     assert result.confidence <= 0.2
 
 

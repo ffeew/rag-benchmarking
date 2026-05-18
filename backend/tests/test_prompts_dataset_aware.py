@@ -1,11 +1,11 @@
 """Dataset-aware prompt content checks.
 
-These tests assert that the five agent prompts (planner, HyDE, verifier, generator,
-retrieval agent) no longer hard-code SEC identity and that dynamic ``@agent.instructions``
-inject the dataset's ``domain_label`` / ``valid_forms`` / ``hyde_style_hint`` so the same
-agent can serve any registered dataset. The check inspects the static instructions
-strings and the dynamic-instructions functions directly so it runs without an LLM
-provider.
+These tests assert that the four agent prompts (planner, HyDE, generator, retrieval
+agent) no longer hard-code SEC identity and that dynamic ``@agent.instructions``
+inject the dataset's ``domain_label`` / ``valid_forms`` / ``hyde_style_hint`` so the
+same agent can serve any registered dataset. The check inspects the static
+instructions strings and the dynamic-instructions functions directly so it runs
+without an LLM provider.
 """
 
 from datetime import date
@@ -28,13 +28,12 @@ def _stub_build_chat_model(monkeypatch: pytest.MonkeyPatch) -> None:
     ``_build_*_agent_for`` lru_caches need to be invalidated each test so the patched
     builder is actually exercised.
     """
-    from rag_retrieval import agents, generation, hyde, planning, verification
+    from rag_retrieval import agents, generation, hyde, planning
 
     test_model = TestModel()
     monkeypatch.setattr(agents, "build_chat_model", lambda _s=None: test_model)
     planning._build_planner_agent_for.cache_clear()
     hyde._build_hyde_agent_for.cache_clear()
-    verification._build_verifier_agent_for.cache_clear()
     generation._build_generator_agent_for.cache_clear()
 
 
@@ -56,13 +55,6 @@ def test_static_hyde_instructions_drop_sec_register_cues() -> None:
     assert "accounting terminology" not in _HYDE_INSTRUCTIONS.lower()
     assert "MD&A" not in _HYDE_INSTRUCTIONS
     assert "formal disclosure register" in _HYDE_INSTRUCTIONS
-
-
-def test_static_verifier_instructions_drop_sec_identity() -> None:
-    from rag_retrieval.verification import _VERIFIER_INSTRUCTIONS
-
-    assert "SEC filings RAG system" not in _VERIFIER_INSTRUCTIONS
-    assert "filings RAG system" in _VERIFIER_INSTRUCTIONS
 
 
 def test_static_generator_instructions_drop_investor_framing() -> None:
@@ -160,21 +152,6 @@ def test_hyde_dynamic_instructions_omit_style_hint_when_blank() -> None:
 
     assert "CORPUS:" in rendered
     assert "STYLE_HINT" not in rendered
-
-
-def test_verifier_dynamic_instructions_emit_domain_label() -> None:
-    from rag_retrieval.verification import _build_verifier_agent_for
-
-    agent = _build_verifier_agent_for("test-model-v")
-    verifier_context = _find_instructions_fn(agent, "verifier_context")
-    deps = SimpleNamespace(
-        valid_chunk_ids=frozenset(),
-        dataset_config=_custom_config(),
-    )
-    ctx = cast("object", SimpleNamespace(deps=deps))
-    rendered = verifier_context(ctx)  # type: ignore[operator]
-
-    assert rendered == "CORPUS: Internal compliance memos"
 
 
 def test_generator_dynamic_instructions_emit_domain_label() -> None:
