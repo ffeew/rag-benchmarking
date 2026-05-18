@@ -1,8 +1,27 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CitationCard } from './CitationCard'
+import { api } from '#/lib/api'
 import type { Citation } from '#/lib/api'
+
+vi.mock('#/providers/TokenProvider', () => ({
+  useToken: () => ({
+    token: 'test-token',
+    isAuthed: true,
+    setToken: vi.fn(),
+    clearToken: vi.fn(),
+  }),
+}))
+
+vi.mock('#/lib/api', () => ({
+  api: {
+    documentFilePresignedUrl: vi.fn(async () => ({
+      url: 'https://minio.test/sec-filings/raw/AAPL/10-K/abc.pdf',
+      expires_at: '2099-01-01T00:00:00Z',
+    })),
+  },
+}))
 
 function makeCitation(overrides: Partial<Citation> = {}): Citation {
   return {
@@ -22,6 +41,10 @@ function makeCitation(overrides: Partial<Citation> = {}): Citation {
   }
 }
 
+afterEach(() => {
+  vi.clearAllMocks()
+})
+
 describe('CitationCard', () => {
   it('renders ticker, form, page, and snippet', () => {
     render(<CitationCard citation={makeCitation()} index={1} />)
@@ -31,11 +54,25 @@ describe('CitationCard', () => {
     expect(screen.getByText(/Apple total net sales/)).toBeTruthy()
   })
 
-  it('invokes onSelect with the index when clicked', () => {
+  it('invokes onSelect with the index when card is clicked', () => {
     const onSelect = vi.fn()
-    render(<CitationCard citation={makeCitation()} index={3} onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('button'))
+    render(
+      <CitationCard citation={makeCitation()} index={3} onSelect={onSelect} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Citation 3/ }))
     expect(onSelect).toHaveBeenCalledWith(3)
+  })
+
+  it('invokes onSelect on Enter and Space keypress', () => {
+    const onSelect = vi.fn()
+    render(
+      <CitationCard citation={makeCitation()} index={2} onSelect={onSelect} />,
+    )
+    const card = screen.getByRole('button', { name: /Citation 2/ })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(onSelect).toHaveBeenCalledTimes(2)
+    expect(onSelect).toHaveBeenCalledWith(2)
   })
 
   it('truncates a long minio_key visually but renders it', () => {
@@ -51,5 +88,47 @@ describe('CitationCard', () => {
     render(<CitationCard citation={citation} index={1} />)
     // formatDate returns '–' for null
     expect(screen.getByText('–')).toBeTruthy()
+  })
+
+  it('opens the source PDF at the cited page when the minio_key button is clicked', async () => {
+    const placeholderWindow = {
+      location: { href: '' },
+      close: vi.fn(),
+    } as unknown as Window
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(placeholderWindow)
+
+    render(<CitationCard citation={makeCitation()} index={1} />)
+    fireEvent.click(
+      screen.getByRole('button', { name: /Open source PDF at page 32/ }),
+    )
+
+    expect(openSpy).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(api.documentFilePresignedUrl).toHaveBeenCalledWith(
+      'test-token',
+      'doc-1',
+    )
+    await waitFor(() => {
+      expect(placeholderWindow.location.href).toBe(
+        'https://minio.test/sec-filings/raw/AAPL/10-K/abc.pdf#page=32',
+      )
+    })
+  })
+
+  it('does not trigger onSelect when the PDF button is clicked', async () => {
+    const placeholderWindow = {
+      location: { href: '' },
+      close: vi.fn(),
+    } as unknown as Window
+    vi.spyOn(window, 'open').mockReturnValue(placeholderWindow)
+    const onSelect = vi.fn()
+
+    render(
+      <CitationCard citation={makeCitation()} index={1} onSelect={onSelect} />,
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: /Open source PDF at page 32/ }),
+    )
+
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

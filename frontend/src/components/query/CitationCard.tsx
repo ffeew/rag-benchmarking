@@ -1,9 +1,12 @@
 import { ExternalLink } from 'lucide-react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 
 import { Badge } from '#/components/ui/badge'
 import type { Citation } from '#/lib/api'
 import { cn } from '#/lib/cn'
 import { formatDate } from '#/lib/format'
+import { openSourcePdf } from '#/lib/pdfViewer'
+import { useToken } from '#/providers/TokenProvider'
 
 export function CitationCard({
   citation,
@@ -16,17 +19,44 @@ export function CitationCard({
   highlighted?: boolean
   onSelect?: (index: number) => void
 }) {
+  const { token } = useToken()
+
+  function handleSelect() {
+    onSelect?.(index)
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleSelect()
+    }
+  }
+
+  function handleOpenPdf(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+    void openSourcePdf({
+      token,
+      documentId: citation.document_id,
+      page: citation.page_number,
+    })
+  }
+
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       id={`citation-${index}`}
       data-citation-card={index}
-      onClick={() => onSelect?.(index)}
+      aria-label={`Citation ${index} — ${citation.label}`}
+      onClick={handleSelect}
+      onKeyDown={handleKeyDown}
       className={cn(
-        'group block w-full text-left border rounded-[4px] p-3 transition-all',
+        'group block w-full text-left border rounded-[4px] p-3 transition-all cursor-pointer',
         'bg-[var(--surface)] border-[var(--rule)]',
         'hover:border-[var(--cite)]/40 hover:bg-[var(--surface-2)]',
-        highlighted && 'border-[var(--cite)] bg-[var(--cite-soft)] ring-1 ring-[var(--cite)]/40',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cite)]/40',
+        highlighted &&
+          'border-[var(--cite)] bg-[var(--cite-soft)] ring-1 ring-[var(--cite)]/40',
       )}
     >
       <div className="flex items-start gap-2.5">
@@ -51,12 +81,23 @@ export function CitationCard({
           <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--ink-dim)] line-clamp-4 group-hover:text-[var(--ink)]">
             {citation.snippet}
           </p>
-          <div className="mt-2 flex items-center gap-1 font-mono text-[10px] text-[var(--ink-muted)]">
-            <ExternalLink className="h-2.5 w-2.5" />
+          <button
+            type="button"
+            onClick={handleOpenPdf}
+            title={`Open PDF at page ${citation.page_number}`}
+            aria-label={`Open source PDF at page ${citation.page_number}`}
+            className={cn(
+              'mt-2 inline-flex max-w-full items-center gap-1 rounded-[2px]',
+              'font-mono text-[10px] text-[var(--ink-muted)]',
+              'hover:text-[var(--accent)] hover:underline underline-offset-2',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40',
+            )}
+          >
+            <ExternalLink className="h-2.5 w-2.5 shrink-0" />
             <span className="truncate">{citation.minio_key}</span>
-          </div>
+          </button>
         </div>
       </div>
-    </button>
+    </div>
   )
 }
