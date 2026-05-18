@@ -193,7 +193,10 @@ function TracePage() {
       <div className="grid gap-5 lg:grid-cols-[2fr_3fr]">
         <div className="grid gap-5 self-start lg:sticky lg:top-4">
           <PlanCard plan={trace.plan} />
-          <VerifierVerdict verdict={trace.verifier_result} />
+          <VerifierVerdict
+            verdict={trace.verifier_result}
+            retrievalMode={trace.retrieval_mode}
+          />
           <ModelMetaCard
             modelMetadata={trace.model_metadata}
             finalAnswerMetadata={trace.final_answer_metadata}
