@@ -267,7 +267,24 @@ def run_query(
         full_retrieval = list(retrieved)
         embedding_usage_total = embedding_usage
         rerank_usage_total = rerank_usage
-        retrieval_calls.append({"query": request.question, **retrieval_trace})
+        retrieval_calls.append({
+            "query": request.question,
+            **retrieval_trace,
+            "candidates": [
+                {
+                    "rank": rank,
+                    "chunk_id": item.chunk.id,
+                    "ticker": item.document.ticker,
+                    "form_type": item.document.form_type,
+                    "filing_date": item.document.filing_date.isoformat() if item.document.filing_date else None,
+                    "page_start": item.chunk.page_start,
+                    "score": float(item.score),
+                    "rerank_score": float(item.rerank_score) if item.rerank_score is not None else None,
+                    "snippet": snippet(item.chunk.text, limit=400),
+                }
+                for rank, item in enumerate(retrieved, start=1)
+            ],
+        })
     else:  # llm_only
         plan, planner_meta, planner_usage = _heuristic_plan(
             session, request=request, resolved=resolved, dataset_config=dataset_config
