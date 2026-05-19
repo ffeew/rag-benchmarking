@@ -55,7 +55,24 @@ my_filings/
     TICKER_10-K_YYYYMMDD.pdf
 ```
 
-Then set `LOCAL_CORPUS_PATH` in `backend/.env` or mount the path into the API/worker containers and call the same registration endpoint.
+The API and ingestion worker only see files that are bind-mounted into the container. Point both volume binds in `docker-compose.yml` at your dataset directory on the host. Replace the two `./sec_filings_pdf:/app/sec_filings_pdf:ro` lines (one on `api`, one on `ingestion-worker`) with your path:
+
+```yaml
+api:
+  volumes:
+    - /absolute/path/to/my_filings:/app/sec_filings_pdf:ro
+ingestion-worker:
+  volumes:
+    - /absolute/path/to/my_filings:/app/sec_filings_pdf:ro
+```
+
+The container-side path (`/app/sec_filings_pdf`) can stay as-is since it matches `LOCAL_CORPUS_PATH` in `backend/.env`, or you can change both sides together. Recreate the services to pick up the new mount:
+
+```bash
+docker compose up -d --force-recreate api ingestion-worker
+```
+
+Then call `POST /v1/datasets/register-local-corpus`. The `path` field accepts a directory (matches `<path>/<entity>/*.pdf`), a glob pattern (e.g. `/app/sec_filings_pdf/AAPL/*.pdf`), or a single `.pdf` file; omit it to fall back to `LOCAL_CORPUS_PATH`. The endpoint returns HTTP 400 if no PDFs match.
 
 ### Domain-Adaptive Retrieval Config
 
