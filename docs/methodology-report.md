@@ -183,21 +183,21 @@ For a lenient match between expected citation $e$ and retrieved chunk $r$:
 
 $$
 \text{match}(e, r) = \begin{cases}
-[r.\text{document\_id} = e.\text{document\_id}] \wedge [\text{page}(e, r)] & \text{if } e.\text{document\_id} \neq \emptyset, \\[2pt]
+[r.\text{document\\_id} = e.\text{document\\_id}] \wedge [\text{page}(e, r)] & \text{if } e.\text{document\\_id} \neq \emptyset, \\\\[2pt]
 [\text{ticker}(e, r)] \wedge [\text{form}(e, r)] \wedge [\text{page}(e, r)] & \text{otherwise},
 \end{cases}
 $$
 
-where $\text{page}(e, r)$ is true iff $e.\text{page\_number}$ is null or falls within $[r.\text{page\_start}, r.\text{page\_end}]$.
+where $\text{page}(e, r)$ is true iff $e.\text{page\\_number}$ is null or falls within $[r.\text{page\\_start}, r.\text{page\\_end}]$.
 
-The strict-match predicate (`_strict_single_match`) additionally requires $e.\text{page\_number}$ to be non-null and to fall within the chunk's page range, and disqualifies ticker-only hints by requiring both ticker and form type when no document identifier is supplied.
+The strict-match predicate (`_strict_single_match`) additionally requires $e.\text{page\\_number}$ to be non-null and to fall within the chunk's page range, and disqualifies ticker-only hints by requiring both ticker and form type when no document identifier is supplied.
 
 #### 5.1.2 Recall at k
 
 The fraction of expected citations matched by the top-$k$ retrieved chunks:
 
 $$
-\mathrm{Recall@k}(E, R) = \frac{|\{e \in E : \exists r \in R_{1..k}, \text{match}(e, r)\}|}{|E|}.
+\mathrm{Recall@k}(E, R) = \frac{|\\{e \in E : \exists r \in R_{1..k}, \text{match}(e, r)\\}|}{|E|}.
 $$
 
 The function returns zero when $|E| = 0$ or $k \leq 0$. Both $k=5$ and $k=10$ are computed and persisted per case (`metrics.recall_at_5`, `metrics.recall_at_10`). The strict variant `strict_recall_at_k` applies the strict-match predicate over the `strict_evidence_eligible` filter.
@@ -208,7 +208,7 @@ The reciprocal rank of the first match, or zero if no match exists in $R$:
 
 $$
 \mathrm{MRR}(E, R) = \begin{cases}
-1 / \max(1, \mathrm{rank}(r^*)) & \text{if } \exists r^* \in R, \exists e \in E, \text{match}(e, r^*), \\[2pt]
+1 / \max(1, \mathrm{rank}(r^{\star})) & \text{if } \exists r^{\star} \in R, \exists e \in E, \text{match}(e, r^{\star}), \\\\[2pt]
 0 & \text{otherwise.}
 \end{cases}
 $$
@@ -217,13 +217,13 @@ The implementation iterates through $R$ in retrieval order and returns at the fi
 
 #### 5.1.4 Page-evidence F1
 
-The set of retrieved chunks is flattened into page units — one $(r, p)$ tuple per page $p \in [r.\text{page\_start}, r.\text{page\_end}]$ — and deduplicated by $(r.\text{document\_id}, p)$. This deduplication is material: two overlapping chunks that share a page contribute one unit, not two, preventing double-counting that would inflate page-level recall on overlap-heavy variants. Let $U$ denote the deduplicated page units. Define the relevant set and the covered-expected set:
+The set of retrieved chunks is flattened into page units — one $(r, p)$ tuple per page $p \in [r.\text{page\\_start}, r.\text{page\\_end}]$ — and deduplicated by $(r.\text{document\\_id}, p)$. This deduplication is material: two overlapping chunks that share a page contribute one unit, not two, preventing double-counting that would inflate page-level recall on overlap-heavy variants. Let $U$ denote the deduplicated page units. Define the relevant set and the covered-expected set:
 
 $$
-\mathrm{rel}(U, E) = \{(r, p) \in U : \exists e \in E, \text{page\_match}(e, r, p)\},
+\mathrm{rel}(U, E) = \\{(r, p) \in U : \exists e \in E, \text{page\\_match}(e, r, p)\\},
 $$
 $$
-\mathrm{cov}(E, U) = \{e \in E : \exists (r, p) \in U, \text{page\_match}(e, r, p)\}.
+\mathrm{cov}(E, U) = \\{e \in E : \exists (r, p) \in U, \text{page\\_match}(e, r, p)\\}.
 $$
 
 Then page-evidence F1 is the harmonic mean of precision and recall over those sets:
@@ -240,7 +240,7 @@ Identical in structure to §5.1.4 but applied at chunk granularity rather than p
 
 #### 5.1.6 Metadata filter correctness
 
-A binary signal that audits the planner's filter selection. Let $T$ be the set of tickers in the planner's `target_tickers` filter and $F$ the set of forms in the planner's `forms` filter, both upper-cased. The metric returns zero if any expected citation $e \in E$ is excluded by the filter — that is, if $T$ is non-empty and $e.\text{ticker} \notin T$, or if $F$ is non-empty and $e.\text{form\_type} \notin F$. It returns one otherwise, and one trivially when $|E| = 0$. The metric is a confirmatory check on the planner: if it fails, the retrieval-side metrics are bounded above regardless of the embedding and reranker quality.
+A binary signal that audits the planner's filter selection. Let $T$ be the set of tickers in the planner's `target_tickers` filter and $F$ the set of forms in the planner's `forms` filter, both upper-cased. The metric returns zero if any expected citation $e \in E$ is excluded by the filter — that is, if $T$ is non-empty and $e.\text{ticker} \notin T$, or if $F$ is non-empty and $e.\text{form\\_type} \notin F$. It returns one otherwise, and one trivially when $|E| = 0$. The metric is a confirmatory check on the planner: if it fails, the retrieval-side metrics are bounded above regardless of the embedding and reranker quality.
 
 ### 5.2 Citation metrics
 
@@ -248,10 +248,10 @@ The citation layer measures whether the generator's textual claims are grounded 
 
 #### 5.2.1 Citation validity (grounding)
 
-For each citation $c \in C$, the metric resolves $c.\text{chunk\_id}$ against the snapshot of chunks emitted with the response and tests whether $c.\text{evidence\_text}$ is grounded in the resolved chunk's text. Grounding is checked with a normalized prefix containment: both strings are lower-cased and have whitespace runs collapsed; the first eighty characters of the citation's evidence text must appear as a substring of the chunk's text:
+For each citation $c \in C$, the metric resolves $c.\text{chunk\\_id}$ against the snapshot of chunks emitted with the response and tests whether $c.\text{evidence\\_text}$ is grounded in the resolved chunk's text. Grounding is checked with a normalized prefix containment: both strings are lower-cased and have whitespace runs collapsed; the first eighty characters of the citation's evidence text must appear as a substring of the chunk's text:
 
 $$
-\text{grounded}(c) = \big[\text{prefix}_{80}\!\big(\mathrm{norm}(c.\text{evidence\_text})\big) \subseteq \mathrm{norm}(\text{chunk}(c).\text{text})\big].
+\text{grounded}(c) = \big[\text{prefix}_{80}\!\big(\mathrm{norm}(c.\text{evidence\\_text})\big) \subseteq \mathrm{norm}(\text{chunk}(c).\text{text})\big].
 $$
 
 The metric is the fraction of citations satisfying $\text{grounded}$; it returns zero when $|C| = 0$. The eighty-character prefix is a deliberate compromise: short enough that chunker truncation does not flip the verdict, long enough that an LLM-fabricated evidence string is unlikely to coincidentally match.
@@ -261,7 +261,7 @@ The metric is the fraction of citations satisfying $\text{grounded}$; it returns
 The answer text is split into sentences by a regex on terminal punctuation. A sentence is *material* if it contains a number, percentage, dollar amount, or one of the lexical markers (`million`, `billion`, `trillion`, `basis points`, `bps`). The coverage is the fraction of material sentences that contain at least one citation tag of the form `##eN` (`_CITATION_TAG_RE = ##e(\d+)`):
 
 $$
-\mathrm{Coverage} = \frac{|\{s \in S_{\text{material}} : \exists N, \text{\#\#e}N \in s\}|}{|S_{\text{material}}|}.
+\mathrm{Coverage} = \frac{|\\{s \in S_{\text{material}} : \exists N, \text{\\#\\#e}N \in s\\}|}{|S_{\text{material}}|}.
 $$
 
 If the answer contains no material claims the metric returns one (nothing to cite). To accommodate generators that strip raw tags in favor of rendered labels, the metric returns a fallback value of one-half when no `##e` tags are found but the `citations_used` list emitted by the generator is non-empty; this prevents a styling change in the renderer from collapsing the coverage rate to zero. The runner passes the pre-substitution `answer_with_tags` rather than the rendered answer when available, so this fallback path is rare in normal operation.
@@ -288,7 +288,7 @@ Numeric candidates are extracted from the answer text by a single regex (`_NUMBE
 
 #### 5.3.2 TEXT
 
-A text expected value carries a string `value_text`. With an LLM judge configured (§5.4), the judge is asked to determine whether the answer asserts the statement (returning the binary verdict and a rationale). Without a judge — for example, in offline or mock-providers mode — the metric falls back to normalized substring containment: $\mathrm{norm}(\text{value\_text}) \in \mathrm{norm}(\text{answer})$, where `_normalize` lower-cases and collapses whitespace.
+A text expected value carries a string `value_text`. With an LLM judge configured (§5.4), the judge is asked to determine whether the answer asserts the statement (returning the binary verdict and a rationale). Without a judge — for example, in offline or mock-providers mode — the metric falls back to normalized substring containment: $\mathrm{norm}(\text{value\\_text}) \in \mathrm{norm}(\text{answer})$, where `_normalize` lower-cases and collapses whitespace.
 
 #### 5.3.3 INSUFFICIENT and REFUSAL
 
@@ -300,7 +300,7 @@ For multi-part questions, the scorer averages the value scores (each computed un
 
 #### 5.3.5 expected_contains
 
-A deterministic sanity check independent of the structured spec: $\mathrm{norm}(\text{expected\_answer}) \in \mathrm{norm}(\text{answer})$. It is computed for every case (zero when no expected answer is provided), and forms the binary primary endpoint in §7.
+A deterministic sanity check independent of the structured spec: $\mathrm{norm}(\text{expected\\_answer}) \in \mathrm{norm}(\text{answer})$. It is computed for every case (zero when no expected answer is provided), and forms the binary primary endpoint in §7.
 
 #### 5.3.6 answer_present and insufficient
 
@@ -337,8 +337,8 @@ The dashboard's per-case PASS/FAIL badge derives from `runner.py:_compute_passed
 
 $$
 \mathrm{passed} = \begin{cases}
-\mathrm{None} & \text{if not } \mathrm{answer\_gold\_eligible}, \\[2pt]
-\mathrm{True} & \text{if } \mathrm{answer\_accuracy} \geq \theta_{\text{acc}} \wedge \mathrm{citation\_validity} \geq \theta_{\text{val}}, \\[2pt]
+\mathrm{None} & \text{if not } \mathrm{answer\\_gold\\_eligible}, \\\\[2pt]
+\mathrm{True} & \text{if } \mathrm{answer\\_accuracy} \geq \theta_{\text{acc}} \wedge \mathrm{citation\\_validity} \geq \theta_{\text{val}}, \\\\[2pt]
 \mathrm{False} & \text{otherwise.}
 \end{cases}
 $$
@@ -437,7 +437,7 @@ $$
 \mathrm{GMR}(a, b) = \exp\!\bigg(\frac{1}{n}\sum_{i=1}^{n} (\log b_i - \log a_i)\bigg).
 $$
 
-The bootstrap CI is computed on the log-vector differences; the reported interval $[\text{ci\_low}, \text{ci\_high}]$ is on the log scale, and the renderer exponentiates the geometric-mean ratio for display.
+The bootstrap CI is computed on the log-vector differences; the reported interval $[\text{ci\\_low}, \text{ci\\_high}]$ is on the log scale, and the renderer exponentiates the geometric-mean ratio for display.
 
 ### 7.6 Effect sizes
 
@@ -446,7 +446,7 @@ Two effect sizes are reported for every contrast.
 Paired Cliff's δ is the difference between the share of pairs where $b > a$ and the share where $b < a$:
 
 $$
-\delta = \frac{|\{i : b_i > a_i\}| - |\{i : b_i < a_i\}|}{n} \in [-1, 1].
+\delta = \frac{|\\{i : b_i > a_i\\}| - |\\{i : b_i < a_i\\}|}{n} \in [-1, 1].
 $$
 
 It is interpreted with the Romano thresholds: $|\delta| < 0.11$ negligible, $0.11 \leq |\delta| < 0.28$ small, $0.28 \leq |\delta| < 0.43$ medium, $|\delta| \geq 0.43$ large.
@@ -479,7 +479,7 @@ For each primary endpoint, the analyzer also constructs paired contrasts within 
 
 ### 7.10 Pre-registered hypotheses
 
-For each primary endpoint $E \in \{\text{answer\_accuracy}, \text{strict\_recall\_at\_10}\}$ (and additionally `expected_contains` under the pre-registration; see §7.1), the directional alternative is that the baseline outperforms the knockout:
+For each primary endpoint $E \in \\{\text{answer\\_accuracy}, \text{strict\\_recall\\_at\\_10}\\}$ (and additionally `expected_contains` under the pre-registration; see §7.1), the directional alternative is that the baseline outperforms the knockout:
 
 | Hyp. | Contrast                                                  | Isolates                              |
 |------|-----------------------------------------------------------|---------------------------------------|
