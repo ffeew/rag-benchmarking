@@ -892,7 +892,7 @@ function AblationPivotTable({ report }: { report: AblationReport }) {
         metrics use FDR-corrected q, secondary use raw p. Arrow in the header
         marks the desired direction (↑ higher is better, ↓ lower is better).
       </div>
-      <div className="overflow-x-auto">
+      <div>
         <Table>
           <THead>
             <tr>
@@ -925,8 +925,8 @@ function AblationPivotTable({ report }: { report: AblationReport }) {
               const isBaseline = variant === baseline
               return (
                 <TR key={variant}>
-                  <TD className="whitespace-nowrap">
-                    <div className="flex items-center gap-2">
+                  <TD>
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Badge tone="cite" size="sm">
                         {variant.replace(/_/g, ' ')}
                       </Badge>

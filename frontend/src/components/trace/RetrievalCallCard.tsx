@@ -106,7 +106,7 @@ export function RetrievalCallCard({
                 return (
                   <li
                     key={`${c.chunk_id ?? i}`}
-                    className="grid grid-cols-[40px_1fr_120px] items-center gap-3 px-4 py-2"
+                    className="grid grid-cols-[40px_minmax(0,1fr)_120px] items-center gap-3 px-4 py-2"
                   >
                     <span className="font-mono numeric text-[11.5px] text-[var(--ink-dim)]">
                       #{c.rank ?? i + 1}

@@ -22,7 +22,7 @@ export function KeyValueGrid({
   return (
     <dl
       className={cn(
-        'grid grid-cols-[max-content_1fr] gap-x-6',
+        'grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6',
         dense ? 'gap-y-1' : 'gap-y-2',
         className,
       )}

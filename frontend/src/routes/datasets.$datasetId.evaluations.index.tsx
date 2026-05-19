@@ -118,7 +118,7 @@ function EvaluationsList() {
                 return (
                   <li
                     key={run.id}
-                    className="grid grid-cols-[24px_16px_1fr_auto] items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors"
+                    className="grid grid-cols-[24px_16px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors"
                   >
                     <Checkbox
                       checked={selected.has(run.id)}

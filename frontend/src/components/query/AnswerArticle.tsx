@@ -18,7 +18,7 @@ export function AnswerArticle({
   return (
     <article
       className={cn(
-        'text-[15px] leading-[1.65] text-[var(--ink)] tracking-[-0.005em] whitespace-pre-wrap',
+        'text-[15px] leading-[1.65] text-[var(--ink)] tracking-[-0.005em] whitespace-pre-wrap break-words',
         className,
       )}
     >

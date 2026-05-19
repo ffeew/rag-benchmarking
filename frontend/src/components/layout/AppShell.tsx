@@ -10,7 +10,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto">{children}</main>
       </div>
       <CommandPalette />
     </div>

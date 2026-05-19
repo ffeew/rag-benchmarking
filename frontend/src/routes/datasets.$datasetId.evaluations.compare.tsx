@@ -96,17 +96,17 @@ function EvalCompare() {
             subtitle={`${matrix.cases.length} cases × ${matrix.columns.length} variant${matrix.columns.length === 1 ? '' : 's'}`}
           />
           <CardBody padded={false}>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[12px]">
+            <div className="w-full">
+              <table className="w-full border-collapse text-[12px] table-fixed">
                 <thead>
                   <tr className="bg-[var(--surface-2)] border-b border-[var(--rule)]">
-                    <th className="mono-label sticky left-0 z-10 bg-[var(--surface-2)] px-3 py-2 text-left w-[420px] border-r border-[var(--rule)]">
+                    <th className="mono-label sticky left-0 z-10 bg-[var(--surface-2)] px-3 py-2 text-left w-[40%] border-r border-[var(--rule)] break-words">
                       CASE
                     </th>
                     {matrix.columns.map((col) => (
                       <th
                         key={col.key}
-                        className="px-3 py-2 text-center border-r border-[var(--rule)] min-w-[140px]"
+                        className="px-3 py-2 text-center border-r border-[var(--rule)] break-words"
                       >
                         <div className="mono-label">
                           {col.mode.replace('_', ' ')}
@@ -127,7 +127,7 @@ function EvalCompare() {
                         idx % 2 === 1 && 'bg-[var(--surface-2)]/30',
                       )}
                     >
-                      <td className="sticky left-0 z-10 bg-inherit px-3 py-2 align-top border-r border-[var(--rule)]">
+                      <td className="sticky left-0 z-10 bg-inherit px-3 py-2 align-top border-r border-[var(--rule)] break-words">
                         <span className="text-[12px] text-[var(--ink)]">
                           {truncate(row.question, 90)}
                         </span>

@@ -77,7 +77,7 @@ function TracesList() {
                 <li key={t.id}>
                   <Link
                     {...paths.trace(t.id)}
-                    className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors"
+                    className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors"
                   >
                     <Badge tone="cite" size="sm">
                       {t.retrieval_mode.replace('_', ' ')}

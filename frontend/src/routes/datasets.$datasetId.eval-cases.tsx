@@ -98,7 +98,7 @@ function EvalCasesPage() {
           actions={<NewEvalCaseDialog datasetId={datasetId} />}
         />
         <CardBody padded={false}>
-          <div className="grid gap-3 px-4 py-3 border-b border-[var(--rule)] sm:grid-cols-[180px_180px_1fr]">
+          <div className="grid gap-3 px-4 py-3 border-b border-[var(--rule)] sm:grid-cols-[180px_180px_minmax(0,1fr)]">
             <div>
               <Label className="mono-label">CATEGORY</Label>
               <Select

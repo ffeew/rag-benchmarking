@@ -94,7 +94,7 @@ export function PlanCard({ plan }: { plan: Record<string, unknown> }) {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[80px_1fr] items-start gap-3">
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] items-start gap-3">
       <span className="mono-label pt-0.5">{label}</span>
       <div>{children}</div>
     </div>

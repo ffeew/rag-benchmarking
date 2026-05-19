@@ -90,7 +90,7 @@ function IngestionPage() {
                 return (
                   <li
                     key={run.id}
-                    className="grid gap-3 px-4 py-3 lg:grid-cols-[16px_1fr_auto]"
+                    className="grid gap-3 px-4 py-3 lg:grid-cols-[16px_minmax(0,1fr)_auto]"
                   >
                     <StatusDot status={run.status} />
                     <div className="min-w-0">

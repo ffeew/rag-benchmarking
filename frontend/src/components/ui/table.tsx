@@ -4,7 +4,7 @@ import { cn } from '#/lib/cn'
 
 export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className={cn('w-full overflow-auto', className)}>
+    <div className={cn('w-full', className)}>
       <table className="w-full border-collapse text-[13px]" {...props} />
     </div>
   )
@@ -57,7 +57,7 @@ export function TH({
     <th
       align={align}
       className={cn(
-        'mono-label py-2 px-3 text-left font-medium text-[var(--ink-muted)] whitespace-nowrap',
+        'mono-label py-2 px-3 text-left font-medium text-[var(--ink-muted)]',
         className,
       )}
       {...props}
@@ -75,7 +75,7 @@ export function TD({
     <td
       align={align}
       className={cn(
-        'py-2 px-3 text-[12.5px] text-[var(--ink)] align-top',
+        'py-2 px-3 text-[12.5px] text-[var(--ink)] align-top break-words',
         numeric && 'font-mono numeric text-right',
         className,
       )}

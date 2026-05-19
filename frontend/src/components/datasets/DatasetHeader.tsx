@@ -93,7 +93,7 @@ export function DatasetHeader({
           </div>
         </div>
 
-        <nav className="mt-5 -mx-1 flex items-center gap-0 overflow-x-auto">
+        <nav className="mt-5 -mx-1 flex flex-wrap items-center gap-0">
           {TABS.map((tab) => {
             const Icon = tab.icon
             const linkProps = tab.build(dataset.id)

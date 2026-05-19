@@ -86,7 +86,7 @@ function DatasetSummary() {
 
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-6">
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="grid gap-5">
           <Card>
             <CardHeader
@@ -248,7 +248,7 @@ function DatasetSummary() {
                       key={e.id}
                       className="border-b last:border-b-0 border-[var(--rule)]"
                     >
-                      <div className="grid grid-cols-[16px_1fr_auto] items-center gap-3 px-4 py-2">
+                      <div className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2">
                         <StatusDot status={e.status} />
                         <div className="min-w-0">
                           <div className="font-mono text-[11.5px] text-[var(--ink-dim)]">
@@ -303,7 +303,7 @@ function DatasetSummary() {
                   >
                     <Link
                       {...paths.job(j.id)}
-                      className="grid grid-cols-[16px_1fr] items-center gap-3 px-4 py-2 hover:bg-[var(--surface-2)] transition-colors"
+                      className="grid grid-cols-[16px_minmax(0,1fr)] items-center gap-3 px-4 py-2 hover:bg-[var(--surface-2)] transition-colors"
                     >
                       <StatusDot status={j.status} />
                       <div className="min-w-0">

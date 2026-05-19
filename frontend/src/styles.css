@@ -120,6 +120,7 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overflow-wrap: anywhere;
 }
 
 body {
@@ -128,7 +129,6 @@ body {
   color: var(--ink);
   font-size: 14px;
   line-height: 1.5;
-  overflow-x: hidden;
 }
 
 ::selection {

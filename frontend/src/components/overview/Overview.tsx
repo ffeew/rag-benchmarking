@@ -161,7 +161,7 @@ export function Overview() {
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_3fr]">
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         {/* Datasets quick-list */}
         <Card>
           <CardHeader
@@ -237,7 +237,7 @@ export function Overview() {
         </Card>
 
         {/* Recent activity column */}
-        <div className="grid gap-5">
+        <div className="grid gap-5 min-w-0">
           <Card>
             <CardHeader
               title="RECENT JOBS"
@@ -269,11 +269,11 @@ export function Overview() {
                     >
                       <Link
                         {...paths.job(j.id)}
-                        className="grid grid-cols-[16px_1fr_auto] items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors"
+                        className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-2)] transition-colors"
                       >
                         <StatusDot status={j.status} />
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 text-[12.5px]">
+                          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
                             <span className="font-mono uppercase text-[11px] tracking-wide text-[var(--ink-muted)]">
                               {j.job_type}
                             </span>
@@ -372,7 +372,7 @@ export function Overview() {
       </section>
 
       {/* Evaluations + Health rail */}
-      <section className="grid grid-cols-1 gap-5 lg:grid-cols-[3fr_2fr]">
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Card>
           <CardHeader
             title="RECENT EVALUATIONS"
@@ -402,7 +402,7 @@ export function Overview() {
                     key={e.id}
                     className="border-b last:border-b-0 border-[var(--rule)]"
                   >
-                    <div className="grid grid-cols-[16px_1fr_auto] items-center gap-3 px-4 py-2.5">
+                    <div className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5">
                       <StatusDot status={e.status} />
                       <div className="min-w-0">
                         <div className="font-mono text-[11.5px] text-[var(--ink-dim)] truncate">

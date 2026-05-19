@@ -318,7 +318,7 @@ export function QueryWorkspace({ datasetId }: { datasetId: string }) {
 
           <Collapsible defaultOpen>
             <CollapsibleContent>
-              <div className="grid gap-3 rounded-[3px] border border-[var(--rule)] bg-[var(--surface-2)] p-3 md:grid-cols-[1fr_1fr_220px]">
+              <div className="grid gap-3 rounded-[3px] border border-[var(--rule)] bg-[var(--surface-2)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]">
                 <Field label="TICKER" hint="pick from your dataset">
                   <div className="flex flex-wrap gap-1.5">
                     {allTickers.slice(0, 30).map((t) => {
@@ -385,7 +385,7 @@ export function QueryWorkspace({ datasetId }: { datasetId: string }) {
                   </Field>
                 </div>
 
-                <div className="md:col-span-3 grid gap-3 md:grid-cols-[1fr_auto] border-t border-[var(--rule)] pt-3">
+                <div className="md:col-span-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] border-t border-[var(--rule)] pt-3">
                   <Field
                     label={
                       <span className="inline-flex items-center justify-between w-full">
@@ -460,7 +460,7 @@ export function QueryWorkspace({ datasetId }: { datasetId: string }) {
       )}
 
       {response && !askMutation.isPending && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
+        <div className="grid gap-5 min-w-0 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <Card>
             <CardHeader
               title={
@@ -521,7 +521,7 @@ export function QueryWorkspace({ datasetId }: { datasetId: string }) {
             </CardBody>
           </Card>
 
-          <div className="grid gap-3">
+          <div className="grid gap-3 min-w-0">
             <Card>
               <CardHeader
                 title="CITATIONS"
