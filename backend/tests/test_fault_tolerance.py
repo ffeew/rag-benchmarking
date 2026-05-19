@@ -749,3 +749,78 @@ def test_redispatch_exhausted_eval_job_fails_linked_eval_run(monkeypatch: pytest
     assert exhausted_job.status == "failed"
     assert eval_run.status == "failed"
     assert eval_run.errors[0]["error_class"] == "JobReaped"
+
+
+def test_cancel_linked_eval_run_marks_running_eval_cancelled() -> None:
+    """The cancel endpoint must flip a linked, still-running EvalRun to
+    CANCELLED with a structured ``JobCancelled`` entry — otherwise the
+    frontend keeps polling a row that never advances off ``running``."""
+    eval_run = _make_eval_run(status="running", errors=[])
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id=eval_run.id)
+    session = _FakeEvalRunSession(eval_run)
+    now = datetime.now(UTC)
+
+    sweeper.cancel_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=now,
+        reason="cancelled by operator",
+    )
+
+    assert eval_run.status == "cancelled"
+    assert len(eval_run.errors) == 1
+    entry = eval_run.errors[0]
+    assert entry["error_class"] == "JobCancelled"
+    assert entry["error"] == "cancelled by operator"
+    assert entry["cancelled_at"] == now.isoformat()
+
+
+def test_cancel_linked_eval_run_preserves_terminal_eval_run() -> None:
+    """If the runner finished after the operator clicked Cancel (race), the
+    cancel helper must not overwrite the real completion with CANCELLED."""
+    eval_run = _make_eval_run(status="completed", errors=[{"case_id": "c1"}])
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id=eval_run.id)
+    session = _FakeEvalRunSession(eval_run)
+
+    sweeper.cancel_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=datetime.now(UTC),
+        reason="cancelled by operator",
+    )
+
+    assert eval_run.status == "completed"
+    assert eval_run.errors == [{"case_id": "c1"}]
+
+
+def test_cancel_linked_eval_run_noop_without_link() -> None:
+    """Ingestion jobs (or any Job without ``eval_run_id``) skip the lookup so
+    the helper is safe to call unconditionally from cancel_job."""
+    job = _make_job(eval_run_id=None)
+    session = _FakeEvalRunSession(eval_run=None)
+
+    sweeper.cancel_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=datetime.now(UTC),
+        reason="cancelled by operator",
+    )
+
+    assert session.get_calls == []
+
+
+def test_cancel_linked_eval_run_noop_when_eval_run_missing() -> None:
+    """If the EvalRun was already deleted (FK is ``ON DELETE SET NULL``), the
+    helper returns cleanly rather than raising — the Job is still durably
+    marked CANCELLED by the caller."""
+    job = _make_job(job_type="evaluation", document_id=None, eval_run_id="missing-run")
+    session = _FakeEvalRunSession(eval_run=None)
+
+    sweeper.cancel_linked_eval_run(
+        cast("Session", session),
+        job,
+        now=datetime.now(UTC),
+        reason="cancelled by operator",
+    )
+
+    assert session.get_calls == [("missing-run", {"key_share": True})]

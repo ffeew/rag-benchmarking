@@ -164,3 +164,45 @@ def test_runner_passes_overridden_settings_to_run_query(
     assert "full_agentic" in eval_run.metrics
     assert "full_agentic_no_hyde" in eval_run.metrics
     assert eval_run.metrics["pairing_skew"]["balanced"] is True
+
+
+def test_run_evaluation_early_return_when_already_cancelled(
+    db_session: Session,
+    seed_dataset: models.Dataset,
+    seed_eval_case: models.EvalCase,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the EvalRun is already CANCELLED (operator cancelled while the job
+    was queued behind the semaphore), the runner must NOT clobber the status
+    back to RUNNING and must NOT execute any cases."""
+
+    eval_run = models.EvalRun(
+        dataset_id=seed_dataset.id,
+        status="cancelled",
+        run_config={
+            "case_ids": [seed_eval_case.id],
+            "variants": [{"name": "full_agentic", "retrieval_mode": "full_agentic", "overrides": {}}],
+            "benchmark_profile": "diagnostic",
+            "bootstrap_seed": 1729,
+        },
+        system_variant="full_agentic",
+        model_metadata={},
+    )
+    db_session.add(eval_run)
+    db_session.commit()
+    db_session.refresh(eval_run)
+
+    from rag_evaluation import runner as runner_module
+
+    # ``run_query`` would mean the runner reached the case loop — bail loudly if so.
+    def must_not_be_called(*_args: Any, **_kwargs: Any) -> QueryResponse:
+        raise AssertionError("run_query must not be called when eval_run is already terminal")
+
+    monkeypatch.setattr(runner_module, "run_query", must_not_be_called)
+    monkeypatch.setattr(runner_module, "commit_job_progress", lambda *a, **k: None)
+
+    runner_module.run_evaluation(db_session, eval_run_id=eval_run.id, job_id=None)
+
+    db_session.refresh(eval_run)
+    assert eval_run.status == "cancelled"
+    assert list(db_session.query(models.EvalResult).filter_by(eval_run_id=eval_run.id)) == []

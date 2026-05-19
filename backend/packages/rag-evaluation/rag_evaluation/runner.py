@@ -9,6 +9,7 @@ from typing import Any
 from rag_common.config import Settings, get_settings
 from rag_common.db import models
 from rag_common.enums import (
+    JOB_TERMINAL_STATUSES,
     BenchmarkProfile,
     IngestionRunStatus,
     JobStatus,
@@ -708,6 +709,16 @@ def run_evaluation(
     eval_run = session.get(models.EvalRun, eval_run_id)
     if eval_run is None:
         raise ValueError(f"Evaluation run {eval_run_id} was not found")
+    # Operator may have cancelled this run while it was queued behind the
+    # semaphore; honour it before clobbering ``status`` back to ``running``
+    # on the next commit. ``commit_job_progress`` already no-ops on a
+    # cancelled Job, but the EvalRun write below would still land.
+    if eval_run.status in JOB_TERMINAL_STATUSES:
+        logger.info(
+            "eval_run_already_terminal_at_start",
+            extra={"eval_run_id": eval_run_id, "status": eval_run.status},
+        )
+        return eval_run
     commit_job_progress(job_id, status=JobStatus.RUNNING, progress=5, current_step="loading eval cases")
     eval_run.status = JobStatus.RUNNING
     # Commit the RUNNING transition immediately. Without this the row sits at
@@ -879,14 +890,39 @@ def run_evaluation(
                 progress=int((completed / total) * 90),
                 current_step=f"evaluated {completed}/{total}",
             )
+            # Detect an externally-driven cancel (POST /v1/jobs/{id}/cancel
+            # set EvalRun.status=CANCELLED in a different session). Without
+            # this the runner would happily plow through every remaining
+            # case and then overwrite ``cancelled`` with ``completed``.
+            # Refresh is one SELECT per case — negligible against a
+            # retrieve+LLM-judge pass.
+            session.refresh(eval_run, ["status"])
+            if eval_run.status in JOB_TERMINAL_STATUSES:
+                logger.info(
+                    "eval_run_cancelled_mid_loop",
+                    extra={
+                        "eval_run_id": eval_run.id,
+                        "status": eval_run.status,
+                        "completed": completed,
+                        "total": total,
+                    },
+                )
+                break
+        else:
+            continue
+        break
 
     pairing_skew = _detect_pairing_skew(case_ids_per_variant, expected_cases={case.id for case in cases})
 
     # RAGAS is informational-only and slow (judge-model latency × metrics ×
     # cases, sequential). Skipping it via ``eval_run_ragas=false`` shaves
     # minutes off small iteration runs without affecting the per-case
-    # ``passed`` gate or any aggregated metric the UI surfaces.
-    if resolved.eval_run_ragas:
+    # ``passed`` gate or any aggregated metric the UI surfaces. A cancel
+    # mid-run also skips it — the operator asked us to stop, don't burn
+    # judge-model minutes after the break.
+    if eval_run.status in JOB_TERMINAL_STATUSES:
+        ragas_summary = {"skipped": f"eval {eval_run.status}"}
+    elif resolved.eval_run_ragas:
         commit_job_progress(job_id, status=JobStatus.RUNNING, progress=92, current_step="computing ragas metrics")
         # Setup-time failures (provider auth, import, client wiring) should
         # not invalidate per-case metrics already persisted. Per-metric
@@ -929,7 +965,13 @@ def run_evaluation(
     if ragas_summary:
         eval_run.metrics["ragas_run"] = ragas_summary
     _attach_ablation_report(eval_run, results)
-    eval_run.status = JobStatus.COMPLETED if not errors else JobStatus.COMPLETED_WITH_ERRORS
+    # Re-read status: the cancel endpoint may have flipped EvalRun to
+    # CANCELLED in another session after the loop's last refresh.
+    # Preserving the existing terminal status keeps the operator's cancel
+    # from being silently overwritten by COMPLETED at the finish line.
+    session.refresh(eval_run, ["status"])
+    if eval_run.status not in JOB_TERMINAL_STATUSES:
+        eval_run.status = JobStatus.COMPLETED if not errors else JobStatus.COMPLETED_WITH_ERRORS
     commit_job_progress(job_id, status=eval_run.status, progress=100, current_step="completed")
     # Make the terminal EvalRun state durable here rather than relying on the
     # task wrapper's trailing commit. If the worker dies between this point

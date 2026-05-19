@@ -138,6 +138,38 @@ def _fail_linked_eval_run(session: Session, job: models.Job, *, now: datetime, r
     eval_run.errors = list(eval_run.errors or []) + new_errors
 
 
+def cancel_linked_eval_run(session: Session, job: models.Job, *, now: datetime, reason: str) -> None:
+    """Sync a cancelled evaluation Job onto its linked EvalRun.
+
+    Mirror of ``_fail_linked_eval_run`` but writes ``CANCELLED``. Without this
+    the operator's cancel updates only the Job row; the EvalRun row stays at
+    ``running`` and the UI keeps polling. The in-process runner thread can't
+    be revoked mid-flight (see ``_revoke_existing_task`` above), so the
+    matching ``run_evaluation`` guards must also refuse to overwrite a
+    terminal EvalRun — this helper only handles the cross-session write.
+
+    Skips when the EvalRun is already terminal so a real completion (or a
+    prior cancel) is not clobbered.
+    """
+    if not job.eval_run_id:
+        return
+    eval_run = session.get(models.EvalRun, job.eval_run_id, with_for_update={"key_share": True})
+    if eval_run is None:
+        return
+    if eval_run.status in JOB_TERMINAL_STATUSES:
+        return
+    eval_run.status = JobStatus.CANCELLED
+    eval_run.errors = list(eval_run.errors or []) + [
+        {
+            "case_id": None,
+            "variant": None,
+            "error_class": "JobCancelled",
+            "error": reason,
+            "cancelled_at": now.isoformat(),
+        }
+    ]
+
+
 def _reaped_per_variant_errors(eval_run: models.EvalRun, *, now: datetime) -> list[dict[str, object]]:
     """Find (case, variant) cells that some variants completed but others
     skipped, and synthesise one error row per missing cell. Heuristic: the

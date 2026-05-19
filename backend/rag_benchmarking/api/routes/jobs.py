@@ -134,5 +134,10 @@ def cancel_job(job_id: str, session: DbSession, _auth: AuthDep) -> JobRead:
     job.last_heartbeat_at = now
     if not job.error:
         job.error = "cancelled by operator"
+    # In-process eval threads can't be revoked (see workers/sweeper.py:86-91),
+    # so the matching EvalRun row would otherwise stay at ``running`` and the
+    # UI would keep polling forever. The runner's terminal-status guards keep
+    # the row at CANCELLED even after the thread finishes its loop.
+    sweeper.cancel_linked_eval_run(session, job, now=now, reason=job.error)
     session.commit()
     return job_to_read(job)
