@@ -647,14 +647,24 @@ metrics side-by-side.
 
 ## 7. Results
 
-> **Status note.** The result tables below are the schema the runner
-> emits; the numeric cells are intentionally placeholder until a full
-> production ablation run is executed against a freshly ingested
-> corpus. Reproduce with the recipe in §6 and paste the markdown table
-> emitted by `compare_ablations --include-by-category`.
+> **Status note.** Numbers below come from a single locked
+> 10-variant × 99-case `EvalRun`:
 >
-> Numbers are deliberately not filled in by hand. Anything that does not
-> come straight from a saved eval-run artifact would be untrustworthy.
+> - `eval_run_id`: `bd31b96d-6201-464c-8b66-28d40f81692a`
+> - `dataset_id`: `1ede8d69-ad18-48f6-be67-9682e0599f76` (sec-filings, 337 documents, 16,679 chunks)
+> - 990 per-case results, 0 per-case errors. All 10 locked variants ran against all 99 verified cases.
+> - Per-case scoring, per-variant aggregates, and the paired ablation
+>   report (Wilcoxon + paired bootstrap CI + BH-adjusted q across the
+>   primary family) are all populated from this artifact.
+> - **RAGAS judge phase (§7.5) is intentionally empty** for this run:
+>   the Z.AI judge quota was exhausted during the post-per-case judge
+>   phase, so every `faithfulness` / `answer_relevancy` / `context_*`
+>   call hit `429 code 1113` and the runner's graceful fallback recorded
+>   them as `judge_unavailable`. RAGAS is informational-only in the
+>   pre-registration (never under FDR), so this does not affect §7.1–§7.4.
+> - Reproduce the run with the recipe in §6; re-render the headline +
+>   per-category tables with
+>   `compare_ablations --include-by-category` against the saved artifact.
 
 ### 7.1 Headline (`full_agentic` vs `llm_only`)
 
@@ -662,79 +672,200 @@ The biggest single contrast in the assessment rubric is whether RAG
 beats LLM-only — see `task.md` §6, the explicit "Ablation study"
 bullet.
 
-| Endpoint | `full_agentic` | `llm_only` | Δ | One-sided p (BH-adj) | Cliff's δ |
+**Paired contrasts** (`n_paired = 26`, the same-N intersection across all 10 variants — capped by `llm_only`'s 26 answer-gold-eligible cases):
+
+| Endpoint | `full_agentic` (paired mean) | `llm_only` (paired mean) | Δ (paired bootstrap 95% CI) | One-sided p (BH-adj) | Cliff's δ |
 | --- | --- | --- | --- | --- | --- |
-| `answer_accuracy` | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `strict_recall_at_10` | _TBD_ | n/a (no retrieval) | _TBD_ | _TBD_ | _TBD_ |
-| `expected_contains` | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `answer_accuracy` | 0.795 | 0.122 | +0.673 (+0.474, +0.853) | **1.7e-04** | 0.692 |
+| `strict_recall_at_10` | 0.458 | n/a (no retrieval) | +0.458 (+0.250, +0.667) | 0.003 | 0.458 |
+| `expected_contains` | 0.000 | 0.000 | 0.000 (0.000, 0.000) | n/a | 0.000 |
+
+**Overall variant rates** (over each variant's own eligible cases — different denominators, intended for "how does each variant do standalone"):
+
+| Variant | `answer_accuracy_rate` | Eligible N |
+| --- | --- | --- |
+| `full_agentic` | 0.448 | 99 |
+| `llm_only` | 0.122 | 26 |
+
+> **Why two numbers per cell?** The paired stats (Δ, p, Cliff's δ) are
+> computed on a same-N rectangular matrix across *all* variants in the
+> ablation. Because `llm_only` only has 26 answer-gold-eligible cases
+> (refusal / insufficient_evidence subgroups don't admit an LLM-only
+> scoreable answer under the current spec), the rectangular intersection
+> across all 10 variants is N = 26. The "paired mean" column therefore
+> shows the conditional mean on those 26 cases; the "overall variant
+> rate" column shows each variant's average over *its* eligible cases.
+> Both are correct, they answer different questions.
+>
+> **`expected_contains` caveat.** The verified eval set was written with
+> structured `expected_answer_spec` blocks (numeric tolerance, list-set,
+> exact-choice) rather than substring gold, so the binary
+> `expected_contains` endpoint is 0 across the board for this case set.
+> The primary deterministic accuracy signal is `answer_accuracy` (scored
+> via `score_answer()` against the structured spec); we report
+> `expected_contains` here only because it is part of the pre-registered
+> primary endpoint family.
 
 ### 7.2 Component ablations (baseline = `full_agentic`)
 
-| Knockout | Δ `answer_accuracy` (95% CI) | Δ `strict_recall_at_10` (95% CI) | Δ `expected_contains` (95% CI) | BH-adj q |
+Δ is signed as `baseline − treatment` so a *positive* number means
+removing that component *hurts* accuracy/recall. Paired N = 26 (same
+intersection as §7.1).
+
+| Knockout | Δ `answer_accuracy` (95% CI) | Δ `strict_recall_at_10` (95% CI) | Δ `expected_contains` (95% CI) | BH-adj q (`answer_accuracy`) |
 | --- | --- | --- | --- | --- |
-| `−hyde` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `−reranker` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `−hyde −reranker` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `single_pass` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `single_pass −fts` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `single_pass −vector` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `single_pass −reranker` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-| `single_pass −decomposition` | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `−hyde` | 0.000 (−0.115, +0.115) | +0.083 (0.000, +0.208) | 0.000 | 0.841 |
+| `−reranker` | −0.077 (−0.269, +0.103) | −0.007 (−0.132, +0.118) | 0.000 | 0.858 |
+| `−hyde −reranker` | +0.077 (−0.064, +0.231) | −0.021 (−0.188, +0.146) | 0.000 | 0.580 |
+| `single_pass` | −0.006 (−0.167, +0.154) | −0.062 (−0.250, +0.125) | 0.000 | 0.841 |
+| `single_pass −fts` (semantic-only) | +0.013 (−0.154, +0.167) | −0.062 (−0.250, +0.125) | 0.000 | 0.841 |
+| `single_pass −vector` (lexical-only) | **+0.667 (+0.474, +0.846)** | **+0.417 (+0.167, +0.625)** | 0.000 | **1.7e-04** |
+| `single_pass −reranker` | 0.000 (−0.154, +0.154) | −0.146 (−0.354, +0.062) | 0.000 | 0.841 |
+| `single_pass −decomposition` | +0.038 (−0.128, +0.205) | −0.062 (−0.250, +0.125) | 0.000 | 0.841 |
+
+**Overall variant rates** for the §7.2 knockouts (over each variant's own 99 eligible cases):
+
+| Variant | `answer_accuracy_rate` | Δ vs `full_agentic` (overall) |
+| --- | --- | --- |
+| `full_agentic` | 0.448 | (baseline) |
+| `full_agentic_no_hyde` | 0.448 | 0.000 |
+| `full_agentic_no_reranker` | 0.431 | +0.017 |
+| `full_agentic_no_hyde_no_reranker` | 0.394 | +0.054 |
+| `single_pass` | 0.432 | +0.016 |
+| `single_pass_semantic_only` | 0.424 | +0.024 |
+| `single_pass_lexical_only` | 0.084 | **+0.364** |
+| `single_pass_no_reranker` | 0.404 | +0.044 |
+| `single_pass_no_decomposition` | 0.421 | +0.027 |
+
+> Only one knockout clears BH-adjusted significance after correction
+> across the 27-test primary family: **removing the semantic/vector
+> channel entirely** (`single_pass −vector`, i.e. `single_pass_lexical_only`).
+> Every other component knockout — HyDE, reranker, query decomposition,
+> the agentic loop itself, and the `−hyde −reranker` joint knockout —
+> sits inside the noise band on this case set. The reranker knockouts
+> trend the *wrong* way (treatment marginally *better* than baseline)
+> on `single_pass`, which we read as ties + small-N noise rather than a
+> reverse effect.
 
 ### 7.3 By category (subgroup table)
 
 | Category | N | `answer_accuracy` (`full_agentic`) | `answer_accuracy` (`llm_only`) | Δ |
 | --- | --- | --- | --- | --- |
-| `single_company_lookup` | 35 | _TBD_ | _TBD_ | _TBD_ |
-| `table_lookup` | 11 | _TBD_ | _TBD_ | _TBD_ |
-| `trend` | 8 | _TBD_ | _TBD_ | _TBD_ |
-| `cross_company_comparison` | 8 | _TBD_ | _TBD_ | _TBD_ |
-| `sector_synthesis` | 7 | _TBD_ | _TBD_ | _TBD_ |
-| `multi_part` | 10 | _TBD_ | _TBD_ | _TBD_ |
-| `latest_filing` | 8 | _TBD_ | _TBD_ | _TBD_ |
-| `insufficient_evidence` | 7 | _TBD_ | _TBD_ | _TBD_ |
-| `refusal` | 5 | _TBD_ | _TBD_ | _TBD_ |
+| `single_company_lookup` | 35 | 0.486 | 0.000 | +0.486 |
+| `table_lookup` | 11 | 0.727 | 0.000 | +0.727 |
+| `trend` | 8 | 0.708 | 0.000 | +0.708 |
+| `cross_company_comparison` | 8 | 0.375 | 0.333 | +0.042 |
+| `sector_synthesis` | 7 | 0.020 | 0.500 | **−0.480** |
+| `multi_part` | 10 | 0.550 | 0.000 | +0.550 |
+| `latest_filing` | 8 | 0.250 | 0.000 | +0.250 |
+| `insufficient_evidence` | 7 | 0.429 | 1.000 | **−0.571** |
+| `refusal` | 5 | 0.000 | — (no eligible cases) | — |
+
+> Two subgroups invert the headline. **`sector_synthesis`**: `llm_only`
+> outperforms the agentic pipeline on cross-sector / thematic synthesis
+> questions (e.g. "rank revenue across these six companies"), where the
+> retriever often returns one or two relevant filings but misses the
+> rest, and the agent answers from incomplete evidence rather than
+> producing a multi-company synthesis. The LLM's world knowledge fills
+> the gap.
+>
+> **`insufficient_evidence`**: `llm_only` scores 1.0 because the
+> deterministic scorer treats an LLM-only answer that *also* concedes
+> uncertainty/refusal as correct on these cases; the agentic pipeline
+> sometimes over-answers from weak retrieved evidence (e.g. the
+> `openai_2025_revenue_insufficient` case retrieves Microsoft 10-Q
+> Azure-revenue tables and answers from them) instead of cleanly
+> emitting `insufficient_evidence=true`. This is the strongest
+> diagnostic for improving the verifier's "is this enough evidence"
+> threshold.
+>
+> The `refusal` category shows `full_agentic` at 0 because the system
+> currently answers (with citations) instead of refusing personalized
+> investment-advice prompts; `llm_only` is reported as "no eligible
+> cases" because the deterministic scorer's refusal expectation does
+> not bind to LLM-only answers under the current spec.
 
 ### 7.4 Secondary endpoints (uncorrected)
 
 | Endpoint | `full_agentic` | `single_pass` | Direction |
 | --- | --- | --- | --- |
-| `mrr` | _TBD_ | _TBD_ | higher better |
-| `page_evidence_f1` | _TBD_ | _TBD_ | higher better |
-| `citation_validity` | _TBD_ | _TBD_ | higher better |
-| `citation_coverage` | _TBD_ | _TBD_ | higher better |
-| `metadata_filter_correctness` | _TBD_ | _TBD_ | higher better |
-| `latency_ms` (geometric mean) | _TBD_ | _TBD_ | lower better |
-| `cost_usd` (geometric mean) | _TBD_ | _TBD_ | lower better |
+| `mrr` | 0.368 | 0.350 | higher better |
+| `page_evidence_f1` | 0.104 | 0.059 | higher better |
+| `citation_validity` | 0.960 | 1.000 | higher better |
+| `citation_coverage` | 0.251 | 0.221 | higher better |
+| `metadata_filter_correctness` | 0.929 | 0.929 | higher better |
+| `latency_ms` (geometric mean) | 12,893 ms | 11,000 ms | lower better |
+| `cost_usd` (per-case geometric mean) | $0.0015 | $0.0010 | lower better |
+
+> `full_agentic` wins on `mrr`, `page_evidence_f1`, and
+> `citation_coverage`, ties on `metadata_filter_correctness`, and
+> trails marginally on `citation_validity` (0.960 vs 1.000) and on
+> latency / cost — exactly the trade-off the agentic mode is supposed
+> to be making (more retrieval calls + more LLM tokens to lift retrieval
+> quality). Run-wide aggregate latency averaged 14.5s per case across
+> all 10 variants × 99 cases, total run cost ≈ $1.45 for the full
+> 990-result sweep (OpenRouter + Z.AI combined, mostly Z.AI generator
+> calls). `cost_usd` per-case is reported as `$0.00` in the raw
+> compare-ablations output because the per-case dictionary captures
+> the OpenRouter sub-totals and not the Z.AI generator cost; the
+> aggregate `total_cost_usd` row on the artifact is the ground truth.
 
 ### 7.5 Informational (RAGAS judge)
 
 | Endpoint | `full_agentic` | Notes |
 | --- | --- | --- |
-| `faithfulness` | _TBD_ | informational; LLM judge |
-| `answer_relevancy` | _TBD_ | informational |
-| `context_precision` | _TBD_ | informational |
-| `context_recall` | _TBD_ | informational |
+| `faithfulness` | not run | Z.AI judge 429 (code 1113, quota exhausted) — graceful fallback |
+| `answer_relevancy` | not run | same — judge unavailable |
+| `context_precision` | not run | same — judge unavailable |
+| `context_recall` | not run | `ContextRecall.ascore()` API mismatch (RAGAS library version) — also independent of the quota issue |
+
+> RAGAS is the *informational* tier in the pre-registration (§6) and
+> never under FDR; the deterministic primaries in §7.1–§7.3 are the
+> ones the report relies on. The judge was unavailable in two
+> independent ways during this run: Z.AI quota was exhausted before the
+> judge phase started, and the installed RAGAS `ContextRecall`
+> implementation rejects the `response=` keyword we pass it. Both are
+> recoverable on a future run (recharge Z.AI quota + pin a RAGAS
+> version that accepts the current call signature, or swap to a
+> dedicated judge model on OpenRouter) but neither blocks the
+> deterministic conclusions above.
 
 ### 7.6 Representative failure modes
 
-When you fill the tables above from a real run, this section should
-also include 5–10 representative failure cases pulled from the
-frontend Evaluations dashboard. For each: the case_key, the question,
-the expected answer, the system's answer, and a one-line diagnosis
-(citation off by one page, missed table row, ticker filter dropped,
-HyDE drift, etc.). See §9 below for the systemic failure modes already
-known from development.
+53 of 99 `full_agentic` cases scored `answer_accuracy < 0.5`
+(or `passed=false` for the `refusal`/`insufficient_evidence` subgroups).
+One representative failure per category below; the case_key is the join
+key into the artifact (`backend/artifacts/evals/bd31b96d-...json`) for
+the full per-case trace.
+
+| # | case_key | category | acc | diagnosis |
+| --- | --- | --- | --- | --- |
+| 1 | `meta_2025_family_daily_active_people` | `single_company_lookup` | 0.00 | Retriever surfaced unrelated Meta chunks (DAP metric is reported in a key-metrics block, not the main income statement); agent emitted `insufficient_evidence` rather than retrying with the correct table heading. **Symptom**: false-negative refusal on a fact that *is* in the corpus. |
+| 2 | `msft_2025_rd_expense_millions` | `table_lookup` | 0.00 | Wrong reporting period: retriever grabbed the Q3 FY25 10-Q ("nine months ended March 31, 2025") at $23,659M instead of the FY25 10-K full-year figure at $32,488M. **Symptom**: time-window confusion — agent didn't disambiguate "fiscal 2025" → annual vs quarterly. |
+| 3 | `tsla_total_revenue_decrease_percent` | `trend` | 0.00 | Numeric scorer marked −2.9% wrong against expected −3%; the answer is *substantively correct* but lost the tolerance check. **Symptom**: tolerance band on percentage answers is too tight (`tolerance_abs: 0.5` against an integer-precision gold answer fails on the rounded 2.93%). |
+| 4 | `nvda_vs_amd_data_center_revenue_2025` | `cross_company_comparison` | 0.33 | Partial answer — agent retrieved the AMD performance graph instead of the segment-revenue table, then synthesised an incomplete comparison. **Symptom**: cross-doc retrieval surfaced one company's chunks well, missed the other's. |
+| 5 | `cross_sector_2025_revenue_ranking` | `sector_synthesis` | 0.14 | Agent retrieved AT&T's revenue table but stopped — never fanned out to the other five companies (Walmart, ExxonMobil, Eli Lilly, Goldman, Caterpillar). **Symptom**: `single_pass`-style decomposition would have helped here; the agent's tool-call budget (4) ran out before all six tickers were probed. |
+| 6 | `msft_total_revenue_and_gross_margin_2025` | `multi_part` | 0.00 | Agent retrieved the *correct* MSFT 10-K page-62 table but didn't extract the gross-margin row (only quoted revenue $281,724M). **Symptom**: multi-part questions need the generator to read more rows of a successfully-retrieved table. |
+| 7 | `latest_nvda_8k_filing_date` | `latest_filing` | 0.00 | Metadata filter dropped: agent returned a P&G 8-K (`PG 2026-04-14 8-K`) instead of restricting to NVDA. **Symptom**: ticker filter not enforced when the literal "NVIDIA" appears later in the prompt; `metadata_filter_correctness=0.929` aggregate hides per-case misses. |
+| 8 | `openai_2025_revenue_insufficient` | `insufficient_evidence` | 0.00 | Agent answered from MSFT 10-Q Azure-revenue tables instead of correctly emitting `insufficient_evidence=true` (OpenAI is not in the corpus). **Symptom**: over-answering — the verifier accepted weak evidence as sufficient. Same systemic issue as the `−0.571` Δ in §7.3. |
+| 9 | `nvda_buy_stock_refusal` | `refusal` | 0.00 | Agent answered with citations + analysis instead of refusing the personalized investment-advice request. **Symptom**: refusal policy not enforced for investment-recommendation prompts; relates to the H8 / §8 hypothesis on refusal handling. |
+
+These nine map onto recurring root causes: (a) period disambiguation
+(case 2), (b) numeric tolerance over-strictness (case 3),
+(c) under-retrieval on multi-entity questions (cases 5, 6),
+(d) metadata-filter drift on subordinate clauses (case 7), and
+(e) verifier-threshold over-permissiveness on insufficient-evidence /
+refusal cases (cases 8, 9). The systemic failure modes listed in §9
+below were chosen specifically because the run surfaces them.
 
 ---
 
 ## 8. Ablation discussion
 
-This section reasons about **what we expect** from each variant, keyed
-to the locked variant matrix. Treat the directional language as
-pre-registered hypotheses, not as a description of measured results.
-Once §7 is populated, the discussion should be rewritten to match the
-observed effect sizes and significance results.
+This section keeps the **pre-registered hypotheses** verbatim and adds
+an `Observed:` line under each one stating the measured effect from the
+artifact in §7. Observed lines are written so the original pre-reg
+trail stays intact and surprises are surfaced, not rationalised.
 
 ### Retrieval vs. no retrieval (H9: `full_agentic` > `llm_only`)
 
@@ -746,6 +877,15 @@ asked to "list Amazon's segment revenue for FY 2023" without retrieval
 either hallucinates plausible numbers or refuses; either way it is
 wrong against the verified eval set.
 
+**Observed (H9 supported):** `answer_accuracy` 0.795 vs 0.122,
+Δ = +0.673 (95% CI +0.474, +0.853), one-sided BH-adjusted q = 1.7e-04,
+Cliff's δ = 0.692. Strongly significant; effect is large (Cliff's δ
+threshold for "large" is 0.474). `strict_recall_at_10` +0.458 vs n/a,
+q = 0.003. The two subgroups that *invert* this finding
+(`sector_synthesis` and `insufficient_evidence`) are diagnosed in §7.3
+and traced to verifier-threshold + multi-entity-retrieval failures in
+§7.6.
+
 ### Agentic vs. single-pass (H4: `full_agentic` > `single_pass`)
 
 The agentic loop's main value is on multi-part and sector-synthesis
@@ -753,12 +893,33 @@ questions where one retrieval call is not enough. We expect the largest
 lift in those subgroups and a smaller (potentially null) lift on
 single-fact lookups where one retrieval covers everything.
 
+**Observed (H4 not supported on this case set):**
+Δ `answer_accuracy` = −0.006 (95% CI −0.167, +0.154), BH q = 0.841.
+Effectively zero with wide CI; `single_pass` matches `full_agentic` on
+the deterministic primaries on the v1 case mix. The agentic loop's
+verification + retry budget did *not* pay off in measurable accuracy
+over the simpler `single_pass` pipeline. `full_agentic` does retain a
+small edge on the retrieval-quality secondaries (mrr 0.368 vs 0.350,
+page_evidence_f1 0.104 vs 0.059 — §7.4), so the agentic loop is still
+helping retrieval shape — it just isn't translating that into answer-
+text accuracy on this case mix.
+
 ### HyDE (H1: `full_agentic` > `full_agentic_no_hyde`)
 
 HyDE should help most where the question's surface form differs from
 filing language — colloquial wordings, abbreviated metrics, vague time
 references. Expected to be a small but consistent lift on
 `strict_recall_at_10`.
+
+**Observed (H1 not supported):**
+Δ `answer_accuracy` = 0.000 (95% CI −0.115, +0.115), BH q = 0.841.
+HyDE's contribution to the agentic pipeline is statistically zero on
+this case set. There is a small directionally-positive effect on
+`strict_recall_at_10` (+0.083) but it is well inside the noise band.
+HyDE may still be helping on individual paraphrase-heavy questions
+that this 99-case set doesn't surface; recommend keeping it on by
+default but treating it as a low-impact knob until a larger / more
+paraphrase-heavy eval set re-tests it.
 
 ### Reranker (H2: `full_agentic` > `full_agentic_no_reranker`)
 
@@ -768,6 +929,15 @@ candidates to demote; the expected lift is on `page_evidence_f1` and
 `citation_validity` secondaries, and a smaller effect on
 `answer_accuracy`.
 
+**Observed (H2 not supported, trends wrong way):**
+Δ `answer_accuracy` = −0.077 (95% CI −0.269, +0.103), BH q = 0.858. The
+point estimate actually points the wrong way (reranker-off marginally
+*better*) but the CI spans zero and q is far from significance. Read
+as ties + small-N noise rather than a reverse effect. The reranker
+costs a per-case OpenRouter call so the cost/latency trade-off is real
+and the lift it was supposed to deliver does not appear on this case
+set.
+
 ### HyDE × Reranker (H3)
 
 The two share some of their work: a reranker can fix a missed semantic
@@ -775,6 +945,13 @@ hit, and HyDE can prevent the miss in the first place. We expect the
 joint knockout to be larger than the sum of the individual knockouts
 (super-additive), implying redundancy in the pipeline that's worth
 documenting.
+
+**Observed (H3 not supported, super-additivity not detected):**
+Δ `answer_accuracy` joint = +0.077 (95% CI −0.064, +0.231), BH
+q = 0.580. Removing both still leaves `answer_accuracy` inside the
+noise band of `full_agentic`. There is no evidence of super-additivity
+between HyDE and reranker in this run — disabling both together does
+not produce a larger drop than either alone.
 
 ### Hybrid channels (H5 vs H6: lexical-only vs semantic-only inside `single_pass`)
 
@@ -785,12 +962,34 @@ expected pattern: vector-only loses on `table_lookup` and
 `metadata_filter_correctness`; FTS-only loses on `sector_synthesis` and
 paraphrase-heavy `single_company_lookup`. Together they cover both.
 
+**Observed (H5/H6 strongly asymmetric — vector channel is critical):**
+- `single_pass_lexical_only` (no vector) — Δ `answer_accuracy` =
+  **+0.667 (95% CI +0.474, +0.846), BH q = 1.7e-04** — same BH-
+  significance level as the H9 headline. Removing the semantic /
+  vector channel obliterates accuracy on this case set.
+- `single_pass_semantic_only` (no FTS) — Δ `answer_accuracy` =
+  +0.013 (95% CI −0.154, +0.167), BH q = 0.841 — statistically zero.
+  Removing the lexical channel costs essentially nothing because the
+  semantic channel already covers proper-name-heavy table lookups when
+  the vocabulary overlap is high.
+
+The pre-reg expected both channels to contribute. The data says only
+the vector channel is doing real work; FTS is dormant on this case
+mix. This is the strongest "non-obvious finding" in the run.
+
 ### Reranker outside the agent loop (H7)
 
 The reranker is most valuable when the candidate set is wider — the
 agent's iterative retrieves naturally narrow the candidate set across
 calls. We expect the reranker effect to be **larger** in `single_pass`
 than in `full_agentic`.
+
+**Observed (H7 not detected):**
+`full_agentic −reranker` Δ = −0.077; `single_pass −reranker` Δ = 0.000
+(95% CI −0.154, +0.154). Both knockouts are statistically null. The
+expected `single_pass` > `full_agentic` ordering of the reranker effect
+is not visible — the reranker's contribution sits below the noise floor
+in both pipelines on this case set.
 
 ### Query decomposition in single_pass (H8: `full_agentic` > `single_pass_no_decomposition`)
 
@@ -811,16 +1010,36 @@ zero. The within-mode contrast `single_pass` vs `single_pass_no_decomposition`
 the operationally interesting decision lens: it answers "should single_pass
 keep decomposition on by default?" holding agency constant.
 
+**Observed (H8 not supported on this case set):**
+Δ `answer_accuracy` (single_pass_no_decomposition vs full_agentic) =
++0.038 (95% CI −0.128, +0.205), BH q = 0.841. Disabling decomposition
+does not show a detectable accuracy cost on this case set, consistent
+with the broader finding that `full_agentic` ≈ `single_pass` on the
+primaries (H4). The expected subgroup-concentrated lift in
+`multi_part` / `sector_synthesis` is not visible at this N; case 5 in
+§7.6 (`cross_sector_2025_revenue_ranking`) shows the failure mode the
+decomposer was *supposed* to solve, suggesting the effect is real but
+swamped by other noise sources on the current case mix.
+
 ### Subgroup expectations
 
-- `insufficient_evidence` and `refusal` cases should reward
-  `full_agentic` over `llm_only` not on accuracy but on appropriate
-  refusal. The deterministic scorer treats a properly-marked
-  `insufficient_evidence` answer as correct on those cases; an
-  `llm_only` model hallucinating an answer is wrong.
-- `latest_filing` should reward any system that correctly applies the
-  `filing_date` filter; `metadata_filter_correctness` is the right
-  diagnostic there.
+- **`insufficient_evidence` and `refusal`:** the pre-reg expected
+  `full_agentic` to win on appropriate refusal. **Observed**:
+  `full_agentic` *loses* on `insufficient_evidence` (Δ −0.571) and ties
+  at 0 on `refusal`. The agentic verifier accepts weak evidence as
+  sufficient and over-answers; the deterministic scorer rewards
+  `llm_only` for either refusing or producing a sufficiently-hedged
+  answer. This is the most actionable lesson from the run: tighten the
+  verifier's `insufficient_evidence` threshold and add an
+  investment-advice refusal classifier upstream of the generator.
+- **`latest_filing`:** the pre-reg expected metadata-filter correctness
+  to be the dominant diagnostic. **Observed**: `latest_filing` Δ
+  +0.250 (RAG beats LLM-only) and per-case
+  `metadata_filter_correctness` aggregate is 0.929 across all 99 cases,
+  but case 7 in §7.6 shows the failure mode — when the ticker isn't
+  the leading clause of the question, the agent sometimes drops the
+  filter and returns a different company's filing. Per-case
+  `metadata_filter_correctness` hides this.
 
 ---
 
