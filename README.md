@@ -81,13 +81,13 @@ not hard-coded to SEC filings; they read corpus-level overrides from the dataset
 Existing SEC behavior is preserved because every override falls back to a SEC default
 when the column is null. Override columns on `datasets`:
 
-| Column | Purpose |
-| --- | --- |
-| `domain_label` | Short corpus identity injected as `CORPUS: …` in every agent prompt (default: "SEC filings of US public companies"). |
-| `entity_label` | Human-readable name for the primary entity (default: "ticker"). |
-| `valid_forms` | JSON array of allowed form types; restricts planner output and `retrieve_evidence` filters (default: `["10-K","10-Q","8-K"]`). |
-| `metric_terms` | JSON array of metric keywords used by the heuristic-planner fallback (default: revenue, R&D, …). |
-| `hyde_style_hint` | Optional dataset-specific style cue appended to the HyDE prompt as `STYLE_HINT: …`. |
+| Column                    | Purpose                                                                                                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_label`            | Short corpus identity injected as `CORPUS: …` in every agent prompt (default: "SEC filings of US public companies").                                                              |
+| `entity_label`            | Human-readable name for the primary entity (default: "ticker").                                                                                                                   |
+| `valid_forms`             | JSON array of allowed form types; restricts planner output and `retrieve_evidence` filters (default: `["10-K","10-Q","8-K"]`).                                                    |
+| `metric_terms`            | JSON array of metric keywords used by the heuristic-planner fallback (default: revenue, R&D, …).                                                                                  |
+| `hyde_style_hint`         | Optional dataset-specific style cue appended to the HyDE prompt as `STYLE_HINT: …`.                                                                                               |
 | `citation_label_template` | `str.format` template with `{entity}`, `{filing_date}`, `{form_type}`, `{page}` placeholders for citation rendering (default: `[{entity} {filing_date} {form_type}, p. {page}]`). |
 
 Pass any of these as optional fields on `POST /v1/datasets`, `POST /v1/datasets/register-local-corpus`, or via direct DB update. Example:
@@ -186,12 +186,6 @@ live in `docs/implementation-report.md` §Results.
 Method choices, evaluation methodology, results, ablation findings, failure
 modes, and limitations are written up in [`docs/implementation-report.md`](docs/implementation-report.md).
 ADRs for individual decisions are in [`docs/adr/`](docs/adr/).
-
-## Demo Video
-
-A walkthrough of registration → ingestion → query (with citations and trace
-viewer) → ablation evaluation is linked in `docs/implementation-report.md`
-once recorded.
 
 ## Verification
 

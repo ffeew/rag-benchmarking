@@ -90,15 +90,15 @@ methodology (10%) is addressed through a pre-registered ablation study.
 
 ### Service topology
 
-| Service | Responsibility | Container |
-| --- | --- | --- |
-| `api` | FastAPI HTTP surface (datasets, documents, ingestions, jobs, query, traces, evaluations, eval-cases, health). Also hosts the in-process evaluation runner (daemon thread per run, RAGAS + judge bundled into this image). Serves the built SPA at `/` in production. | `backend/Dockerfile` |
-| `frontend` | Vite dev server in development; built static assets baked into the api image for production. | `frontend/Dockerfile` |
-| `ingestion-worker` | Celery worker on the `ingestion` queue. Heavy parsing/embedding deps only. | `backend/packages/rag-ingestion-worker/Dockerfile` |
-| `migrate` | Alembic-runs-once container; api waits on it. | `backend/Dockerfile` |
-| `postgres` | Postgres 17 + pgvector. Retrieval store, traces, jobs, eval results. | `pgvector/pgvector:pg17` |
-| `redis` | Celery broker + result backend. | `redis:8` |
-| `minio` | S3-compatible object store for raw PDFs and parser artifacts; versioning enabled on the raw bucket. | `minio/minio` |
+| Service            | Responsibility                                                                                                                                                                                                                                                       | Container                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `api`              | FastAPI HTTP surface (datasets, documents, ingestions, jobs, query, traces, evaluations, eval-cases, health). Also hosts the in-process evaluation runner (daemon thread per run, RAGAS + judge bundled into this image). Serves the built SPA at `/` in production. | `backend/Dockerfile`                               |
+| `frontend`         | Vite dev server in development; built static assets baked into the api image for production.                                                                                                                                                                         | `frontend/Dockerfile`                              |
+| `ingestion-worker` | Celery worker on the `ingestion` queue. Heavy parsing/embedding deps only.                                                                                                                                                                                           | `backend/packages/rag-ingestion-worker/Dockerfile` |
+| `migrate`          | Alembic-runs-once container; api waits on it.                                                                                                                                                                                                                        | `backend/Dockerfile`                               |
+| `postgres`         | Postgres 17 + pgvector. Retrieval store, traces, jobs, eval results.                                                                                                                                                                                                 | `pgvector/pgvector:pg17`                           |
+| `redis`            | Celery broker + result backend.                                                                                                                                                                                                                                      | `redis:8`                                          |
+| `minio`            | S3-compatible object store for raw PDFs and parser artifacts; versioning enabled on the raw bucket.                                                                                                                                                                  | `minio/minio`                                      |
 
 All wired in `docker-compose.yml` with healthchecks and explicit
 `depends_on: { condition: service_healthy }` so the api never starts
@@ -164,49 +164,49 @@ operator → POST /v1/datasets/{id}/ingestions
 
 ### Where things live
 
-| Concern | Path |
-| --- | --- |
-| API entrypoint | `backend/rag_benchmarking/main.py` |
-| Routes | `backend/rag_benchmarking/api/routes/*.py` |
-| Auth | `backend/rag_benchmarking/api/deps.py` |
-| Settings (pydantic-settings) | `backend/packages/rag-common/rag_common/config.py` |
-| SQLAlchemy models | `backend/packages/rag-common/rag_common/db/models.py` |
-| Alembic migrations | `backend/migrations/versions/` |
-| Celery app (API/scheduler side) | `backend/rag_benchmarking/workers/celery_app.py` |
-| Celery app (ingestion side) | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/celery_app.py` |
-| In-process evaluation launcher | `backend/rag_benchmarking/evaluation/runner.py` |
-| Ingestion pipeline | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/ingestion/{parsing,chunking,pipeline}.py` |
-| Ingestion tasks | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/tasks.py` |
-| Retrieval primitives | `backend/packages/rag-retrieval/rag_retrieval/{hybrid,planning,hyde,verification,generation,retrieval_tool,query,dataset_config}.py` |
-| Evaluation runner | `backend/packages/rag-evaluation/rag_evaluation/{runner,scoring,metrics,ablation_analysis}.py` |
-| Locked variants | `backend/packages/rag-common/rag_common/eval_variants.py` |
-| Eval cases | `backend/eval_cases/sec_filings_v1.yaml` |
-| Scripts (CLI reproduction) | `backend/rag_benchmarking/scripts/{seed_eval_cases,run_eval,compare_ablations}.py` |
-| Frontend routes | `frontend/src/routes/` |
-| Typed API client | `frontend/src/lib/api.ts` |
+| Concern                         | Path                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| API entrypoint                  | `backend/rag_benchmarking/main.py`                                                                                                   |
+| Routes                          | `backend/rag_benchmarking/api/routes/*.py`                                                                                           |
+| Auth                            | `backend/rag_benchmarking/api/deps.py`                                                                                               |
+| Settings (pydantic-settings)    | `backend/packages/rag-common/rag_common/config.py`                                                                                   |
+| SQLAlchemy models               | `backend/packages/rag-common/rag_common/db/models.py`                                                                                |
+| Alembic migrations              | `backend/migrations/versions/`                                                                                                       |
+| Celery app (API/scheduler side) | `backend/rag_benchmarking/workers/celery_app.py`                                                                                     |
+| Celery app (ingestion side)     | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/celery_app.py`                                                           |
+| In-process evaluation launcher  | `backend/rag_benchmarking/evaluation/runner.py`                                                                                      |
+| Ingestion pipeline              | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/ingestion/{parsing,chunking,pipeline}.py`                                |
+| Ingestion tasks                 | `backend/packages/rag-ingestion-worker/rag_ingestion_worker/tasks.py`                                                                |
+| Retrieval primitives            | `backend/packages/rag-retrieval/rag_retrieval/{hybrid,planning,hyde,verification,generation,retrieval_tool,query,dataset_config}.py` |
+| Evaluation runner               | `backend/packages/rag-evaluation/rag_evaluation/{runner,scoring,metrics,ablation_analysis}.py`                                       |
+| Locked variants                 | `backend/packages/rag-common/rag_common/eval_variants.py`                                                                            |
+| Eval cases                      | `backend/eval_cases/sec_filings_v1.yaml`                                                                                             |
+| Scripts (CLI reproduction)      | `backend/rag_benchmarking/scripts/{seed_eval_cases,run_eval,compare_ablations}.py`                                                   |
+| Frontend routes                 | `frontend/src/routes/`                                                                                                               |
+| Typed API client                | `frontend/src/lib/api.ts`                                                                                                            |
 
 ### Stack choices (and why)
 
-| Concern | Choice | Why |
-| --- | --- | --- |
-| Language | Python 3.13 backend, TypeScript 5 frontend | `task.md` requires Python; TS keeps frontend types in sync with the Zod-validated API client. |
-| API framework | FastAPI | Native pydantic types end-to-end, OpenAPI for free, async request handling for query latency. |
-| Background jobs | Celery + Redis | Mature, late-ack semantics for at-least-once ingestion, separate queues per concern. ADR-0007. |
-| Object store | MinIO | S3-compatible, supports bucket versioning so a raw PDF can be re-OCR'd against the same checksum. ADR-0002. |
-| Retrieval store | Postgres 17 + pgvector | One store for chunks, vectors, FTS, traces, eval results; HNSW + tsvector indexes. ADR-0005. |
-| Parsing | Mistral OCR primary, Docling fallback, pypdf last resort | Mistral handles SEC filings well; Docling is open-source and good at tables; pypdf is the offline last-resort for smoke tests. ADR-0003. |
-| Chunking | Chonkie (`TableChunker` + `RecursiveChunker`) | Table-aware boundaries; preserves header/value relationships. ADR-0004. |
-| Embeddings / chat / rerank | OpenRouter gateway | One key, model fallback routing, structured-output support, judge model interchange. ADR-0011. |
-| Agent runtime | Pydantic AI with OpenRouter provider | Tool-calling, bounded `UsageLimits`, structured final output. ADR-0006. |
-| Frontend SPA | React 19 + Vite + TanStack Router + TanStack Query + Zod + shadcn/ui + React Hook Form + Tailwind | Stated by `system-design.md`; chosen for typed end-to-end flow and operator-grade density. ADR-0010. |
-| Evaluation | Pydantic Evals patterns + RAGAS judge + custom paired-stats module | Determinism for primary endpoints; RAGAS judge restricted to informational secondaries. ADR-0009. |
+| Concern                    | Choice                                                                                            | Why                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Language                   | Python 3.13 backend, TypeScript 5 frontend                                                        | `task.md` requires Python; TS keeps frontend types in sync with the Zod-validated API client.                                            |
+| API framework              | FastAPI                                                                                           | Native pydantic types end-to-end, OpenAPI for free, async request handling for query latency.                                            |
+| Background jobs            | Celery + Redis                                                                                    | Mature, late-ack semantics for at-least-once ingestion, separate queues per concern. ADR-0007.                                           |
+| Object store               | MinIO                                                                                             | S3-compatible, supports bucket versioning so a raw PDF can be re-OCR'd against the same checksum. ADR-0002.                              |
+| Retrieval store            | Postgres 17 + pgvector                                                                            | One store for chunks, vectors, FTS, traces, eval results; HNSW + tsvector indexes. ADR-0005.                                             |
+| Parsing                    | Mistral OCR primary, Docling fallback, pypdf last resort                                          | Mistral handles SEC filings well; Docling is open-source and good at tables; pypdf is the offline last-resort for smoke tests. ADR-0003. |
+| Chunking                   | Chonkie (`TableChunker` + `RecursiveChunker`)                                                     | Table-aware boundaries; preserves header/value relationships. ADR-0004.                                                                  |
+| Embeddings / chat / rerank | OpenRouter gateway                                                                                | One key, model fallback routing, structured-output support, judge model interchange. ADR-0011.                                           |
+| Agent runtime              | Pydantic AI with OpenRouter provider                                                              | Tool-calling, bounded `UsageLimits`, structured final output. ADR-0006.                                                                  |
+| Frontend SPA               | React 19 + Vite + TanStack Router + TanStack Query + Zod + shadcn/ui + React Hook Form + Tailwind | Stated by `system-design.md`; chosen for typed end-to-end flow and operator-grade density. ADR-0010.                                     |
+| Evaluation                 | Pydantic Evals patterns + RAGAS judge + custom paired-stats module                                | Determinism for primary endpoints; RAGAS judge restricted to informational secondaries. ADR-0009.                                        |
 
 ---
 
 ## 3. Data processing and ingestion
 
-This section addresses `task.md` §3 (Indexing) and §8 *Data & Document
-Processing* (20% of the rubric).
+This section addresses `task.md` §3 (Indexing) and §8 _Data & Document
+Processing_ (20% of the rubric).
 
 ### Document registration
 
@@ -230,11 +230,13 @@ The pipeline runs parsers in order:
 1. **Mistral OCR** (`mistral-ocr-latest` by default). Direct API, not
    via OpenRouter, because OCR is a binary-document API rather than a
    chat call. ADR-0003 and ADR-0011 §OCR.
-2. **Docling fallback** when Mistral times out, fails, or a page is
-   flagged by the quality checks below.
+2. **Docling fallback** when Mistral times out, fails, a page is flagged
+   by the quality checks below, or when `MISTRAL_API_KEY` is intentionally
+   unset (operators with native-text corpora can opt out of hosted OCR;
+   the boot validator does not require the key).
 3. **`pypdf` local extraction** as the last-resort path for offline
-   smoke tests (used when `ALLOW_MOCK_PROVIDERS=true` and no Mistral key
-   is configured).
+   smoke tests (used when `ALLOW_MOCK_PROVIDERS=true` and docling also
+   fails).
 
 `ParsedPageDraft.quality_flags` (a JSONB column on `parsed_pages`)
 records per-page issues:
@@ -258,11 +260,11 @@ prose through `chonkie.RecursiveChunker`.
 
 Defaults (`config.py`):
 
-| Setting | Default |
-| --- | --- |
-| Target chunk size | 1000 tokens (`chunk_target_tokens`) |
-| Hard max | 1500 tokens (`chunk_max_tokens`) |
-| Narrative overlap | 120 tokens (`chunk_overlap_tokens`) |
+| Setting              | Default                                                                      |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Target chunk size    | 1000 tokens (`chunk_target_tokens`)                                          |
+| Hard max             | 1500 tokens (`chunk_max_tokens`)                                             |
+| Narrative overlap    | 120 tokens (`chunk_overlap_tokens`)                                          |
 | Table-chunk max rows | 60 (`table_max_rows`) — oversized tables split by row group, header repeated |
 
 Each `Chunk` row carries `contains_table`, `token_count`,
@@ -338,18 +340,18 @@ implementation in `dataset_config.py`).
 
 The agent exposes a single tool, `retrieve_evidence`, with parameters:
 
-| Parameter | Purpose |
-| --- | --- |
-| `query` | Free-form text. FTS uses this verbatim; the HyDE-expanded version is used for the vector probe. |
-| `tickers` | Restrict to known tickers (unknown tickers are silently dropped). |
-| `form_types` | Subset of `valid_forms`; invalid forms are dropped. |
-| `filing_date_start` / `filing_date_end` | ISO date bounds. |
-| `top_k` | 1 to 12, capped server-side by `evidence_top_k`. |
-| `use_hyde` | When true, generate a hypothetical SEC-filing passage and embed *that* for the vector probe. Default true. |
+| Parameter                               | Purpose                                                                                                    |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `query`                                 | Free-form text. FTS uses this verbatim; the HyDE-expanded version is used for the vector probe.            |
+| `tickers`                               | Restrict to known tickers (unknown tickers are silently dropped).                                          |
+| `form_types`                            | Subset of `valid_forms`; invalid forms are dropped.                                                        |
+| `filing_date_start` / `filing_date_end` | ISO date bounds.                                                                                           |
+| `top_k`                                 | 1 to 12, capped server-side by `evidence_top_k`.                                                           |
+| `use_hyde`                              | When true, generate a hypothetical SEC-filing passage and embed _that_ for the vector probe. Default true. |
 
 The agent's bounded budget is enforced via
 `UsageLimits(request_limit=N+1)` where `N = retrieval_agent_tool_call_budget`
-(default 4). The agent's final structured output combines planner-style
+(default 16). The agent's final structured output combines planner-style
 metadata (target tickers/forms/metrics, query_type, latest, subquestions,
 reasoning) with verifier-style signals (`selected_chunk_ids`,
 `missing_subclaims`, `contradictions`, `confidence`,
@@ -395,7 +397,7 @@ encodes the same fields in its final output.
 
 When `use_hyde=true`, the system generates a short hypothetical SEC
 passage from the question with the chat model
-(`zai_chat_model` by default; see ADR-0011 §Chat) and embeds *that*
+(`zai_chat_model` by default; see ADR-0011 §Chat) and embeds _that_
 passage for the vector probe. This improves recall on questions whose
 phrasing diverges from filing language (e.g. "How much did Microsoft
 make last year?" → "Total revenue for fiscal year ended June 30,
@@ -440,7 +442,7 @@ configured OpenRouter chat model (`zai_chat_model` /
 `openrouter_chat_model`) with a Pydantic structured-output schema that
 forces:
 
-- An `answer` string written *only* from evidence.
+- An `answer` string written _only_ from evidence.
 - A `citations` array — every material claim has at least one citation.
 - Each citation carries `document_id`, `chunk_id`, `page_number`,
   `ticker`, `form_type`, `filing_date`, `report_period`, the MinIO
@@ -490,7 +492,7 @@ metrics.
 
 ## 6. Evaluation methodology
 
-This section addresses `task.md` §6 and §8 *Evaluation Methodology* (10%
+This section addresses `task.md` §6 and §8 _Evaluation Methodology_ (10%
 of the rubric). The full pre-registration document is
 [`docs/eval/ablation_v1_plan.md`](eval/ablation_v1_plan.md); this
 section summarises it.
@@ -500,17 +502,17 @@ section summarises it.
 `backend/eval_cases/sec_filings_v1.yaml` contains **99 verified cases**
 across **9 categories**:
 
-| Category | Count | What it tests |
-| --- | --- | --- |
-| `single_company_lookup` | 35 | Direct facts (revenue, debt, cash). |
-| `table_lookup` | 11 | Values that only exist inside a table. |
-| `trend` | 8 | Multi-year direction (e.g. 3-year gross margin trend). |
-| `cross_company_comparison` | 8 | Same metric, two or more companies. |
-| `sector_synthesis` | 7 | Thematic question across a sector ("AI demand"). |
-| `multi_part` | 10 | Multi-clause questions needing several retrievals. |
-| `latest_filing` | 8 | "Most recent 10-K" resolved against ingested data. |
-| `insufficient_evidence` | 7 | Question whose answer is not in the corpus. |
-| `refusal` | 5 | Question outside scope (e.g. personalised advice). |
+| Category                   | Count | What it tests                                          |
+| -------------------------- | ----- | ------------------------------------------------------ |
+| `single_company_lookup`    | 35    | Direct facts (revenue, debt, cash).                    |
+| `table_lookup`             | 11    | Values that only exist inside a table.                 |
+| `trend`                    | 8     | Multi-year direction (e.g. 3-year gross margin trend). |
+| `cross_company_comparison` | 8     | Same metric, two or more companies.                    |
+| `sector_synthesis`         | 7     | Thematic question across a sector ("AI demand").       |
+| `multi_part`               | 10    | Multi-clause questions needing several retrievals.     |
+| `latest_filing`            | 8     | "Most recent 10-K" resolved against ingested data.     |
+| `insufficient_evidence`    | 7     | Question whose answer is not in the corpus.            |
+| `refusal`                  | 5     | Question outside scope (e.g. personalised advice).     |
 
 Every case has `case_key`, `category`, `difficulty`, `question`,
 `expected_answer`, `expected_answer_spec` (a structured numeric / list /
@@ -550,18 +552,18 @@ Pre-registered in
 in `backend/packages/rag-common/rag_common/eval_variants.py` as
 `LOCKED_ABLATION_VARIANTS`:
 
-| #  | Variant | `retrieval_mode` | Overrides | Isolates |
-| -- | --- | --- | --- | --- |
-| 1  | `full_agentic` | `full_agentic` | — | Baseline |
-| 2  | `full_agentic_no_hyde` | `full_agentic` | `hyde_enabled=false` | HyDE |
-| 3  | `full_agentic_no_reranker` | `full_agentic` | `reranker_enabled=false` | Reranker |
-| 4  | `full_agentic_no_hyde_no_reranker` | `full_agentic` | both off | HyDE × Reranker |
-| 5  | `single_pass` | `single_pass` | — | Agentic loop |
-| 6  | `single_pass_semantic_only` | `single_pass` | `full_text_candidates=0` | FTS channel |
-| 7  | `single_pass_lexical_only` | `single_pass` | `semantic_candidates=0` | Vector channel |
-| 8  | `single_pass_no_reranker` | `single_pass` | `reranker_enabled=false` | Reranker outside the loop |
-| 9  | `single_pass_no_decomposition` | `single_pass` | `query_decomposition_enabled=false` | Query decomposition (multi-query fan-out) |
-| 10 | `llm_only` | `llm_only` | — | Retrieval-free floor |
+| #   | Variant                            | `retrieval_mode` | Overrides                           | Isolates                                  |
+| --- | ---------------------------------- | ---------------- | ----------------------------------- | ----------------------------------------- |
+| 1   | `full_agentic`                     | `full_agentic`   | —                                   | Baseline                                  |
+| 2   | `full_agentic_no_hyde`             | `full_agentic`   | `hyde_enabled=false`                | HyDE                                      |
+| 3   | `full_agentic_no_reranker`         | `full_agentic`   | `reranker_enabled=false`            | Reranker                                  |
+| 4   | `full_agentic_no_hyde_no_reranker` | `full_agentic`   | both off                            | HyDE × Reranker                           |
+| 5   | `single_pass`                      | `single_pass`    | —                                   | Agentic loop                              |
+| 6   | `single_pass_semantic_only`        | `single_pass`    | `full_text_candidates=0`            | FTS channel                               |
+| 7   | `single_pass_lexical_only`         | `single_pass`    | `semantic_candidates=0`             | Vector channel                            |
+| 8   | `single_pass_no_reranker`          | `single_pass`    | `reranker_enabled=false`            | Reranker outside the loop                 |
+| 9   | `single_pass_no_decomposition`     | `single_pass`    | `query_decomposition_enabled=false` | Query decomposition (multi-query fan-out) |
+| 10  | `llm_only`                         | `llm_only`       | —                                   | Retrieval-free floor                      |
 
 All variants run inside one `EvalRun` against the same case set so the
 paired contrasts are atomic and we can compute paired statistics without
@@ -614,7 +616,7 @@ machinery as the deterministic scores.
   with subgroup mean differences.
 
 Hypotheses are pre-registered (§4 of the ablation plan). Each is
-one-sided in the direction *baseline > knockout* — anything else would
+one-sided in the direction _baseline > knockout_ — anything else would
 be exploratory and labelled as such.
 
 ### Determinism caveats
@@ -692,27 +694,27 @@ capped by `llm_only`'s 26 answer-gold-eligible cases; `n_paired = 24`
 for `strict_recall_at_10` because two of those 26 cases fall outside
 the evidence-gold-eligible intersection):
 
-| Endpoint | `full_agentic` (paired mean) | `llm_only` (paired mean) | Δ (paired bootstrap 95% CI) | One-sided p (BH-adj) | Cliff's δ |
-| --- | --- | --- | --- | --- | --- |
-| `answer_accuracy` | 0.795 | 0.122 | +0.673 (+0.474, +0.853) | **1.7e-04** | 0.692 |
-| `strict_recall_at_10` | 0.458 | n/a (no retrieval) | +0.458 (+0.250, +0.667) | 0.003 | 0.458 |
-| `expected_contains` | 0.000 | 0.000 | 0.000 (0.000, 0.000) | n/a | 0.000 |
+| Endpoint              | `full_agentic` (paired mean) | `llm_only` (paired mean) | Δ (paired bootstrap 95% CI) | One-sided p (BH-adj) | Cliff's δ |
+| --------------------- | ---------------------------- | ------------------------ | --------------------------- | -------------------- | --------- |
+| `answer_accuracy`     | 0.795                        | 0.122                    | +0.673 (+0.474, +0.853)     | **1.7e-04**          | 0.692     |
+| `strict_recall_at_10` | 0.458                        | n/a (no retrieval)       | +0.458 (+0.250, +0.667)     | 0.003                | 0.458     |
+| `expected_contains`   | 0.000                        | 0.000                    | 0.000 (0.000, 0.000)        | n/a                  | 0.000     |
 
 **Overall variant rates** (over each variant's own eligible cases — different denominators, intended for "how does each variant do standalone"):
 
-| Variant | `answer_accuracy_rate` | Eligible N |
-| --- | --- | --- |
-| `full_agentic` | 0.448 | 99 |
-| `llm_only` | 0.122 | 26 |
+| Variant        | `answer_accuracy_rate` | Eligible N |
+| -------------- | ---------------------- | ---------- |
+| `full_agentic` | 0.448                  | 99         |
+| `llm_only`     | 0.122                  | 26         |
 
 > **Why two numbers per cell?** The paired stats (Δ, p, Cliff's δ) are
-> computed on a same-N rectangular matrix across *all* variants in the
+> computed on a same-N rectangular matrix across _all_ variants in the
 > ablation. Because `llm_only` only has 26 answer-gold-eligible cases
-> (refusal / insufficient_evidence subgroups don't admit an LLM-only
+> (refusal / insufficient*evidence subgroups don't admit an LLM-only
 > scoreable answer under the current spec), the rectangular intersection
 > across all 10 variants is N = 26. The "paired mean" column therefore
 > shows the conditional mean on those 26 cases; the "overall variant
-> rate" column shows each variant's average over *its* eligible cases.
+> rate" column shows each variant's average over \_its* eligible cases.
 > Both are correct, they answer different questions.
 >
 > **`expected_contains` caveat.** The verified eval set was written with
@@ -726,34 +728,34 @@ the evidence-gold-eligible intersection):
 
 ### 7.2 Component ablations (baseline = `full_agentic`)
 
-Δ is signed as `baseline − treatment` so a *positive* number means
-removing that component *hurts* accuracy/recall. Paired N = 26 (same
+Δ is signed as `baseline − treatment` so a _positive_ number means
+removing that component _hurts_ accuracy/recall. Paired N = 26 (same
 intersection as §7.1).
 
-| Knockout | Δ `answer_accuracy` (95% CI) | Δ `strict_recall_at_10` (95% CI) | Δ `expected_contains` (95% CI) | BH-adj q (`answer_accuracy`) |
-| --- | --- | --- | --- | --- |
-| `−hyde` | 0.000 (−0.115, +0.115) | +0.083 (0.000, +0.208) | 0.000 | 0.841 |
-| `−reranker` | −0.077 (−0.269, +0.103) | −0.007 (−0.132, +0.118) | 0.000 | 0.858 |
-| `−hyde −reranker` | +0.077 (−0.064, +0.231) | −0.021 (−0.188, +0.146) | 0.000 | 0.580 |
-| `single_pass` | −0.006 (−0.167, +0.154) | −0.062 (−0.250, +0.125) | 0.000 | 0.841 |
-| `single_pass −fts` (semantic-only) | +0.013 (−0.154, +0.167) | −0.062 (−0.250, +0.125) | 0.000 | 0.841 |
-| `single_pass −vector` (lexical-only) | **+0.667 (+0.474, +0.846)** | **+0.417 (+0.167, +0.625)** | 0.000 | **1.7e-04** |
-| `single_pass −reranker` | 0.000 (−0.154, +0.154) | −0.146 (−0.354, +0.062) | 0.000 | 0.841 |
-| `single_pass −decomposition` | +0.038 (−0.128, +0.205) | −0.062 (−0.250, +0.125) | 0.000 | 0.841 |
+| Knockout                             | Δ `answer_accuracy` (95% CI) | Δ `strict_recall_at_10` (95% CI) | Δ `expected_contains` (95% CI) | BH-adj q (`answer_accuracy`) |
+| ------------------------------------ | ---------------------------- | -------------------------------- | ------------------------------ | ---------------------------- |
+| `−hyde`                              | 0.000 (−0.115, +0.115)       | +0.083 (0.000, +0.208)           | 0.000                          | 0.841                        |
+| `−reranker`                          | −0.077 (−0.269, +0.103)      | −0.007 (−0.132, +0.118)          | 0.000                          | 0.858                        |
+| `−hyde −reranker`                    | +0.077 (−0.064, +0.231)      | −0.021 (−0.188, +0.146)          | 0.000                          | 0.580                        |
+| `single_pass`                        | −0.006 (−0.167, +0.154)      | −0.062 (−0.250, +0.125)          | 0.000                          | 0.841                        |
+| `single_pass −fts` (semantic-only)   | +0.013 (−0.154, +0.167)      | −0.062 (−0.250, +0.125)          | 0.000                          | 0.841                        |
+| `single_pass −vector` (lexical-only) | **+0.667 (+0.474, +0.846)**  | **+0.417 (+0.167, +0.625)**      | 0.000                          | **1.7e-04**                  |
+| `single_pass −reranker`              | 0.000 (−0.154, +0.154)       | −0.146 (−0.354, +0.062)          | 0.000                          | 0.841                        |
+| `single_pass −decomposition`         | +0.038 (−0.128, +0.205)      | −0.062 (−0.250, +0.125)          | 0.000                          | 0.841                        |
 
 **Overall variant rates** for the §7.2 knockouts (over each variant's own 99 eligible cases):
 
-| Variant | `answer_accuracy_rate` | Δ vs `full_agentic` (overall) |
-| --- | --- | --- |
-| `full_agentic` | 0.448 | (baseline) |
-| `full_agentic_no_hyde` | 0.448 | 0.000 |
-| `full_agentic_no_reranker` | 0.431 | +0.017 |
-| `full_agentic_no_hyde_no_reranker` | 0.394 | +0.054 |
-| `single_pass` | 0.432 | +0.016 |
-| `single_pass_semantic_only` | 0.424 | +0.024 |
-| `single_pass_lexical_only` | 0.084 | **+0.364** |
-| `single_pass_no_reranker` | 0.404 | +0.044 |
-| `single_pass_no_decomposition` | 0.421 | +0.027 |
+| Variant                            | `answer_accuracy_rate` | Δ vs `full_agentic` (overall) |
+| ---------------------------------- | ---------------------- | ----------------------------- |
+| `full_agentic`                     | 0.448                  | (baseline)                    |
+| `full_agentic_no_hyde`             | 0.448                  | 0.000                         |
+| `full_agentic_no_reranker`         | 0.431                  | +0.017                        |
+| `full_agentic_no_hyde_no_reranker` | 0.394                  | +0.054                        |
+| `single_pass`                      | 0.432                  | +0.016                        |
+| `single_pass_semantic_only`        | 0.424                  | +0.024                        |
+| `single_pass_lexical_only`         | 0.084                  | **+0.364**                    |
+| `single_pass_no_reranker`          | 0.404                  | +0.044                        |
+| `single_pass_no_decomposition`     | 0.421                  | +0.027                        |
 
 > Only one knockout clears BH-adjusted significance after correction
 > across the 27-test primary family: **removing the semantic/vector
@@ -761,23 +763,23 @@ intersection as §7.1).
 > Every other component knockout — HyDE, reranker, query decomposition,
 > the agentic loop itself, and the `−hyde −reranker` joint knockout —
 > sits inside the noise band on this case set. The reranker knockouts
-> trend the *wrong* way (treatment marginally *better* than baseline)
+> trend the _wrong_ way (treatment marginally _better_ than baseline)
 > on `single_pass`, which we read as ties + small-N noise rather than a
 > reverse effect.
 
 ### 7.3 By category (subgroup table)
 
-| Category | N | `answer_accuracy` (`full_agentic`) | `answer_accuracy` (`llm_only`) | Δ |
-| --- | --- | --- | --- | --- |
-| `single_company_lookup` | 35 | 0.486 | 0.000 | +0.486 |
-| `table_lookup` | 11 | 0.727 | 0.000 | +0.727 |
-| `trend` | 8 | 0.708 | 0.000 | +0.708 |
-| `cross_company_comparison` | 8 | 0.375 | 0.333 | +0.042 |
-| `sector_synthesis` | 7 | 0.020 | 0.500 | **−0.480** |
-| `multi_part` | 10 | 0.550 | 0.000 | +0.550 |
-| `latest_filing` | 8 | 0.250 | 0.000 | +0.250 |
-| `insufficient_evidence` | 7 | 0.429 | 1.000 | **−0.571** |
-| `refusal` | 5 | 0.000 | — (no eligible cases) | — |
+| Category                   | N   | `answer_accuracy` (`full_agentic`) | `answer_accuracy` (`llm_only`) | Δ          |
+| -------------------------- | --- | ---------------------------------- | ------------------------------ | ---------- |
+| `single_company_lookup`    | 35  | 0.486                              | 0.000                          | +0.486     |
+| `table_lookup`             | 11  | 0.727                              | 0.000                          | +0.727     |
+| `trend`                    | 8   | 0.708                              | 0.000                          | +0.708     |
+| `cross_company_comparison` | 8   | 0.375                              | 0.333                          | +0.042     |
+| `sector_synthesis`         | 7   | 0.020                              | 0.500                          | **−0.480** |
+| `multi_part`               | 10  | 0.550                              | 0.000                          | +0.550     |
+| `latest_filing`            | 8   | 0.250                              | 0.000                          | +0.250     |
+| `insufficient_evidence`    | 7   | 0.429                              | 1.000                          | **−0.571** |
+| `refusal`                  | 5   | 0.000                              | — (no eligible cases)          | —          |
 
 > Two subgroups invert the headline. **`sector_synthesis`**: `llm_only`
 > outperforms the agentic pipeline on cross-sector / thematic synthesis
@@ -788,7 +790,7 @@ intersection as §7.1).
 > the gap.
 >
 > **`insufficient_evidence`**: `llm_only` scores 1.0 because the
-> deterministic scorer treats an LLM-only answer that *also* concedes
+> deterministic scorer treats an LLM-only answer that _also_ concedes
 > uncertainty/refusal as correct on these cases; the agentic pipeline
 > sometimes over-answers from weak retrieved evidence (e.g. the
 > `openai_2025_revenue_insufficient` case retrieves Microsoft 10-Q
@@ -805,16 +807,16 @@ intersection as §7.1).
 
 ### 7.4 Secondary endpoints (uncorrected)
 
-| Endpoint | `full_agentic` | `single_pass` | Direction |
-| --- | --- | --- | --- |
-| `mrr` | 0.368 | 0.350 | higher better |
-| `chunk_evidence_f1` | 0.200 | 0.137 | higher better |
-| `page_evidence_f1` | 0.104 | 0.059 | higher better |
-| `citation_validity` | 0.960 | 1.000 | higher better |
-| `citation_coverage` | 0.251 | 0.221 | higher better |
-| `metadata_filter_correctness` | 0.929 | 0.929 | higher better |
-| `latency_ms` (geometric mean) | 12,893 ms | 11,000 ms | lower better |
-| `cost_usd` (per-case geometric mean) | $0.0015 | $0.0010 | lower better |
+| Endpoint                             | `full_agentic` | `single_pass` | Direction     |
+| ------------------------------------ | -------------- | ------------- | ------------- |
+| `mrr`                                | 0.368          | 0.350         | higher better |
+| `chunk_evidence_f1`                  | 0.200          | 0.137         | higher better |
+| `page_evidence_f1`                   | 0.104          | 0.059         | higher better |
+| `citation_validity`                  | 0.960          | 1.000         | higher better |
+| `citation_coverage`                  | 0.251          | 0.221         | higher better |
+| `metadata_filter_correctness`        | 0.929          | 0.929         | higher better |
+| `latency_ms` (geometric mean)        | 12,893 ms      | 11,000 ms     | lower better  |
+| `cost_usd` (per-case geometric mean) | $0.0015        | $0.0010       | lower better  |
 
 > `full_agentic` wins on `mrr`, `page_evidence_f1`, and
 > `citation_coverage`, ties on `metadata_filter_correctness`, and
@@ -831,14 +833,14 @@ intersection as §7.1).
 
 ### 7.5 Informational (RAGAS judge)
 
-| Endpoint | `full_agentic` | Notes |
-| --- | --- | --- |
-| `faithfulness` | not run | Z.AI judge 429 (code 1113, quota exhausted) — graceful fallback |
-| `answer_relevancy` | not run | same — judge unavailable |
-| `context_precision` | not run | same — judge unavailable |
-| `context_recall` | not run | `ContextRecall.ascore()` API mismatch (RAGAS library version) — also independent of the quota issue |
+| Endpoint            | `full_agentic` | Notes                                                                                               |
+| ------------------- | -------------- | --------------------------------------------------------------------------------------------------- |
+| `faithfulness`      | not run        | Z.AI judge 429 (code 1113, quota exhausted) — graceful fallback                                     |
+| `answer_relevancy`  | not run        | same — judge unavailable                                                                            |
+| `context_precision` | not run        | same — judge unavailable                                                                            |
+| `context_recall`    | not run        | `ContextRecall.ascore()` API mismatch (RAGAS library version) — also independent of the quota issue |
 
-> RAGAS is the *informational* tier in the pre-registration (§6) and
+> RAGAS is the _informational_ tier in the pre-registration (§6) and
 > never under FDR; the deterministic primaries in §7.1–§7.3 are the
 > ones the report relies on. The judge was unavailable in two
 > independent ways during this run: Z.AI quota was exhausted before the
@@ -849,7 +851,7 @@ intersection as §7.1).
 > dedicated judge model on OpenRouter) but neither blocks the
 > deterministic conclusions above.
 >
-> For the `task.md` §6 *generator faithfulness* requirement, the
+> For the `task.md` §6 _generator faithfulness_ requirement, the
 > deterministic stand-ins for this run are `citation_validity` (0.960,
 > §7.4) and `citation_gold_recall` (0.366 over all 99 cases) — every
 > cited `chunk_id` is required to be in the retrieved set
@@ -864,17 +866,17 @@ One representative failure per category below; the case_key is the join
 key into the artifact (`backend/artifacts/evals/bd31b96d-...json`) for
 the full per-case trace.
 
-| # | case_key | category | acc | diagnosis |
-| --- | --- | --- | --- | --- |
-| 1 | `meta_2025_family_daily_active_people` | `single_company_lookup` | 0.00 | Retriever surfaced unrelated Meta chunks (DAP metric is reported in a key-metrics block, not the main income statement); agent emitted `insufficient_evidence` rather than retrying with the correct table heading. **Symptom**: false-negative refusal on a fact that *is* in the corpus. |
-| 2 | `msft_2025_rd_expense_millions` | `table_lookup` | 0.00 | Wrong reporting period: retriever grabbed the Q3 FY25 10-Q ("nine months ended March 31, 2025") at $23,659M instead of the FY25 10-K full-year figure at $32,488M. **Symptom**: time-window confusion — agent didn't disambiguate "fiscal 2025" → annual vs quarterly. |
-| 3 | `tsla_total_revenue_decrease_percent` | `trend` | 0.00 | Numeric scorer marked −2.9% wrong against expected −3%; the answer is *substantively correct* but lost the tolerance check. **Symptom**: tolerance band on percentage answers is too tight (`tolerance_abs: 0.5` against an integer-precision gold answer fails on the rounded 2.93%). |
-| 4 | `nvda_vs_amd_data_center_revenue_2025` | `cross_company_comparison` | 0.33 | Partial answer — agent retrieved the AMD performance graph instead of the segment-revenue table, then synthesised an incomplete comparison. **Symptom**: cross-doc retrieval surfaced one company's chunks well, missed the other's. |
-| 5 | `cross_sector_2025_revenue_ranking` | `sector_synthesis` | 0.14 | Agent retrieved AT&T's revenue table but stopped — never fanned out to the other five companies (Walmart, ExxonMobil, Eli Lilly, Goldman, Caterpillar). **Symptom**: `single_pass`-style decomposition would have helped here; the agent's tool-call budget (4) ran out before all six tickers were probed. |
-| 6 | `msft_total_revenue_and_gross_margin_2025` | `multi_part` | 0.00 | Agent retrieved the *correct* MSFT 10-K page-62 table but didn't extract the gross-margin row (only quoted revenue $281,724M). **Symptom**: multi-part questions need the generator to read more rows of a successfully-retrieved table. |
-| 7 | `latest_nvda_8k_filing_date` | `latest_filing` | 0.00 | Metadata filter dropped: agent returned a P&G 8-K (`PG 2026-04-14 8-K`) instead of restricting to NVDA. **Symptom**: ticker filter not enforced when the literal "NVIDIA" appears later in the prompt; `metadata_filter_correctness=0.929` aggregate hides per-case misses. |
-| 8 | `openai_2025_revenue_insufficient` | `insufficient_evidence` | 0.00 | Agent answered from MSFT 10-Q Azure-revenue tables instead of correctly emitting `insufficient_evidence=true` (OpenAI is not in the corpus). **Symptom**: over-answering — the verifier accepted weak evidence as sufficient. Same systemic issue as the `−0.571` Δ in §7.3. |
-| 9 | `nvda_buy_stock_refusal` | `refusal` | 0.00 | Agent answered with citations + analysis instead of refusing the personalized investment-advice request. **Symptom**: refusal policy not enforced for investment-recommendation prompts; relates to the H8 / §8 hypothesis on refusal handling. |
+| #   | case_key                                   | category                   | acc  | diagnosis                                                                                                                                                                                                                                                                                                   |
+| --- | ------------------------------------------ | -------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `meta_2025_family_daily_active_people`     | `single_company_lookup`    | 0.00 | Retriever surfaced unrelated Meta chunks (DAP metric is reported in a key-metrics block, not the main income statement); agent emitted `insufficient_evidence` rather than retrying with the correct table heading. **Symptom**: false-negative refusal on a fact that _is_ in the corpus.                  |
+| 2   | `msft_2025_rd_expense_millions`            | `table_lookup`             | 0.00 | Wrong reporting period: retriever grabbed the Q3 FY25 10-Q ("nine months ended March 31, 2025") at $23,659M instead of the FY25 10-K full-year figure at $32,488M. **Symptom**: time-window confusion — agent didn't disambiguate "fiscal 2025" → annual vs quarterly.                                      |
+| 3   | `tsla_total_revenue_decrease_percent`      | `trend`                    | 0.00 | Numeric scorer marked −2.9% wrong against expected −3%; the answer is _substantively correct_ but lost the tolerance check. **Symptom**: tolerance band on percentage answers is too tight (`tolerance_abs: 0.5` against an integer-precision gold answer fails on the rounded 2.93%).                      |
+| 4   | `nvda_vs_amd_data_center_revenue_2025`     | `cross_company_comparison` | 0.33 | Partial answer — agent retrieved the AMD performance graph instead of the segment-revenue table, then synthesised an incomplete comparison. **Symptom**: cross-doc retrieval surfaced one company's chunks well, missed the other's.                                                                        |
+| 5   | `cross_sector_2025_revenue_ranking`        | `sector_synthesis`         | 0.14 | Agent retrieved AT&T's revenue table but stopped — never fanned out to the other five companies (Walmart, ExxonMobil, Eli Lilly, Goldman, Caterpillar). **Symptom**: `single_pass`-style decomposition would have helped here; the agent's tool-call budget (4) ran out before all six tickers were probed. |
+| 6   | `msft_total_revenue_and_gross_margin_2025` | `multi_part`               | 0.00 | Agent retrieved the _correct_ MSFT 10-K page-62 table but didn't extract the gross-margin row (only quoted revenue $281,724M). **Symptom**: multi-part questions need the generator to read more rows of a successfully-retrieved table.                                                                    |
+| 7   | `latest_nvda_8k_filing_date`               | `latest_filing`            | 0.00 | Metadata filter dropped: agent returned a P&G 8-K (`PG 2026-04-14 8-K`) instead of restricting to NVDA. **Symptom**: ticker filter not enforced when the literal "NVIDIA" appears later in the prompt; `metadata_filter_correctness=0.929` aggregate hides per-case misses.                                 |
+| 8   | `openai_2025_revenue_insufficient`         | `insufficient_evidence`    | 0.00 | Agent answered from MSFT 10-Q Azure-revenue tables instead of correctly emitting `insufficient_evidence=true` (OpenAI is not in the corpus). **Symptom**: over-answering — the verifier accepted weak evidence as sufficient. Same systemic issue as the `−0.571` Δ in §7.3.                                |
+| 9   | `nvda_buy_stock_refusal`                   | `refusal`                  | 0.00 | Agent answered with citations + analysis instead of refusing the personalized investment-advice request. **Symptom**: refusal policy not enforced for investment-recommendation prompts; relates to the H8 / §8 hypothesis on refusal handling.                                                             |
 
 These nine map onto recurring root causes: (a) period disambiguation
 (case 2), (b) numeric tolerance over-strictness (case 3),
@@ -907,7 +909,7 @@ wrong against the verified eval set.
 Δ = +0.673 (95% CI +0.474, +0.853), one-sided BH-adjusted q = 1.7e-04,
 Cliff's δ = 0.692. Strongly significant; effect is large (Cliff's δ
 threshold for "large" is 0.474). `strict_recall_at_10` +0.458 vs n/a,
-q = 0.003. The two subgroups that *invert* this finding
+q = 0.003. The two subgroups that _invert_ this finding
 (`sector_synthesis` and `insufficient_evidence`) are diagnosed in §7.3
 and traced to verifier-threshold + multi-entity-retrieval failures in
 §7.6.
@@ -923,7 +925,7 @@ single-fact lookups where one retrieval covers everything.
 Δ `answer_accuracy` = −0.006 (95% CI −0.167, +0.154), BH q = 0.841.
 Effectively zero with wide CI; `single_pass` matches `full_agentic` on
 the deterministic primaries on the v1 case mix. The agentic loop's
-verification + retry budget did *not* pay off in measurable accuracy
+verification + retry budget did _not_ pay off in measurable accuracy
 over the simpler `single_pass` pipeline. `full_agentic` does retain a
 small edge on the retrieval-quality secondaries (mrr 0.368 vs 0.350,
 page_evidence_f1 0.104 vs 0.059 — §7.4), so the agentic loop is still
@@ -958,7 +960,7 @@ candidates to demote; the expected lift is on `page_evidence_f1` and
 **Observed (H2 not supported, trends wrong way):**
 Δ `answer_accuracy` = −0.077 (95% CI −0.269, +0.103), BH q = 0.858. The
 point estimate actually points the wrong way (reranker-off marginally
-*better*) but the CI spans zero and q is far from significance. Read
+_better_) but the CI spans zero and q is far from significance. Read
 as ties + small-N noise rather than a reverse effect. The reranker
 costs a per-case OpenRouter call so the cost/latency trade-off is real
 and the lift it was supposed to deliver does not appear on this case
@@ -989,6 +991,7 @@ expected pattern: vector-only loses on `table_lookup` and
 paraphrase-heavy `single_company_lookup`. Together they cover both.
 
 **Observed (H5/H6 strongly asymmetric — vector channel is critical):**
+
 - `single_pass_lexical_only` (no vector) — Δ `answer_accuracy` =
   **+0.667 (95% CI +0.474, +0.846), BH q = 1.7e-04** — same BH-
   significance level as the H9 headline. Removing the semantic /
@@ -1037,21 +1040,21 @@ the operationally interesting decision lens: it answers "should single_pass
 keep decomposition on by default?" holding agency constant.
 
 **Observed (H8 not supported on this case set):**
-Δ `answer_accuracy` (single_pass_no_decomposition vs full_agentic) =
+Δ `answer_accuracy` (single*pass_no_decomposition vs full_agentic) =
 +0.038 (95% CI −0.128, +0.205), BH q = 0.841. Disabling decomposition
 does not show a detectable accuracy cost on this case set, consistent
 with the broader finding that `full_agentic` ≈ `single_pass` on the
 primaries (H4). The expected subgroup-concentrated lift in
 `multi_part` / `sector_synthesis` is not visible at this N; case 5 in
 §7.6 (`cross_sector_2025_revenue_ranking`) shows the failure mode the
-decomposer was *supposed* to solve, suggesting the effect is real but
+decomposer was \_supposed* to solve, suggesting the effect is real but
 swamped by other noise sources on the current case mix.
 
 ### Subgroup expectations
 
 - **`insufficient_evidence` and `refusal`:** the pre-reg expected
   `full_agentic` to win on appropriate refusal. **Observed**:
-  `full_agentic` *loses* on `insufficient_evidence` (Δ −0.571) and ties
+  `full_agentic` _loses_ on `insufficient_evidence` (Δ −0.571) and ties
   at 0 on `refusal`. The agentic verifier accepts weak evidence as
   sufficient and over-answers; the deterministic scorer rewards
   `llm_only` for either refusing or producing a sufficiently-hedged
@@ -1073,14 +1076,14 @@ swamped by other noise sources on the current case mix.
 
 ### Failure modes the system surfaces (deliberately)
 
-| Symptom | How it's surfaced |
-| --- | --- |
-| Page failed every parser | `parsed_pages.quality_flags` carries the failure; ingestion run completes with a per-page error; frontend Document drawer shows it. |
-| OCR provider timeout | Pipeline retries with backoff; falls back to Docling; logs the fallback in the ingestion run. |
-| Rerank API failure | Trace records `degraded_reason=rerank_failed`; system continues on RRF order. |
-| Insufficient evidence | Answer payload sets `insufficient_evidence=true` + `insufficiency_reason`; cited evidence stays minimal. |
-| Citation hallucination attempt | `verify_evidence` rejects unknown chunk_ids before persistence; generation fails closed rather than silently dropping the bad cite. |
-| Stale / orphaned Celery job | Operator triggers `POST /v1/jobs/sweep` from the Jobs view; `run_sweep` redispatches queued rows whose Celery task vanished and marks running rows failed once their heartbeat lapses past `running_heartbeat_seconds`. |
+| Symptom                        | How it's surfaced                                                                                                                                                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page failed every parser       | `parsed_pages.quality_flags` carries the failure; ingestion run completes with a per-page error; frontend Document drawer shows it.                                                                                     |
+| OCR provider timeout           | Pipeline retries with backoff; falls back to Docling; logs the fallback in the ingestion run.                                                                                                                           |
+| Rerank API failure             | Trace records `degraded_reason=rerank_failed`; system continues on RRF order.                                                                                                                                           |
+| Insufficient evidence          | Answer payload sets `insufficient_evidence=true` + `insufficiency_reason`; cited evidence stays minimal.                                                                                                                |
+| Citation hallucination attempt | `verify_evidence` rejects unknown chunk_ids before persistence; generation fails closed rather than silently dropping the bad cite.                                                                                     |
+| Stale / orphaned Celery job    | Operator triggers `POST /v1/jobs/sweep` from the Jobs view; `run_sweep` redispatches queued rows whose Celery task vanished and marks running rows failed once their heartbeat lapses past `running_heartbeat_seconds`. |
 
 ### Honest limitations
 
@@ -1100,7 +1103,7 @@ swamped by other noise sources on the current case mix.
    (temperature 0, fixed seeds where applicable) but the report calls
    this out rather than claiming perfect reproducibility.
 5. **Judge model non-determinism.** RAGAS metrics are LLM-judged. We
-   report them as *informational* and never put them under FDR.
+   report them as _informational_ and never put them under FDR.
 6. **No personalised financial advice.** The investment-recommendation
    eval cases (`refusal` category) are intentionally answered with an
    evidence-based comparison plus limitations, not an individualised
@@ -1161,66 +1164,49 @@ by `backend/tests/test_prompts_dataset_aware.py` and
 
 ## Demo video
 
-URL: _pending recording — to be linked in the submission packet._
-
-The walkthrough should cover, in order:
-
-1. `docker compose up --build` and the system status page going green.
-2. Bearer-token entry on the frontend auth screen.
-3. `Register Local Corpus` for `sec_filings_pdf/` and the Jobs view
-   showing ingestion progress.
-4. A single-company query ("What was Microsoft's total revenue in
-   FY2024?") with citations visible alongside the answer.
-5. A table-lookup query against a 10-K segment table.
-6. A multi-company comparison query.
-7. An `insufficient_evidence` query that the system correctly refuses
-   to answer.
-8. Opening the Trace viewer for one of the answers, showing the plan,
-   retrieve calls, verifier output, and rerank scores.
-9. Seeding the eval cases and starting an evaluation run from the
-   frontend.
-10. The Evaluations comparison view across the full_agentic /
-    single_pass / llm_only baselines.
+[Watch on YouTube](https://youtu.be/OYbcMpjd5_8) — walkthrough of corpus
+registration, ingestion, single- and multi-company queries with citations,
+the trace viewer, and the ablation evaluation comparison.
 
 ---
 
 ## Appendix A. ADR index
 
-| ADR | Topic |
-| --- | --- |
-| [0001](adr/0001-core-stack.md) | Core stack (Python 3.13, FastAPI, Postgres, MinIO, OpenRouter, etc.) |
-| [0002](adr/0002-minio-object-storage.md) | MinIO object storage layout and versioning |
-| [0003](adr/0003-document-parsing.md) | Document parsing: Mistral OCR + Docling fallback |
-| [0004](adr/0004-table-aware-chunking.md) | Table-aware chunking with Chonkie |
-| [0005](adr/0005-retrieval-store.md) | Retrieval store: Postgres + pgvector |
-| [0006](adr/0006-agentic-retrieval.md) | Bounded Pydantic AI retrieval agent |
-| [0007](adr/0007-background-jobs.md) | Celery + Redis for ingestion and evaluation |
-| [0008](adr/0008-api-surface-and-auth.md) | API surface and bearer-token auth |
-| [0009](adr/0009-evaluation-strategy.md) | Pydantic Evals + RAGAS + paired stats |
-| [0010](adr/0010-frontend-application.md) | React + Vite + TanStack stack |
-| [0011](adr/0011-ai-provider-gateway.md) | OpenRouter as primary provider gateway |
+| ADR                                      | Topic                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| [0001](adr/0001-core-stack.md)           | Core stack (Python 3.13, FastAPI, Postgres, MinIO, OpenRouter, etc.) |
+| [0002](adr/0002-minio-object-storage.md) | MinIO object storage layout and versioning                           |
+| [0003](adr/0003-document-parsing.md)     | Document parsing: Mistral OCR + Docling fallback                     |
+| [0004](adr/0004-table-aware-chunking.md) | Table-aware chunking with Chonkie                                    |
+| [0005](adr/0005-retrieval-store.md)      | Retrieval store: Postgres + pgvector                                 |
+| [0006](adr/0006-agentic-retrieval.md)    | Bounded Pydantic AI retrieval agent                                  |
+| [0007](adr/0007-background-jobs.md)      | Celery + Redis for ingestion and evaluation                          |
+| [0008](adr/0008-api-surface-and-auth.md) | API surface and bearer-token auth                                    |
+| [0009](adr/0009-evaluation-strategy.md)  | Pydantic Evals + RAGAS + paired stats                                |
+| [0010](adr/0010-frontend-application.md) | React + Vite + TanStack stack                                        |
+| [0011](adr/0011-ai-provider-gateway.md)  | OpenRouter as primary provider gateway                               |
 
 ## Appendix B. Configuration knobs
 
 All in `backend/packages/rag-common/rag_common/config.py`; defaults are
 listed in `backend/.env.example`.
 
-| Group | Setting | Default | Used by |
-| --- | --- | --- | --- |
-| Retrieval | `semantic_candidates` | 50 | `hybrid_retrieve` |
-| Retrieval | `full_text_candidates` | 50 | `hybrid_retrieve` |
-| Retrieval | `fused_candidates` | 20 | RRF cut-off |
-| Retrieval | `evidence_top_k` | 8 | chunks passed to generator |
-| Retrieval | `rerank_candidates` | 20 | OpenRouter rerank input size |
-| Retrieval | `reranker_enabled` | true | rerank stage |
-| Retrieval | `hyde_enabled` | true | HyDE pre-step |
-| Retrieval | `retrieval_agent_tool_call_budget` | 4 | agent `UsageLimits` |
-| Chunking | `chunk_target_tokens` | 1000 | Chonkie target size |
-| Chunking | `chunk_max_tokens` | 1500 | Chonkie hard max |
-| Chunking | `chunk_overlap_tokens` | 120 | narrative overlap |
-| Chunking | `table_max_rows` | 60 | oversized table split |
-| Eval | `eval_temperature_zero` | true | force temperature 0 in eval |
-| Embeddings | `embedding_dimension` | 1024 | pgvector column width |
+| Group      | Setting                            | Default | Used by                      |
+| ---------- | ---------------------------------- | ------- | ---------------------------- |
+| Retrieval  | `semantic_candidates`              | 50      | `hybrid_retrieve`            |
+| Retrieval  | `full_text_candidates`             | 50      | `hybrid_retrieve`            |
+| Retrieval  | `fused_candidates`                 | 20      | RRF cut-off                  |
+| Retrieval  | `evidence_top_k`                   | 8       | chunks passed to generator   |
+| Retrieval  | `rerank_candidates`                | 20      | OpenRouter rerank input size |
+| Retrieval  | `reranker_enabled`                 | true    | rerank stage                 |
+| Retrieval  | `hyde_enabled`                     | true    | HyDE pre-step                |
+| Retrieval  | `retrieval_agent_tool_call_budget` | 16      | agent `UsageLimits`          |
+| Chunking   | `chunk_target_tokens`              | 1000    | Chonkie target size          |
+| Chunking   | `chunk_max_tokens`                 | 1500    | Chonkie hard max             |
+| Chunking   | `chunk_overlap_tokens`             | 120     | narrative overlap            |
+| Chunking   | `table_max_rows`                   | 60      | oversized table split        |
+| Eval       | `eval_temperature_zero`            | true    | force temperature 0 in eval  |
+| Embeddings | `embedding_dimension`              | 1024    | pgvector column width        |
 
 ## Appendix C. References
 
