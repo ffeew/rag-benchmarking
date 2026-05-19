@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     rerank_candidates: Annotated[int, Field(gt=0, le=100)] = 20
     reranker_enabled: bool = True
     hyde_enabled: bool = True
-    retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 4
+    retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 8
     # Query decomposition for single_pass: when on, an LLM call breaks multi-part
     # questions into subquestions and single_pass fans out one hybrid_retrieve per
     # subquestion (RRF-fused). Questions the LLM judges atomic return an empty list
@@ -165,13 +165,15 @@ class Settings(BaseSettings):
         if self.allow_mock_providers:
             return self
 
+        # MISTRAL_API_KEY is intentionally not required: Mistral OCR is the
+        # primary parser, but ``parse_pdf`` already falls back to docling and
+        # then pypdf. Operators with native-text corpora (no scanned PDFs) can
+        # leave the key unset and the ingestion pipeline cleanly uses docling.
         missing: list[str] = []
         if self.openrouter_api_key is None:
             missing.append("OPENROUTER_API_KEY")
         if self.zai_api_key is None:
             missing.append("ZAI_API_KEY")
-        if self.mistral_api_key is None:
-            missing.append("MISTRAL_API_KEY")
         for field_name, env_name in (
             ("zai_chat_model", "ZAI_CHAT_MODEL"),
             ("zai_judge_model", "ZAI_JUDGE_MODEL"),

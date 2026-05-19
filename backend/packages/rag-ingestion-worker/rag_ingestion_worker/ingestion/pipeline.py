@@ -24,10 +24,12 @@ def artifact_prefix(dataset_id: str, document_id: str, run_id: str) -> str:
 
 
 def parser_config(settings: Settings) -> dict[str, Any]:
-    # When mocks are on, Mistral OCR is bypassed entirely (see parse_pdf in
-    # ingestion/parsing.py). Reflect that in the dedup key so a mock-mode run does
-    # NOT collide with a real OCR run and silently re-use its chunks.
-    primary = ParserType.DOCLING if settings.allow_mock_providers else ParserType.MISTRAL_OCR
+    # Mistral OCR is bypassed when mocks are on, or when MISTRAL_API_KEY is
+    # unset (operator opted out of hosted OCR). Reflect that in the dedup key
+    # so a docling-only run does NOT collide with a real OCR run and silently
+    # re-use its chunks.
+    mistral_available = bool(settings.mistral_api_key) and not settings.allow_mock_providers
+    primary = ParserType.MISTRAL_OCR if mistral_available else ParserType.DOCLING
     return {
         "primary": primary,
         "fallback": ParserType.DOCLING,
@@ -37,6 +39,7 @@ def parser_config(settings: Settings) -> dict[str, Any]:
         "table_format": "inline_markdown",
         "include_image_base64": False,
         "allow_mock_providers": settings.allow_mock_providers,
+        "mistral_ocr_available": mistral_available,
     }
 
 

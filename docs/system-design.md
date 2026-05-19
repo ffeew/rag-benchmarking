@@ -191,7 +191,7 @@ For the `full_agentic` retrieval mode, a single Pydantic AI tool-using agent abs
 the planner, retrieval, and verifier responsibilities. The agent exposes exactly one
 tool, `retrieve_evidence`, and decides when, how many times, and with what filters to
 call it. The bounded budget is enforced via `UsageLimits(request_limit=N+1)` with
-`N = retrieval_agent_tool_call_budget` (default 4).
+`N = retrieval_agent_tool_call_budget` (default 8).
 
 The agent's static identity is corpus-neutral ("filings RAG system"). At every run,
 `@agent.instructions` injects a per-dataset block containing `CORPUS: <domain_label>`,
@@ -508,7 +508,7 @@ Required configuration groups:
 | MinIO | endpoint, access key, secret key, bucket names, secure flag. |
 | Redis/Celery | broker URL, result backend URL, queue names. |
 | OpenRouter | API key, chat model, judge model, embedding model, rerank model, routing preferences, data-collection preference. |
-| Mistral OCR | API key and OCR model. |
+| Mistral OCR | OCR model and (optional) API key. Without the key, parsing transparently falls back to docling. |
 | Frontend | API base URL, public app environment, optional default dataset id, feature flags. |
 | Retrieval | candidate counts, top_k, retry budget, reranker flag. |
 | Chunking | chunk size, overlap, table max rows/tokens. |

@@ -19,7 +19,7 @@ Use OpenRouter as the primary AI gateway for:
 - Chunk and query embeddings.
 - Reranking retrieval candidates.
 
-Use direct Mistral integration only for OCR. Keep Docling as local parser fallback.
+Use direct Mistral integration only for OCR. Keep Docling as local parser fallback. The Mistral key is optional in the boot validator: when unset, `parse_pdf` skips the OCR tier and parses with Docling (then `pypdf` as last resort), so operators with native-text corpora are not forced to provision an OCR provider.
 
 Implement an internal provider layer with explicit service roles:
 

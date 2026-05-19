@@ -22,7 +22,7 @@ Open:
 - API docs: `http://localhost:8000/docs`
 - MinIO console: `http://localhost:9001`
 
-The default `backend/.env.example` uses `ALLOW_MOCK_PROVIDERS=true`, so the stack can smoke-test without paid provider keys. For live parsing/generation, set OpenRouter and Mistral keys/models in `backend/.env` and set `ALLOW_MOCK_PROVIDERS=false`.
+The default `backend/.env.example` ships `ALLOW_MOCK_PROVIDERS=false`, matching the real operating posture — the Settings validator will refuse to boot unless `OPENROUTER_API_KEY`, `ZAI_API_KEY`, and the four model ids are set. `MISTRAL_API_KEY` is optional: leave it unset and the PDF parser silently falls back from Mistral OCR to docling (and then pypdf) — fine for native-text corpora that don't need OCR. For a keyless first-run smoke test without paid provider calls, flip `ALLOW_MOCK_PROVIDERS=true` in your `backend/.env`.
 
 ### Run in Production Mode
 

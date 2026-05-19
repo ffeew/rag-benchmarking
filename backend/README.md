@@ -24,7 +24,7 @@ cp .env.example .env
 uv run --directory . uvicorn rag_benchmarking.main:app --reload
 ```
 
-`.env` defaults to `ALLOW_MOCK_PROVIDERS=true`, which lets the API and workers boot without OpenRouter or Mistral keys.
+`.env.example` ships `ALLOW_MOCK_PROVIDERS=false`; the Settings validator refuses to boot unless OpenRouter and Z.AI keys plus the four model ids are set. `MISTRAL_API_KEY` is optional — leave it unset to cleanly fall through to the docling/pypdf parser. Set `ALLOW_MOCK_PROVIDERS=true` in your local `.env` to let the API and workers boot without any provider keys (mock providers; intended for first-run smoke tests).
 
 ## Migrations
 

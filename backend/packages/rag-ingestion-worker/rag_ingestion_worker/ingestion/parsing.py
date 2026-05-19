@@ -171,16 +171,19 @@ def parse_with_local_pdf(pdf_bytes: bytes) -> ParsedDocumentDraft:
 def parse_pdf(pdf_bytes: bytes, settings: Settings | None = None) -> ParsedDocumentDraft:
     """Parse a PDF through the three-tier fallback chain.
 
-    1. Mistral OCR (primary) — layout-aware via the hosted API.
+    1. Mistral OCR (primary) — layout-aware via the hosted API. Skipped when
+       ``MISTRAL_API_KEY`` is unset or ``ALLOW_MOCK_PROVIDERS=true``.
     2. docling (fallback) — local, layout-aware; preserves tables.
     3. pypdf (last resort) — text-only, no layout.
 
     Each tier is attempted in order; any failure (provider error for Mistral,
     or any exception for docling) falls through to the next tier and is
-    logged.
+    logged. A missing Mistral key is not an error — operators with
+    native-text corpora can intentionally run on docling.
     """
     resolved = settings or get_settings()
-    if not resolved.allow_mock_providers:
+    mistral_available = bool(resolved.mistral_api_key) and not resolved.allow_mock_providers
+    if mistral_available:
         try:
             ocr = MistralOcrClient(resolved).parse_pdf(pdf_bytes)
             pages: list[ParsedPageDraft] = []
