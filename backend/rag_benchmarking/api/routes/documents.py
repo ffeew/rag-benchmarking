@@ -56,11 +56,12 @@ def register_local_corpus_endpoint(
     settings: SettingsDep,
     _auth: AuthDep,
 ) -> RegisterDocumentsResponse:
+    corpus_path = Path(payload.path) if payload.path else settings.local_corpus_path
     dataset, documents, created, reused = register_local_corpus(
         session,
         dataset_name=payload.dataset_name,
         description=payload.description,
-        path=Path(payload.path) if payload.path else None,
+        path=corpus_path,
         settings=settings,
         domain_label=payload.domain_label,
         entity_label=payload.entity_label,
@@ -69,6 +70,17 @@ def register_local_corpus_endpoint(
         hyde_style_hint=payload.hyde_style_hint,
         citation_label_template=payload.citation_label_template,
     )
+    # No commit has run yet (queue_ingestion_jobs below is the first commit), so
+    # raising here rolls back the just-created dataset row.
+    if not documents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"No PDF files found at {corpus_path}. Accepted forms: directory "
+                "(matches <path>/<entity>/*.pdf), glob pattern (e.g. /corpus/AAPL/*.pdf), "
+                "or a single .pdf file."
+            ),
+        )
     queue_result = queue_ingestion_jobs(
         session,
         dataset_id=dataset.id,

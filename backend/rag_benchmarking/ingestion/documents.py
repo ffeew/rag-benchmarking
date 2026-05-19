@@ -1,3 +1,4 @@
+import glob as _glob
 from pathlib import Path
 
 from rag_common.config import Settings, get_settings
@@ -17,6 +18,31 @@ from rag_benchmarking.ingestion.metadata import parse_filing_filename, raw_objec
 
 SEC_DATASET_NAME = "sec-filings"
 SEC_DOMAIN_LABEL = DEFAULT_SEC_DOMAIN_LABEL
+
+
+def _resolve_pdf_paths(path: Path) -> list[Path]:
+    """Resolve a user-supplied corpus path to the PDFs it points at.
+
+    Supports three forms so the API is forgiving about what callers paste in:
+      - Glob pattern (contains *, ?, or [): expanded directly, returns matching .pdf files.
+      - Single .pdf file: returns just that file.
+      - Directory: existing layout `<dir>/<entity>/<file>.pdf`.
+    Anything else returns an empty list; the endpoint converts that to a 400.
+    """
+    raw = str(path)
+    if any(c in raw for c in "*?["):
+        # glob.glob handles absolute patterns like `/a/b/*.pdf` directly; Path.glob would
+        # require splitting the anchor from the wildcard portion.
+        return sorted(
+            Path(p)
+            for p in _glob.glob(raw, recursive=True)  # noqa: PTH207
+            if p.lower().endswith(".pdf") and Path(p).is_file()
+        )
+    if path.is_file() and path.suffix.lower() == ".pdf":
+        return [path]
+    if path.is_dir():
+        return sorted(path.glob("*/*.pdf"))
+    return []
 
 
 def get_or_create_dataset(
@@ -146,7 +172,7 @@ def register_local_corpus(
     documents: list[models.Document] = []
     created = 0
     reused = 0
-    for pdf_path in sorted(corpus_path.glob("*/*.pdf")):
+    for pdf_path in _resolve_pdf_paths(corpus_path):
         document, is_created = register_pdf_path(
             session,
             dataset=dataset,
