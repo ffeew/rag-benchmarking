@@ -24,26 +24,11 @@ Open:
 
 The default `backend/.env.example` uses `ALLOW_MOCK_PROVIDERS=true`, so the stack can smoke-test without paid provider keys. For live parsing/generation, set OpenRouter and Mistral keys/models in `backend/.env` and set `ALLOW_MOCK_PROVIDERS=false`.
 
-## Ingest The Seed Corpus
-
-In the frontend, enter the bearer token from `backend/.env`, then:
-
-1. Use `Register Local Corpus` to upload/register PDFs from `LOCAL_CORPUS_PATH`.
-2. Watch the automatically queued ingestion jobs in `Jobs`.
-3. Ask questions in `Query`; answers include page citations, evidence chunks, and trace IDs.
-
-Equivalent API call:
-
-```bash
-curl -X POST http://localhost:8000/v1/datasets/register-local-corpus \
-  -H "Authorization: Bearer change-me-local-token" \
-  -H "Content-Type: application/json" \
-  -d '{"dataset_name":"sec-filings"}'
-```
-
 ## Custom Dataset
 
-Put PDFs in the same shape as the seed corpus:
+Put PDFs in the same shape as the seed corpus — the local-corpus scanner globs
+`<LOCAL_CORPUS_PATH>/*/*.pdf`, so PDFs must sit one level below the corpus root
+(ticker subdirectories), not directly under it:
 
 ```text
 my_filings/
@@ -86,6 +71,23 @@ curl -sS -X POST http://localhost:8000/v1/datasets \
   }'
 ```
 
+## Ingest The Seed Corpus
+
+In the frontend, enter the bearer token from `backend/.env`, then:
+
+1. Use `Register Local Corpus` to upload/register PDFs from `LOCAL_CORPUS_PATH`.
+2. Watch the automatically queued ingestion jobs in `Jobs`.
+3. Ask questions in `Query`; answers include page citations, evidence chunks, and trace IDs.
+
+Equivalent API call:
+
+```bash
+curl -X POST http://localhost:8000/v1/datasets/register-local-corpus \
+  -H "Authorization: Bearer change-me-local-token" \
+  -H "Content-Type: application/json" \
+  -d '{"dataset_name":"sec-filings"}'
+```
+
 ## Reproduce Reported Metrics
 
 The implementation report (`docs/implementation-report.md`) cites aggregate
@@ -94,20 +96,41 @@ eval set in `backend/eval_cases/sec_filings_v1.yaml` (99 cases across 9
 categories, all grounded in PDFs under `sec_filings_pdf/`). To reproduce:
 
 ```bash
-# 1) Bring up the stack and ingest the seed corpus (see "Run Locally" + "Ingest
-#    The Seed Corpus" above). Note the dataset id printed by the registration
-#    response (or read it from the frontend Dataset overview).
+# Prereq: stack is up (see "Run Locally"), `curl` + `jq` installed locally
+# (`brew install jq` / `apt-get install jq`), and API_BEARER_TOKEN matches backend/.env.
+export API_BEARER_TOKEN=change-me-local-token
+
+# 1) Register the local corpus, capture the dataset id, and wait for all
+#    ingestion jobs (parse → chunk → embed) to reach a terminal state.
+DATASET_ID=$(curl -sS -X POST http://localhost:8000/v1/datasets/register-local-corpus \
+  -H "Authorization: Bearer $API_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dataset_name":"sec-filings"}' \
+  | jq -r .dataset.id)
+echo "DATASET_ID=$DATASET_ID"
+
+until [ "$(
+  q=$(curl -sS -H "Authorization: Bearer $API_BEARER_TOKEN" \
+    "http://localhost:8000/v1/jobs?dataset_id=$DATASET_ID&job_type=ingestion&status=queued&limit=1" \
+    | jq '.total')
+  r=$(curl -sS -H "Authorization: Bearer $API_BEARER_TOKEN" \
+    "http://localhost:8000/v1/jobs?dataset_id=$DATASET_ID&job_type=ingestion&status=running&limit=1" \
+    | jq '.total')
+  echo $((q + r))
+)" = "0" ]; do
+  sleep 10
+done
 
 # 2) Seed the verified eval cases into that dataset (idempotent upsert):
 uv run --directory backend python -m rag_benchmarking.scripts.seed_eval_cases \
-  --dataset <dataset_id> \
+  --dataset "$DATASET_ID" \
   --file backend/eval_cases/sec_filings_v1.yaml
 
 # 3) Run all three ablation variants and write the raw artifact to
 #    artifacts/evals/<eval_run_id>.json. The runner evaluates all variants
 #    in a single eval run, so one invocation produces the full comparison.
 uv run --directory backend python -m rag_benchmarking.scripts.run_eval \
-  --dataset <dataset_id> \
+  --dataset "$DATASET_ID" \
   --variants full_agentic,single_pass,llm_only \
   --output markdown
 
