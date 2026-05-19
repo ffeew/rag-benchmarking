@@ -17,10 +17,10 @@ services:
       dockerfile: Dockerfile
       target: publisher
     command: sh -c "rm -rf /publish/* && cp -a /dist/. /publish/ && echo 'SPA published'"
-    volumes:
+    volumes: !override
       - frontend-dist:/publish
-    ports: []
-    depends_on: []
+    ports: !override []
+    depends_on: !reset []
     restart: "no"
 
   api:

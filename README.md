@@ -24,6 +24,25 @@ Open:
 
 The default `backend/.env.example` uses `ALLOW_MOCK_PROVIDERS=true`, so the stack can smoke-test without paid provider keys. For live parsing/generation, set OpenRouter and Mistral keys/models in `backend/.env` and set `ALLOW_MOCK_PROVIDERS=false`.
 
+### Run in Production Mode
+
+`docker-compose.prod.yml` is an overlay on `docker-compose.yml` — it builds the SPA via the frontend image's `publisher` stage into a named volume, then FastAPI serves it directly. Pass both files (the overlay only contains the deltas):
+
+```bash
+export UID=$(id -u) GID=$(id -g)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+```
+
+Everything is fronted by the API at `http://localhost:8000/` (the SPA, `/docs`, and the JSON API). Port 3000 is intentionally not exposed.
+
+Stop with the same file pair:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+```
+
+The prod build retags the `rag-benchmarking-frontend` image with the publisher stage. To switch back to dev hot-reload afterwards, rebuild the frontend image: `docker compose build frontend && docker compose up -d`.
+
 ## Custom Dataset
 
 Put PDFs in the same shape as the seed corpus — the local-corpus scanner globs
