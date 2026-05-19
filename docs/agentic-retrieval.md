@@ -99,7 +99,7 @@ Highlights:
 - The orchestrator (`run_query`) only loads the dataset, gathers the known-tickers set
   once, and routes the result. It never decides what to retrieve.
 - The agent makes **bounded** tool calls via Pydantic AI's `UsageLimits(request_limit=N+1)`
-  where `N = retrieval_agent_tool_call_budget` (default 8). The `+1` budget extra leaves
+  where `N = retrieval_agent_tool_call_budget` (default 16). The `+1` budget extra leaves
   room for the final synthesis turn.
 - The trace records each tool call plus its HyDE/embedding/rerank usage so cost can be
   attributed per call.
@@ -318,10 +318,11 @@ what to do next), so the practical effect is:
 - `request_limit = retrieval_agent_tool_call_budget + 1`
 - The `+1` leaves room for the final synthesis turn that emits `RetrievalAgentOutput`.
 
-Default: `retrieval_agent_tool_call_budget = 8`. Sized so the agent can fan out across
+Default: `retrieval_agent_tool_call_budget = 16`. Sized so the agent can fan out across
 multi-part / cross-company queries (e.g. 6-company comparisons, multi-segment lookups)
-without surprising costs. The earlier default of 4 unfairly capped the `full_agentic`
-ablation against single_pass / llm_only when subclaim counts exceeded 4.
+without surprising costs. The earlier defaults of 4 and 8 unfairly capped the
+`full_agentic` ablation against single_pass / llm_only when subclaim counts ran high.
+Field constraint: `ge=1, le=32`.
 
 When the limit is hit, Pydantic AI raises `UsageLimitExceeded`, which `run_retrieval_agent`
 catches via `AGENT_RETRYABLE_ERRORS` and falls back to the heuristic path.

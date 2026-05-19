@@ -66,7 +66,7 @@ question regardless of how the planner decomposed it.
 This revision folds the planner, retrieval, and verifier roles for `full_agentic` mode
 into a single bounded **tool-using** agent that exposes one tool, `retrieve_evidence`.
 The agent decides how many times and with what filters to call it (up to
-`retrieval_agent_tool_call_budget`, default 8), and emits a structured output that
+`retrieval_agent_tool_call_budget`, default 16), and emits a structured output that
 combines what the planner and verifier used to produce separately:
 
 - `selected_chunk_ids` (replaces the verifier's supported_chunk_ids)

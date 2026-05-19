@@ -545,7 +545,7 @@ def build_retrieval_agent(
     # both to 2 (default is 1) gives the chunk-id validator and the hybrid_retrieve
     # error path one near-miss correction each before the run dies — glm-4.7 sometimes
     # fabricates a chunk_id on the first emit and self-corrects on the next. The
-    # global ``tool_calls_limit=retrieval_agent_tool_call_budget`` (4 by default)
+    # global ``tool_calls_limit=retrieval_agent_tool_call_budget`` (16 by default)
     # passed via UsageLimits is still the backstop on runaway loops.
     # Retrieval is structured tool-calling work — temperature=0 unconditionally, not
     # gated on ``eval_temperature_zero``. Other agents (HyDE, generator) still consult

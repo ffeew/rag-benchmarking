@@ -191,7 +191,7 @@ For the `full_agentic` retrieval mode, a single Pydantic AI tool-using agent abs
 the planner, retrieval, and verifier responsibilities. The agent exposes exactly one
 tool, `retrieve_evidence`, and decides when, how many times, and with what filters to
 call it. The bounded budget is enforced via `UsageLimits(request_limit=N+1)` with
-`N = retrieval_agent_tool_call_budget` (default 8).
+`N = retrieval_agent_tool_call_budget` (default 16).
 
 The agent's static identity is corpus-neutral ("filings RAG system"). At every run,
 `@agent.instructions` injects a per-dataset block containing `CORPUS: <domain_label>`,

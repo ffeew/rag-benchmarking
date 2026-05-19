@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     rerank_candidates: Annotated[int, Field(gt=0, le=100)] = 20
     reranker_enabled: bool = True
     hyde_enabled: bool = True
-    retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=8)] = 8
+    retrieval_agent_tool_call_budget: Annotated[int, Field(ge=1, le=32)] = 16
     # Query decomposition for single_pass: when on, an LLM call breaks multi-part
     # questions into subquestions and single_pass fans out one hybrid_retrieve per
     # subquestion (RRF-fused). Questions the LLM judges atomic return an empty list
