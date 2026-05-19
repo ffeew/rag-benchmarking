@@ -280,10 +280,10 @@ where most failure modes are tables that have been chopped through.
 ### Embeddings and indexing
 
 Embeddings are produced in batches by the OpenRouter embedding model
-configured via `OPENROUTER_EMBEDDING_MODEL` (default
-`openai/text-embedding-3-large` at 1024 dimensions; the dimension is
-constrained by `embedding_dimension` in `config.py` and matches the
-`vector(1024)` column on `embeddings`). Each `Embedding` row records
+configured via `OPENROUTER_EMBEDDING_MODEL` (no built-in default in
+`config.py`). The output dimension is constrained
+by `embedding_dimension` (default 1024) and must match the
+`vector(1024)` column on `embeddings`. Each `Embedding` row records
 provider, model, and dimension; changing the embedding model is treated
 as a re-indexing event (ADR-0011 §Embeddings).
 
@@ -529,6 +529,20 @@ to give Wilcoxon enough power to detect Cliff's δ ≈ 0.30 effects after
 Benjamini-Hochberg correction across the 27-test family (9 contrasts × 3
 endpoints, post 2026-05-18 amendment) — see §7 of the ablation plan.
 
+The nine example queries in `task.md` §10 are covered by these
+categories: the Microsoft-revenue, Tesla-debt, and Nvidia-overview
+prompts map to `single_company_lookup`; the Amazon-segment-breakdown
+prompt maps to `table_lookup`; the Apple-gross-margin-trend prompt maps
+to `trend`; the Google-vs-Microsoft R&D-percent-of-revenue prompt maps
+to `cross_company_comparison`; the two "hard" sector-AI prompts
+(semiconductor AI demand, financial-sector AI adoption) map to
+`sector_synthesis`; and the personalised-investment-recommendation
+prompt maps to `refusal`. The prompt surface that the agent, HyDE, and
+generator see is corpus-neutral (no `case_key`, ticker list, or
+query-text constants from the eval YAML are referenced from
+`retrieval_tool.py`, `planning.py`, `hyde.py`, or `generation.py`), so
+the same pipeline answers the hidden test set without per-case tuning.
+
 ### Locked ablation variants
 
 Pre-registered in
@@ -672,7 +686,11 @@ The biggest single contrast in the assessment rubric is whether RAG
 beats LLM-only — see `task.md` §6, the explicit "Ablation study"
 bullet.
 
-**Paired contrasts** (`n_paired = 26`, the same-N intersection across all 10 variants — capped by `llm_only`'s 26 answer-gold-eligible cases):
+**Paired contrasts** (`n_paired = 26` for `answer_accuracy` and
+`expected_contains` — the same-N intersection across all 10 variants,
+capped by `llm_only`'s 26 answer-gold-eligible cases; `n_paired = 24`
+for `strict_recall_at_10` because two of those 26 cases fall outside
+the evidence-gold-eligible intersection):
 
 | Endpoint | `full_agentic` (paired mean) | `llm_only` (paired mean) | Δ (paired bootstrap 95% CI) | One-sided p (BH-adj) | Cliff's δ |
 | --- | --- | --- | --- | --- | --- |
@@ -790,6 +808,7 @@ intersection as §7.1).
 | Endpoint | `full_agentic` | `single_pass` | Direction |
 | --- | --- | --- | --- |
 | `mrr` | 0.368 | 0.350 | higher better |
+| `chunk_evidence_f1` | 0.200 | 0.137 | higher better |
 | `page_evidence_f1` | 0.104 | 0.059 | higher better |
 | `citation_validity` | 0.960 | 1.000 | higher better |
 | `citation_coverage` | 0.251 | 0.221 | higher better |
@@ -829,6 +848,13 @@ intersection as §7.1).
 > version that accepts the current call signature, or swap to a
 > dedicated judge model on OpenRouter) but neither blocks the
 > deterministic conclusions above.
+>
+> For the `task.md` §6 *generator faithfulness* requirement, the
+> deterministic stand-ins for this run are `citation_validity` (0.960,
+> §7.4) and `citation_gold_recall` (0.366 over all 99 cases) — every
+> cited `chunk_id` is required to be in the retrieved set
+> (`generation.py:verify_evidence`), and gold-citation overlap is
+> scored per-case from the verified eval YAML.
 
 ### 7.6 Representative failure modes
 
@@ -1135,7 +1161,7 @@ by `backend/tests/test_prompts_dataset_aware.py` and
 
 ## Demo video
 
-URL: _to be linked here once recorded._
+URL: _pending recording — to be linked in the submission packet._
 
 The walkthrough should cover, in order:
 
@@ -1194,7 +1220,6 @@ listed in `backend/.env.example`.
 | Chunking | `chunk_overlap_tokens` | 120 | narrative overlap |
 | Chunking | `table_max_rows` | 60 | oversized table split |
 | Eval | `eval_temperature_zero` | true | force temperature 0 in eval |
-| Eval | `eval_timeout_seconds` | 1800 | per-case timeout |
 | Embeddings | `embedding_dimension` | 1024 | pgvector column width |
 
 ## Appendix C. References

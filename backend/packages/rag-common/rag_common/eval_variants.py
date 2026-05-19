@@ -1,6 +1,6 @@
 """Locked retrieval-variant catalog for the v1 component-lesion ablation study.
 
-The 9 variants below isolate each component of the retrieval pipeline. Names are
+The 10 variants below isolate each component of the retrieval pipeline. Names are
 the join key for paired statistical analysis (see ``ablation_analysis.py``); the
 underlying ``retrieval_mode`` picks the pipeline branch and ``overrides`` knock
 individual components on/off without code changes.
